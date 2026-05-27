@@ -1,0 +1,127 @@
+"""The scoring engine.
+
+A single pure function — ``apply_rules(stats, rules)`` — turns a raw
+stat dict (e.g. ``{"passing_yards": 312, "passing_tds": 2}``) into a
+``ScoredResult`` (total + per-category breakdown). No I/O, no globals;
+every input is explicit and every output is auditable.
+
+See ``docs/05_SCORING_ENGINE.md`` for the full set of stat keys and the
+verification procedure that gates this engine against NFL.com box
+scores.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from ff_pipeline.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from ff_pipeline.scoring.rules import ScoringRule, ScoringRules
+
+log = get_logger(__name__)
+
+# Totals are rounded to the cent so floating-point drift never shows up
+# in user-facing scores. NFL.com reports to two decimals.
+_POINTS_PRECISION = 2
+
+
+@dataclass(frozen=True, slots=True)
+class ScoredResult:
+    """The output of ``apply_rules``.
+
+    ``total_points`` is the rounded sum of ``breakdown`` values.
+    ``breakdown`` maps each rule ``category`` to its contribution.
+    ``unmapped_stats`` lists any stat keys the caller supplied that no
+    rule consumed — these are not silently dropped; callers can surface
+    them as data-quality alerts.
+    """
+
+    total_points: float
+    breakdown: dict[str, float]
+    unmapped_stats: tuple[str, ...] = ()
+
+
+def apply_rules(stats: Mapping[str, float], rules: ScoringRules) -> ScoredResult:
+    """Apply ``rules`` to ``stats`` and return the scored result.
+
+    Missing keys default to zero. Flat-bonus rules trigger when the
+    stat falls inside ``[threshold_min, threshold_max]`` (either bound
+    may be unset). Per-unit rules accrue
+    ``(stat / unit_size) * points_per_unit``; if ``threshold_min`` is
+    set, only the portion above the threshold accrues, capped by
+    ``threshold_max`` if present.
+    """
+
+    breakdown: defaultdict[str, float] = defaultdict(float)
+
+    for rule in rules.rules:
+        contribution = _score_rule(stats, rule)
+        if contribution != 0.0:
+            breakdown[rule.category] += contribution
+
+    unmapped = _detect_unmapped_stats(stats, rules)
+    if unmapped:
+        for stat_key in unmapped:
+            log.warning(
+                "Unmapped stat in scoring",
+                stat_key=stat_key,
+                value=stats[stat_key],
+                season_id=rules.season_id,
+            )
+
+    total = round(sum(breakdown.values()), _POINTS_PRECISION)
+    rounded_breakdown = {k: round(v, _POINTS_PRECISION) for k, v in breakdown.items()}
+    return ScoredResult(
+        total_points=total,
+        breakdown=rounded_breakdown,
+        unmapped_stats=unmapped,
+    )
+
+
+def _score_rule(stats: Mapping[str, float], rule: ScoringRule) -> float:
+    if rule.flat_points is not None:
+        # Flat bonuses require the stat to be explicitly reported — a
+        # missing key means "this stat doesn't apply to this player"
+        # (e.g. a QB has no points_allowed entry), and an absent stat
+        # must not trigger a bonus.
+        if rule.stat_key not in stats:
+            return 0.0
+        stat_value = stats[rule.stat_key]
+        if rule.threshold_min is not None and stat_value < rule.threshold_min:
+            return 0.0
+        if rule.threshold_max is not None and stat_value > rule.threshold_max:
+            return 0.0
+        return rule.flat_points
+
+    if rule.unit_size == 0:
+        # A zero unit_size is a misconfigured rule (would divide by zero).
+        # Skip it loudly rather than silently producing inf/NaN.
+        log.warning(
+            "Scoring rule has zero unit_size; skipping",
+            stat_key=rule.stat_key,
+            category=rule.category,
+        )
+        return 0.0
+
+    stat_value = stats.get(rule.stat_key, 0)
+    effective_value = float(stat_value)
+    if rule.threshold_min is not None:
+        effective_value = max(0.0, effective_value - rule.threshold_min)
+    if rule.threshold_max is not None:
+        cap = rule.threshold_max - (rule.threshold_min or 0.0)
+        effective_value = min(effective_value, cap)
+
+    return (effective_value / rule.unit_size) * rule.points_per_unit
+
+
+def _detect_unmapped_stats(stats: Mapping[str, float], rules: ScoringRules) -> tuple[str, ...]:
+    known = {rule.stat_key for rule in rules.rules}
+    return tuple(sorted(key for key in stats if key not in known))
+
+
+__all__ = ["ScoredResult", "apply_rules"]
