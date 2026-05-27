@@ -17,6 +17,7 @@ init``) and from the ``alembic`` CLI for ad-hoc debugging.
 
 from __future__ import annotations
 
+import logging
 import os
 from logging.config import fileConfig
 
@@ -28,7 +29,11 @@ from ff_pipeline.repository.database import Base
 
 config = context.config
 
-if config.config_file_name is not None:
+# Only let alembic install its own loggers when nothing else has done so
+# (e.g., running `alembic` from the CLI for ad-hoc debugging). Calling
+# ff-pipeline configures logging via ff_pipeline.logging_config before
+# alembic runs, and fileConfig would wipe those handlers.
+if config.config_file_name is not None and not logging.getLogger().handlers:
     fileConfig(config.config_file_name)
 
 # Allow the env var to override the ini-baked URL.

@@ -1,19 +1,31 @@
 """structlog configuration with JSON output and cookie redaction.
 
 Single entry point: ``configure_logging(settings)``. Idempotent — safe to
-call multiple times (it replaces the structlog config wholesale each
-time rather than appending).
+call multiple times.
 
-Cookie redaction is implemented as a processor that walks the event
-dict and replaces values for known-sensitive keys. The set of keys is
-defined in ``REDACTED_KEYS`` and is conservative — we'd rather log
-``[REDACTED]`` for a benign field named ``cookie`` than accidentally
-leak the NFL_COOKIE into a log file someone might share.
+Output is dual-routed through stdlib ``logging``:
+
+* ``data/logs/pipeline.log`` via ``TimedRotatingFileHandler`` (rolls at
+  midnight UTC, keeps 14 days) — always JSON for log-aggregation tools.
+* ``stderr`` via ``StreamHandler`` — JSON or pretty console depending on
+  ``LOG_FORMAT``.
+
+Both handlers share the same processor chain (timestamp, log-level,
+secret redaction, stack/exception rendering) via structlog's
+``ProcessorFormatter``. Non-structlog stdlib logs (uvicorn, alembic,
+sqlalchemy) pass through the same chain via ``foreign_pre_chain`` so
+NFL.com cookies in third-party logs get redacted too.
+
+Cookie redaction lives in ``REDACTED_KEYS``; values are replaced with
+``[REDACTED]`` case-insensitively, including one level of nested
+mappings (header dicts).
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import logging.handlers
 import sys
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
@@ -40,6 +52,9 @@ REDACTED_KEYS: frozenset[str] = frozenset(
 )
 REDACTED_PLACEHOLDER = "[REDACTED]"
 
+LOG_FILE_NAME = "pipeline.log"
+LOG_FILE_RETENTION_DAYS = 14
+
 
 def _redact_secrets(_logger: Any, _name: str, event_dict: EventDict) -> EventDict:
     """Replace values whose key matches REDACTED_KEYS (case-insensitive)
@@ -59,8 +74,10 @@ def _redact_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
     return {k: REDACTED_PLACEHOLDER if k.lower() in REDACTED_KEYS else v for k, v in value.items()}
 
 
-def _build_processor_chain(log_format: str) -> list[Processor]:
-    common: list[Processor] = [
+def _shared_processors() -> list[Processor]:
+    """Processors that run on EVERY log line — structlog-native and
+    foreign (stdlib) alike — before the final renderer."""
+    return [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
@@ -68,37 +85,73 @@ def _build_processor_chain(log_format: str) -> list[Processor]:
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
-    if log_format == "json":
-        common.append(structlog.processors.JSONRenderer())
-    else:
-        common.append(structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty()))
-    return common
+
+
+def _make_handler_formatter(renderer: Processor) -> structlog.stdlib.ProcessorFormatter:
+    """Build a ProcessorFormatter that finishes with the given renderer.
+
+    ``foreign_pre_chain`` ensures stdlib log records (alembic, uvicorn,
+    sqlalchemy) go through the same redaction + timestamp pipeline.
+    """
+    return structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=_shared_processors(),
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
+    )
 
 
 def configure_logging(settings: Settings) -> None:
-    """Apply the settings to structlog and the stdlib logging root.
+    """Apply settings to stdlib logging + structlog.
 
-    stdlib logs (uvicorn, alembic, sqlalchemy) are routed through
-    structlog so a single config controls every log line the pipeline
-    emits.
+    Idempotent — clears existing handlers on the root logger before
+    attaching ours, so a re-call (e.g., in tests) doesn't accumulate
+    duplicate output.
     """
     level = logging.getLevelName(settings.log_level)
 
     settings.log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = settings.log_dir / LOG_FILE_NAME
 
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stderr,
-        level=level,
-        force=True,
+    file_handler = logging.handlers.TimedRotatingFileHandler(
+        filename=str(log_file),
+        when="midnight",
+        interval=1,
+        backupCount=LOG_FILE_RETENTION_DAYS,
+        encoding="utf-8",
+        utc=True,
     )
+    file_handler.setFormatter(_make_handler_formatter(structlog.processors.JSONRenderer()))
+
+    stderr_renderer: Processor
+    if settings.log_format == "json":
+        stderr_renderer = structlog.processors.JSONRenderer()
+    else:
+        stderr_renderer = structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty())
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(_make_handler_formatter(stderr_renderer))
+
+    root = logging.getLogger()
+    for existing in list(root.handlers):
+        root.removeHandler(existing)
+        # Defensive: closing a re-closed handler shouldn't crash idempotent re-config.
+        with contextlib.suppress(ValueError, OSError):
+            existing.close()
+    root.addHandler(file_handler)
+    root.addHandler(stderr_handler)
+    root.setLevel(level)
 
     structlog.configure(
-        processors=_build_processor_chain(settings.log_format),
+        processors=[
+            *_shared_processors(),
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
-        cache_logger_on_first_use=True,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=False,
     )
 
 
