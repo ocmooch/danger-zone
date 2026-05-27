@@ -138,6 +138,66 @@ def test_real_csv_negative_rushing_yards_subtract_points(dz_settings) -> None:  
     assert r.total_points == pytest.approx(-0.3)
 
 
+def test_real_csv_negative_passing_yards_no_bonus_misfire(dz_settings) -> None:  # type: ignore[no-untyped-def]
+    # A QB pulled after one tackled-behind-the-LOS completion can end the
+    # game with negative passing yards. The basic per-25 rule must accrue
+    # the negative; the 300+/400+ bonuses (flat) must NOT fire because
+    # neither threshold_min is satisfied for a negative stat value.
+    rules = ScoringRules(season_id=1, rules=tuple(pr.rule for pr in dz_settings.rules))
+    r = apply_rules({"passing_yards": -5}, rules)
+    assert r.total_points == pytest.approx(-0.2)
+    assert r.breakdown == {"passing": pytest.approx(-0.2)}
+
+
+def test_real_csv_dst_total_can_be_negative(dz_settings) -> None:  # type: ignore[no-untyped-def]
+    # Real scenario: defense gives up 60 points + 520 yards with only one
+    # sack to show for it. Two flat bracket bonuses fire negative
+    # (Points Allowed 35+ → -4; 500+ Yards Allowed → -4) and one
+    # per-unit positive contribution (1 sack → +1). The DST's defense-
+    # category total is -7 — confirming that the breakdown can carry a
+    # net-negative category subtotal end-to-end.
+    rules = ScoringRules(season_id=1, rules=tuple(pr.rule for pr in dz_settings.rules))
+    r = apply_rules(
+        {
+            "sacks": 1,
+            "interceptions": 0,
+            "fumbles_recovered": 0,
+            "safeties": 0,
+            "defensive_tds": 0,
+            "special_teams_tds": 0,
+            "points_allowed": 60,
+            "total_yards_allowed": 520,
+        },
+        rules,
+    )
+    assert r.total_points == pytest.approx(-7.0)
+    assert r.breakdown["defense"] == pytest.approx(-7.0)
+
+
+def test_real_csv_dst_shutout_high_positive(dz_settings) -> None:  # type: ignore[no-untyped-def]
+    # The inverse of the disaster-game case: same math, opposite sign.
+    # Confirms the breakdown sums correctly in both directions and the
+    # bracket-gated flat bonuses pick the right tier from each stat
+    # (PA=0 → +10 from the shutout rule; YA=87 → +10 from the <100 rule).
+    rules = ScoringRules(season_id=1, rules=tuple(pr.rule for pr in dz_settings.rules))
+    r = apply_rules(
+        {
+            "sacks": 6,
+            "interceptions": 3,
+            "fumbles_recovered": 2,
+            "safeties": 1,
+            "defensive_tds": 2,
+            "special_teams_tds": 0,
+            "points_allowed": 0,
+            "total_yards_allowed": 87,
+        },
+        rules,
+    )
+    # 6 + 6 + 4 + 2 + 12 (2 def TDs) + 10 (shutout) + 10 (<100 YA) = 50.0
+    assert r.total_points == pytest.approx(50.0)
+    assert r.breakdown["defense"] == pytest.approx(50.0)
+
+
 def test_real_csv_raw_text_round_trips(dz_settings) -> None:  # type: ignore[no-untyped-def]
     # Picking one well-known line. The raw_text must include both label
     # and value so a human can audit the rule against the original page.

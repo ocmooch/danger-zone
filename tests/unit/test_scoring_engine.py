@@ -511,6 +511,17 @@ def test_negative_receiving_yards_accrue_negative_points() -> None:
     assert result.total_points == pytest.approx(0.6)
 
 
+def test_negative_passing_yards_accrue_negative_points_no_bonus() -> None:
+    # Rare but real: a QB completes a screen behind the LOS for -5 yards
+    # and is then pulled (injury / blowout) so end-of-game passing yards
+    # are negative. NFL.com awards -0.2 under "1 pt / 25 yds" — and the
+    # 300+/400+ flat bonuses must NOT fire on negative values (otherwise
+    # every player without a passing line would get them).
+    result = apply_rules({"passing_yards": -5}, STD_PPR_RULES)
+    assert result.total_points == pytest.approx(-0.2)
+    assert result.breakdown == {"passing": pytest.approx(-0.2)}
+
+
 def test_negative_yards_with_threshold_min_zero_match_loader_shape() -> None:
     # Mirrors exactly what the M4 scoring scraper emits: per-unit rules
     # carry threshold_min=0.0 (not None) so the (season, cat, key,
