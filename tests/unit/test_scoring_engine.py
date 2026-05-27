@@ -491,6 +491,65 @@ def test_negative_per_unit_with_negative_stat_yields_positive() -> None:
     assert result.total_points == 3.0
 
 
+def test_negative_rushing_yards_accrue_negative_points() -> None:
+    # A real game stat: 1 carry for -3 yards. NFL.com awards -0.3 pts under
+    # the standard "1 pt per 10 yds" rushing rule. The engine must NOT clip
+    # this to zero — the bug it backstops is that M4's loader emits
+    # per-unit rules with threshold_min=0 (for SQL upsert idempotency), and
+    # the engine used to clip *any* threshold_min, silently zeroing
+    # negative yardage games.
+    result = apply_rules({"rushing_yards": -3}, STD_PPR_RULES)
+    assert result.total_points == pytest.approx(-0.3)
+    assert result.breakdown == {"rushing": pytest.approx(-0.3)}
+
+
+def test_negative_receiving_yards_accrue_negative_points() -> None:
+    # Screen pass for a loss: 1 catch for -4 yards. Receptions still earn
+    # the PPR point; yardage still subtracts.
+    result = apply_rules({"receptions": 1, "receiving_yards": -4}, STD_PPR_RULES)
+    # 1 PPR point + (-4 / 10 = -0.4) = 0.6
+    assert result.total_points == pytest.approx(0.6)
+
+
+def test_negative_yards_with_threshold_min_zero_match_loader_shape() -> None:
+    # Mirrors exactly what the M4 scoring scraper emits: per-unit rules
+    # carry threshold_min=0.0 (not None) so the (season, cat, key,
+    # threshold_min) unique constraint round-trips through SQL upsert.
+    rules = ScoringRules(
+        season_id=1,
+        rules=(
+            _rule(
+                "rushing",
+                "rushing_yards",
+                points_per_unit=1.0,
+                unit_size=10.0,
+                threshold_min=0.0,
+            ),
+        ),
+    )
+    assert apply_rules({"rushing_yards": -3}, rules).total_points == pytest.approx(-0.3)
+    assert apply_rules({"rushing_yards": 50}, rules).total_points == pytest.approx(5.0)
+
+
+def test_threshold_min_positive_still_clips_negatives() -> None:
+    # The "only yards above 100 count" semantic is preserved: a sub-100
+    # game (including negative yardage games) earns zero from this rule.
+    rules = ScoringRules(
+        season_id=1,
+        rules=(
+            _rule(
+                "rushing",
+                "rushing_yards",
+                points_per_unit=1.0,
+                threshold_min=100.0,
+            ),
+        ),
+    )
+    assert apply_rules({"rushing_yards": -3}, rules).total_points == 0.0
+    assert apply_rules({"rushing_yards": 99}, rules).total_points == 0.0
+    assert apply_rules({"rushing_yards": 120}, rules).total_points == 20.0
+
+
 def test_zero_unit_size_rule_skipped_safely() -> None:
     # A misconfigured rule (unit_size=0) would divide by zero — the
     # engine must skip it rather than blowing up the whole stat line.
@@ -506,9 +565,7 @@ def test_threshold_min_only_shifts_per_unit_window() -> None:
     # 1 point per 1 yard above 100, with no cap
     rules = ScoringRules(
         season_id=1,
-        rules=(
-            _rule("rushing", "rushing_yards", points_per_unit=1.0, threshold_min=100.0),
-        ),
+        rules=(_rule("rushing", "rushing_yards", points_per_unit=1.0, threshold_min=100.0),),
     )
     assert apply_rules({"rushing_yards": 99}, rules).total_points == 0.0
     assert apply_rules({"rushing_yards": 150}, rules).total_points == 50.0

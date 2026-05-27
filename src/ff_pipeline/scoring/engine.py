@@ -110,7 +110,13 @@ def _score_rule(stats: Mapping[str, float], rule: ScoringRule) -> float:
 
     stat_value = stats.get(rule.stat_key, 0)
     effective_value = float(stat_value)
-    if rule.threshold_min is not None:
+    # threshold_min > 0 means a real lower-bound rule ("only yards above
+    # 100 count"); clip negative remainders to zero. threshold_min == 0 (or
+    # None) means "no floor" — negative stat values still accrue negative
+    # points, which is correct for rushing/receiving yards where carries
+    # for a loss DO subtract fantasy points (NFL.com awards -0.3 for a
+    # -3 yard carry under a "1 pt / 10 yds" rule).
+    if rule.threshold_min is not None and rule.threshold_min > 0:
         effective_value = max(0.0, effective_value - rule.threshold_min)
     if rule.threshold_max is not None:
         cap = rule.threshold_max - (rule.threshold_min or 0.0)
