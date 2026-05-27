@@ -77,9 +77,7 @@ class League(Base):
 
 class Season(Base):
     __tablename__ = "seasons"
-    __table_args__ = (
-        UniqueConstraint("league_id", "year", name="uq_seasons_league_year"),
-    )
+    __table_args__ = (UniqueConstraint("league_id", "year", name="uq_seasons_league_year"),)
 
     season_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     league_id: Mapped[str] = mapped_column(
@@ -107,9 +105,7 @@ class Season(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
     league: Mapped[League] = relationship(back_populates="seasons")
-    teams: Mapped[list[Team]] = relationship(
-        back_populates="season", foreign_keys="Team.season_id"
-    )
+    teams: Mapped[list[Team]] = relationship(back_populates="season", foreign_keys="Team.season_id")
     scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season")
     matchups: Mapped[list[Matchup]] = relationship(back_populates="season")
 
