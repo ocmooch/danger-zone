@@ -104,6 +104,16 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.ruff.lint.flake8-type-checking]
+# SQLAlchemy 2.0 reads typed annotations at runtime to infer column types
+# (Mapped[datetime] -> DateTime, etc.). Moving those imports into a
+# TYPE_CHECKING block would break model registration, so flag Base
+# subclasses as runtime-evaluated.
+runtime-evaluated-base-classes = [
+    "ff_pipeline.repository.database.Base",
+    "sqlalchemy.orm.DeclarativeBase",
+]
+
 # ============================================================
 # MyPy (type checker)
 # ============================================================
