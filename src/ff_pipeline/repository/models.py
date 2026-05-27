@@ -213,7 +213,12 @@ class ScoringRule(Base):
 class Player(Base):
     __tablename__ = "players"
     __table_args__ = (
-        Index("ix_players_gsis_id", "gsis_id"),
+        # gsis_id is the canonical NFL ID used by nflverse, which is the
+        # nflverse crawler's natural upsert key. UNIQUE (not just an INDEX)
+        # so ON CONFLICT can target it. Nullable so non-nflverse-known
+        # players (e.g. seen first on NFL.com) can land before M7 normalizes
+        # them.
+        UniqueConstraint("gsis_id", name="uq_players_gsis_id"),
         Index("ix_players_sleeper_id", "sleeper_id"),
         Index("ix_players_nfl_com_player_id", "nfl_com_player_id"),
     )
