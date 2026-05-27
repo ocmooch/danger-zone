@@ -1,0 +1,67 @@
+# Environment / secrets — NEVER COMMIT
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv/
+
+# Data — generated, not source
+data/
+!data/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Database backups
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Raw HTML captures (these can get large; opt-in)
+data/raw_pages/
+data/parse_failures/
+
+# nflverse cache (regeneratable)
+data/nflverse_cache/
