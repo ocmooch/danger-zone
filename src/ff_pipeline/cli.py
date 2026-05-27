@@ -129,15 +129,16 @@ def run_cmd(
     _ = (verify, dry_run)
 
     if source is None:
-        _stub("run (multi-source)", "M5-M8")
-    if source != "nflverse":
+        _stub("run (multi-source)", "M6-M8")
+    if source == "sleeper":
+        _stub("run --source sleeper", "M6")
+    if source not in {"nflverse", "nfl_com"}:
         _stub(f"run --source {source}", "M5 (nfl_com) / M6 (sleeper)")
 
     from datetime import datetime
 
     from sqlalchemy.orm import Session
 
-    from ff_pipeline.crawlers.nflverse.runner import run_nflverse
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.settings import get_settings
 
@@ -147,16 +148,80 @@ def run_cmd(
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as ss:
-            result = run_nflverse(ss, seasons=[target_year])
-            ss.commit()
+            if source == "nflverse":
+                from ff_pipeline.crawlers.nflverse.runner import run_nflverse
+
+                nflverse_result = run_nflverse(ss, seasons=[target_year])
+                ss.commit()
+                typer.echo(
+                    f"nflverse: players +{nflverse_result.players_added} "
+                    f"~{nflverse_result.players_updated}, "
+                    f"stats +{nflverse_result.stats_added} "
+                    f"~{nflverse_result.stats_updated} "
+                    f"({nflverse_result.duration_ms} ms)"
+                )
+            else:
+                # source == "nfl_com"
+                from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
+                from ff_pipeline.crawlers.nfl_com.league import (
+                    build_default_client,
+                    run_nfl_com,
+                )
+
+                week = _resolve_current_week(target_year)
+                cookie_value = settings.nfl_cookie.get_secret_value()
+                try:
+                    with build_default_client(
+                        cookie_value, settings.nfl_com_delay_seconds
+                    ) as client:
+                        nfl_result = run_nfl_com(
+                            ss,
+                            league_id=settings.nfl_league_id,
+                            year=target_year,
+                            week=week,
+                            fetcher=client,
+                        )
+                    ss.commit()
+                except AuthFailureError as exc:
+                    typer.secho(str(exc), fg="red", err=True)
+                    raise typer.Exit(code=77) from exc  # EX_NOPERM
+                typer.echo(
+                    f"nfl_com [{nfl_result.snapshot_kind}] week={week}: "
+                    f"owners +{nfl_result.owners_added}~{nfl_result.owners_updated}, "
+                    f"teams +{nfl_result.teams_added}~{nfl_result.teams_updated}, "
+                    f"rosters +{nfl_result.rosters_added}~{nfl_result.rosters_updated}, "
+                    f"matchups +{nfl_result.matchups_added}~{nfl_result.matchups_updated}, "
+                    f"transactions +{nfl_result.transactions_added}"
+                    f"~{nfl_result.transactions_updated}, "
+                    f"availability +{nfl_result.availability_added}"
+                    f"~{nfl_result.availability_updated} "
+                    f"({nfl_result.duration_ms} ms)"
+                )
+                if nfl_result.warnings:
+                    for w in nfl_result.warnings:
+                        typer.secho(f"warning: {w}", fg="yellow", err=True)
     finally:
         engine.dispose()
 
-    typer.echo(
-        f"nflverse: players +{result.players_added} ~{result.players_updated}, "
-        f"stats +{result.stats_added} ~{result.stats_updated} "
-        f"({result.duration_ms} ms)"
-    )
+
+def _resolve_current_week(year: int) -> int:
+    """Best-effort "what week is it now?" for the target season.
+
+    Phase 1 uses a fixed heuristic: the NFL regular season starts the
+    first Thursday of September, weeks roll on Tuesday. For pre-season
+    runs (calendar year matches target, before September) we default to
+    week 1 so transactions/availability still get scraped. Backfill of
+    historical weeks is M9's responsibility.
+    """
+    from datetime import date
+
+    today = date.today()
+    if today.year != year or today.month < 9:
+        return 1
+    # Approximate: weeks since Sept 1, clamped to [1, 18].
+    sept_first = date(year, 9, 1)
+    delta_weeks = ((today - sept_first).days // 7) + 1
+    return max(1, min(18, delta_weeks))
 
 
 # ---------------------------------------------------------------------------
@@ -267,17 +332,125 @@ app.add_typer(cookie_app, name="cookie")
 
 
 @cookie_app.command("set")
-def cookie_set_cmd() -> None:
-    """Refresh the NFL.com cookie (interactive prompt; validates before saving)."""
+def cookie_set_cmd(
+    cookie: str | None = typer.Option(
+        None,
+        "--cookie",
+        help="Cookie value (omit to be prompted; pipe with --stdin for non-TTY use).",
+    ),
+    from_stdin: bool = typer.Option(
+        False,
+        "--stdin",
+        help="Read the cookie value from stdin (e.g., pipe from a file).",
+    ),
+) -> None:
+    """Refresh the NFL.com cookie in ``.env`` after validating it.
+
+    The new value replaces the existing ``NFL_COOKIE=...`` line in
+    ``.env``; if ``.env`` doesn't exist it's created from scratch with
+    just that one variable. The cookie is **validated** against NFL.com
+    before being persisted — refusing to overwrite a working cookie with
+    a broken one is the most important safety property of this command.
+    """
     _bootstrap_settings_and_logging()
-    _stub("cookie set", "M5")
+
+    import sys
+
+    from ff_pipeline.crawlers.nfl_com.client import NflComClient, NflComClientError
+    from ff_pipeline.crawlers.nfl_com.urls import league_home
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+
+    if from_stdin and cookie is None:
+        cookie = sys.stdin.read().strip()
+    if cookie is None:
+        cookie = typer.prompt("Paste NFL.com cookie", hide_input=True).strip()
+    if not cookie:
+        typer.secho("Refusing to save an empty cookie.", fg="red", err=True)
+        raise typer.Exit(code=65)
+
+    probe_url = league_home(settings.nfl_league_id)
+    try:
+        with NflComClient(cookie=cookie, delay_seconds=0.0) as client:
+            ok = client.test_auth(probe_url)
+    except NflComClientError as exc:
+        typer.secho(f"Could not reach NFL.com: {exc}", fg="red", err=True)
+        raise typer.Exit(code=69) from exc  # EX_UNAVAILABLE
+
+    if not ok:
+        typer.secho(
+            "Cookie validation failed (login marker present). Not saving.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=77)  # EX_NOPERM
+
+    env_path = PROJECT_ROOT / ".env"
+    _write_env_value(env_path, "NFL_COOKIE", cookie)
+    typer.echo(f"Cookie validated and saved to {env_path}.")
 
 
 @cookie_app.command("test")
 def cookie_test_cmd() -> None:
     """Verify the current cookie works (one auth-check request to NFL.com)."""
     _bootstrap_settings_and_logging()
-    _stub("cookie test", "M5")
+
+    from ff_pipeline.crawlers.nfl_com.client import (
+        AuthFailureError,
+        NflComClient,
+        NflComClientError,
+    )
+    from ff_pipeline.crawlers.nfl_com.urls import league_home
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    cookie = settings.nfl_cookie.get_secret_value()
+    try:
+        with NflComClient(cookie=cookie, delay_seconds=settings.nfl_com_delay_seconds) as client:
+            ok = client.test_auth(league_home(settings.nfl_league_id))
+    except AuthFailureError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=77) from exc
+    except NflComClientError as exc:
+        typer.secho(f"Could not reach NFL.com: {exc}", fg="red", err=True)
+        raise typer.Exit(code=69) from exc
+
+    if ok:
+        typer.secho("Cookie is valid.", fg="green")
+    else:
+        typer.secho(
+            "Cookie is invalid; refresh via `ff-pipeline cookie set`.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=77)
+
+
+def _write_env_value(env_path: Path, key: str, value: str) -> None:
+    """Idempotently set ``KEY=...`` in a ``.env`` file.
+
+    Replaces the existing line if present, else appends. The value is
+    wrapped in single quotes (matching the existing ``.env.example``
+    convention so the cookie's ``;`` and ``=`` chars survive).
+    """
+
+    line = f"{key}='{value}'"
+    if not env_path.exists():
+        env_path.write_text(line + "\n", encoding="utf-8")
+        return
+    existing = env_path.read_text(encoding="utf-8").splitlines()
+    out: list[str] = []
+    replaced = False
+    for entry in existing:
+        if entry.startswith(f"{key}=") or entry.startswith(f"{key} ="):
+            out.append(line)
+            replaced = True
+        else:
+            out.append(entry)
+    if not replaced:
+        out.append(line)
+    env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
