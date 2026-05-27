@@ -9,6 +9,11 @@ during the implementation phase rather than appearing to succeed.
 
 from __future__ import annotations
 
+# typer reads parameter annotations at runtime (via get_type_hints) to
+# resolve option types, so Path must be imported eagerly — not inside
+# TYPE_CHECKING.
+from pathlib import Path  # noqa: TC003
+
 import typer
 
 from ff_pipeline import __version__
@@ -111,13 +116,47 @@ def run_cmd(
         "--source",
         help="Sync only one source: nflverse | nfl_com | sleeper.",
     ),
+    season: int | None = typer.Option(
+        None,
+        "--season",
+        help="Restrict to a single season year (default: current calendar year).",
+    ),
     verify: bool = typer.Option(False, "--verify", help="Run data-quality checks at end."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would happen; don't write."),
 ) -> None:
     """Full sync from all sources (or just one with --source)."""
     _bootstrap_settings_and_logging()
-    _ = (source, verify, dry_run)
-    _stub("run", "M4-M8")
+    _ = (verify, dry_run)
+
+    if source is None:
+        _stub("run (multi-source)", "M5-M8")
+    if source != "nflverse":
+        _stub(f"run --source {source}", "M5 (nfl_com) / M6 (sleeper)")
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nflverse.runner import run_nflverse
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    target_year = season or datetime.now().year
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = run_nflverse(ss, seasons=[target_year])
+            ss.commit()
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"nflverse: players +{result.players_added} ~{result.players_updated}, "
+        f"stats +{result.stats_added} ~{result.stats_updated} "
+        f"({result.duration_ms} ms)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +278,90 @@ def cookie_test_cmd() -> None:
     """Verify the current cookie works (one auth-check request to NFL.com)."""
     _bootstrap_settings_and_logging()
     _stub("cookie test", "M5")
+
+
+# ---------------------------------------------------------------------------
+# scoring sub-app
+# ---------------------------------------------------------------------------
+
+scoring_app = typer.Typer(
+    name="scoring",
+    help="Manage the league's scoring rules.",
+    no_args_is_help=True,
+)
+app.add_typer(scoring_app, name="scoring")
+
+
+@scoring_app.command("load")
+def scoring_load_cmd(
+    csv: Path = typer.Option(  # noqa: B008  (typer-idiomatic)
+        ...,
+        "--csv",
+        help="Path to the league's scoring-rules CSV (NFL.com /settings export).",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    fixtures_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--fixtures-dir",
+        help="Directory to copy the CSV into for the M9 verifier (default: tests/fixtures/scoring_rules).",
+    ),
+) -> None:
+    """Parse a league settings export, upsert league/season/scoring_rules rows.
+
+    Idempotent: re-running the same CSV updates ``points_per_unit`` etc.
+    in place but never duplicates rules. The CSV is preserved in
+    ``fixtures_dir`` so the M9 scoring verifier has a canonical copy.
+    """
+
+    _bootstrap_settings_and_logging()
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.scoring.scraper import (
+        ScoringParseError,
+        apply_settings_to_db,
+        parse_settings_csv,
+    )
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    try:
+        parsed = parse_settings_csv(csv)
+    except ScoringParseError as exc:
+        typer.secho(f"Failed to parse {csv}: {exc}", fg="red", err=True)
+        raise typer.Exit(code=65) from exc  # EX_DATAERR
+
+    if parsed.league_id != settings.nfl_league_id:
+        typer.secho(
+            f"League ID in CSV ({parsed.league_id}) != .env NFL_LEAGUE_ID "
+            f"({settings.nfl_league_id}). Refusing to load.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=65)
+
+    target_fixtures = fixtures_dir or (PROJECT_ROOT / "tests" / "fixtures" / "scoring_rules")
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as session:
+            counts = apply_settings_to_db(
+                session,
+                parsed,
+                source_path=csv,
+                fixtures_dir=target_fixtures,
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"Loaded {len(parsed.rules)} rules for league={parsed.league_id} "
+        f"season={parsed.season_year}: +{counts.rows_added} added, "
+        f"~{counts.rows_updated} updated."
+    )
 
 
 # ---------------------------------------------------------------------------
