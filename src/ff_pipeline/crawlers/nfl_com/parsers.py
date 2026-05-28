@@ -88,7 +88,11 @@ class ParsedOwner:
 
 @dataclass(frozen=True, slots=True)
 class ParsedRosterEntry:
-    """One slot on a team's roster (one player or an empty bench slot)."""
+    """One slot on a team's roster (one player or an empty bench slot).
+
+    ``points`` is populated only when the row carries a ``.playerTotal``
+    span (i.e. gamecenter pages). Regular team-roster pages emit ``None``.
+    """
 
     roster_slot: str
     is_starter: bool
@@ -98,6 +102,7 @@ class ParsedRosterEntry:
     nfl_team: str | None
     opponent: str | None
     game_status: str | None
+    points: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -490,6 +495,8 @@ def _parse_roster_row(tr: Tag) -> ParsedRosterEntry | None:
     position, nfl_team = _position_and_team_from_row(tr)
     opp_node = tr.select_one(".playerOpponent")
     status_node = tr.select_one(".playerGameStatus")
+    points_node = tr.select_one("span.playerTotal")
+    points = _parse_float(points_node.get_text(strip=True)) if points_node else None
 
     return ParsedRosterEntry(
         roster_slot=roster_slot,
@@ -500,6 +507,7 @@ def _parse_roster_row(tr: Tag) -> ParsedRosterEntry | None:
         nfl_team=nfl_team,
         opponent=opp_node.get_text(strip=True) if opp_node else None,
         game_status=status_node.get_text(strip=True) if status_node else None,
+        points=points,
     )
 
 

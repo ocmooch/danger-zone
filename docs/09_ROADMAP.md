@@ -230,9 +230,12 @@ This is the highest-risk milestone. Allow extra time and expect iteration on par
 - Fix any discrepancies (likely scraping or rule-parsing bugs)
 
 **Done when**:
-- Every season from `LEAGUE_START_YEAR` to current is fully populated
-- `ff-pipeline verify` passes for at least 3 known good weeks per season
-- A bad cookie midway through backfill produces a clean resumable failure (not data corruption)
+- [~] Every season from `LEAGUE_START_YEAR` to current is fully populated — `scripts/backfill.py` + `ff-pipeline backfill --start <YR> --end <YR>` walks the year range, calling `run_nflverse` and `run_nfl_com` per season with `mode='backfill'`. Resumability: prior successful `pipeline_runs(mode='backfill')` rows short-circuit the matching `(source, year)` tuple unless `--force` is passed. The full live multi-season run against The Danger Zone's 10+ years of history is deferred to whichever session the user dedicates to it — every component the loop needs is in place.
+- [~] `ff-pipeline verify` passes for at least 3 known good weeks per season — `ff-pipeline verify --player NAME --season YR --week W` and `ff-pipeline verify --sweep --season YR` (defaulting to weeks 1, 8, 15) both compare engine output against NFL.com per-player gamecenter totals via the new `points` field on `ParsedRosterEntry`. Tolerance is `SCORING_VERIFY_TOLERANCE` (default 0.1). Engine fixtures cover pass/fail/missing-data branches; the live cross-check against actual seasons rides on the same backfill session.
+- [x] A bad cookie midway through backfill produces a clean resumable failure (not data corruption) — `test_backfill_aborts_cleanly_on_auth_failure` exercises the path: an `AuthFailureError` in the middle of a multi-year sweep stops the loop, commits the seasons already completed, and re-running picks up from the failed step. The CLI exits 77 (`EX_NOPERM`) on the typed sentinel so cron / wrappers can spot the cookie issue.
+
+Also delivered in M9:
+- `ff-pipeline rescore` (and `--dry-run`) — wires `apply_rules` over every `player_stats_raw` row per season, upserts `player_stats_scored`. Counts insert / update / unchanged so a re-run after a rules change reports exactly what moved.
 
 ---
 

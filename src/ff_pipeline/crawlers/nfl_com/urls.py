@@ -46,6 +46,19 @@ def gamecenter(league_id: str, game_id: str) -> str:
     return f"{BASE_URL}/league/{league_id}/gamecenter?gameId={game_id}"
 
 
+def team_gamecenter(league_id: str, year: int, team_id: int | str, week: int) -> str:
+    """Per-team-per-week historical lineup view.
+
+    Used by the M9 verifier to read NFL.com's stored per-player point
+    totals for one side of a matchup; the parser handles both
+    ``gamecenter`` and ``teamgamecenter`` markup.
+    """
+    return (
+        f"{BASE_URL}/league/{league_id}/history/{year}/teamgamecenter"
+        f"?teamId={team_id}&week={week}"
+    )
+
+
 def transactions(league_id: str, year: int) -> str:
     return f"{BASE_URL}/league/{league_id}/history/{year}/transactions"
 
@@ -82,6 +95,7 @@ __all__ = [
     "season_home",
     "settings",
     "standings",
+    "team_gamecenter",
     "team_home",
     "transactions",
     "waivers",

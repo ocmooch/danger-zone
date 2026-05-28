@@ -288,13 +288,146 @@ def _resolve_current_week(year: int) -> int:
 
 @app.command("backfill")
 def backfill_cmd(
-    start: int | None = typer.Option(None, "--start", help="Earliest season year to backfill."),
-    season: int | None = typer.Option(None, "--season", help="Backfill only this season."),
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year to backfill (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year (inclusive). Default: current calendar year."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Backfill only this season (sets --start and --end)."
+    ),
+    source: list[str] | None = typer.Option(  # noqa: B008  (typer-idiomatic)
+        None,
+        "--source",
+        help=(
+            "Restrict to one source per flag, repeatable: nflverse | nfl_com. "
+            "Default: both."
+        ),
+    ),
+    week: int = typer.Option(
+        1,
+        "--week",
+        help=(
+            "NFL.com week to attach the per-season snapshot to (rosters / "
+            "matchups / availability). Defaults to 1 — sufficient for most "
+            "historical-shape backfills since matchups are scraped from the "
+            "history pages."
+        ),
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run seasons already marked complete in pipeline_runs."
+    ),
 ) -> None:
     """Pull historical seasons (resumable, idempotent)."""
     _bootstrap_settings_and_logging()
-    _ = (start, season)
-    _stub("backfill", "M9")
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.backfill import (
+        DEFAULT_SOURCES,
+        BackfillSource,
+        run_backfill,
+    )
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = season
+        end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        end_year = end if end is not None else datetime.now().year
+
+    if start_year > end_year:
+        typer.secho(
+            f"--start ({start_year}) must be <= --end ({end_year}).",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    chosen: tuple[BackfillSource, ...]
+    if not source:
+        chosen = DEFAULT_SOURCES
+    else:
+        bad = [s for s in source if s not in {"nflverse", "nfl_com"}]
+        if bad:
+            typer.secho(
+                f"--source values must be nflverse|nfl_com (got {bad!r}).",
+                fg="red",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        # preserve order: nflverse before nfl_com so players exist first.
+        # The literal values come from a fixed tuple, so we narrow them
+        # here with a cast — mypy can't see through `s in source`.
+        from typing import cast
+
+        ordered: list[BackfillSource] = [
+            cast(BackfillSource, s) for s in ("nflverse", "nfl_com") if s in source
+        ]
+        chosen = tuple(ordered)
+
+    cookie_value = (
+        settings.nfl_cookie.get_secret_value() if "nfl_com" in chosen else None
+    )
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = run_backfill(
+                ss,
+                league_id=settings.nfl_league_id,
+                start_year=start_year,
+                end_year=end_year,
+                cookie_value=cookie_value,
+                delay_seconds=settings.nfl_com_delay_seconds,
+                sources=chosen,
+                week=week,
+                force=force,
+            )
+    finally:
+        engine.dispose()
+
+    for outcome in result.per_season:
+        color: str | None
+        if outcome.status == "completed":
+            color = "green"
+        elif outcome.status == "skipped":
+            color = "yellow"
+        else:
+            color = "red"
+        typer.secho(
+            f"  {outcome.year} {outcome.source}: {outcome.status}"
+            + (f" — {outcome.detail}" if outcome.detail else ""),
+            fg=color,
+        )
+    typer.echo(
+        f"Backfill: completed={result.completed}, skipped={result.skipped}, "
+        f"failed={result.failed}"
+    )
+    if result.aborted_at is not None:
+        src, yr = result.aborted_at
+        typer.secho(
+            f"Aborted at {yr} {src}. Re-run `ff-pipeline backfill` to resume.",
+            fg="yellow",
+            err=True,
+        )
+        # Auth-failure detail tags the failing outcome; map to EX_NOPERM.
+        failed = next(
+            (
+                o
+                for o in result.per_season
+                if o.status == "failed" and (o.source, o.year) == result.aborted_at
+            ),
+            None,
+        )
+        if failed is not None and failed.detail and "AuthFailureError" in failed.detail:
+            raise typer.Exit(code=77)
+        raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------
@@ -309,8 +442,54 @@ def rescore_cmd(
 ) -> None:
     """Recompute league points from raw stats using current scoring rules."""
     _bootstrap_settings_and_logging()
-    _ = (season, dry_run)
-    _stub("rescore", "M3 + M9")
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.scoring.rescore import rescore_seasons
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    season_years = [season] if season is not None else None
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = rescore_seasons(
+                ss,
+                season_years=season_years,
+                league_id=settings.nfl_league_id,
+                dry_run=dry_run,
+            )
+            if not dry_run:
+                ss.commit()
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"Rescore: seasons={result.seasons_processed} scored={result.rows_scored} "
+        f"added={result.rows_added} updated={result.rows_updated} "
+        f"unchanged={result.rows_unchanged}"
+    )
+    if result.missing_rules_seasons:
+        years = ", ".join(str(y) for y in result.missing_rules_seasons)
+        typer.secho(
+            f"warning: no scoring rules loaded for seasons: {years} "
+            "(load via `ff-pipeline scoring load`).",
+            fg="yellow",
+            err=True,
+        )
+    if dry_run:
+        if not result.diffs:
+            typer.echo("No changes from current scored values.")
+        else:
+            typer.echo(f"Diffs (showing up to {len(result.diffs)}):")
+            for d in result.diffs:
+                prev = "—" if d.previous_total is None else f"{d.previous_total:.2f}"
+                typer.echo(
+                    f"  season_id={d.season_id} player_id={d.player_id} "
+                    f"week={d.week}: {prev} -> {d.new_total:.2f}"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -335,14 +514,103 @@ def status_cmd(
 
 @app.command("verify")
 def verify_cmd(
-    player: str = typer.Option(..., "--player", help="Player name (e.g., 'Lamar Jackson')."),
+    player: str | None = typer.Option(
+        None,
+        "--player",
+        help="Player name (e.g., 'Lamar Jackson'). Omit + use --sweep for season sweep.",
+    ),
     season: int = typer.Option(..., "--season", help="Season year."),
-    week: int = typer.Option(..., "--week", help="Week number."),
+    week: int | None = typer.Option(
+        None, "--week", help="Week number. Required with --player; ignored with --sweep."
+    ),
+    sweep: bool = typer.Option(
+        False,
+        "--sweep",
+        help="Sweep mode: verify every starter on 3 named weeks for --season.",
+    ),
 ) -> None:
     """Cross-check our scoring vs. NFL.com's stored point total."""
     _bootstrap_settings_and_logging()
-    _ = (player, season, week)
-    _stub("verify", "M9")
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
+    from ff_pipeline.crawlers.nfl_com.league import build_default_client
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.scoring.verify import (
+        VerifyReport,
+        verify_player,
+        verify_season_sweep,
+    )
+    from ff_pipeline.settings import get_settings
+
+    if sweep and player is not None:
+        typer.secho("--sweep and --player are mutually exclusive.", fg="red", err=True)
+        raise typer.Exit(code=2)
+    if not sweep and player is None:
+        typer.secho("Provide --player + --week, or pass --sweep.", fg="red", err=True)
+        raise typer.Exit(code=2)
+    if not sweep and week is None:
+        typer.secho("--week is required when --player is set.", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    settings = get_settings()
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    tolerance = settings.scoring_verify_tolerance
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            try:
+                with build_default_client(
+                    cookie_value, settings.nfl_com_delay_seconds
+                ) as client:
+                    if sweep:
+                        report = verify_season_sweep(
+                            ss,
+                            league_id=settings.nfl_league_id,
+                            season_year=season,
+                            fetcher=client,
+                            tolerance=tolerance,
+                        )
+                    else:
+                        # mypy: player/week are guaranteed by the validations above
+                        assert player is not None
+                        assert week is not None
+                        comparison = verify_player(
+                            ss,
+                            league_id=settings.nfl_league_id,
+                            player_name=player,
+                            season_year=season,
+                            week=week,
+                            fetcher=client,
+                            tolerance=tolerance,
+                        )
+                        report = VerifyReport(comparisons=(comparison,), tolerance=tolerance)
+            except AuthFailureError as exc:
+                typer.secho(str(exc), fg="red", err=True)
+                raise typer.Exit(code=77) from exc
+    finally:
+        engine.dispose()
+
+    for c in report.comparisons:
+        ours = "—" if c.our_points is None else f"{c.our_points:.2f}"
+        theirs = "—" if c.nfl_com_points is None else f"{c.nfl_com_points:.2f}"
+        delta = "—" if c.delta is None else f"{c.delta:+.2f}"
+        status_color = "green" if c.passed else "red"
+        status = "PASS" if c.passed else "FAIL"
+        suffix = f" [{c.note}]" if c.note else ""
+        typer.secho(
+            f"  {c.season_year} W{c.week:>2} {c.player_name or '?':<28} "
+            f"ours={ours:>7} nfl={theirs:>7} delta={delta:>7}  {status}{suffix}",
+            fg=status_color,
+        )
+    typer.echo(
+        f"Verify: total={report.total} passed={report.passed} failed={report.failed} "
+        f"(tolerance={tolerance})"
+    )
+    if report.failed > 0:
+        raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------

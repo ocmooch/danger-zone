@@ -52,3 +52,24 @@ def test_run_command_help_lists_sleeper_as_source() -> None:
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     assert "sleeper" in result.stdout
+
+
+def test_backfill_command_help_lists_start_end_source() -> None:
+    result = runner.invoke(app, ["backfill", "--help"])
+    assert result.exit_code == 0
+    for flag in ("--start", "--end", "--season", "--source", "--week", "--force"):
+        assert flag in result.stdout, f"missing flag in backfill --help: {flag}"
+
+
+def test_verify_command_help_lists_sweep_mode() -> None:
+    result = runner.invoke(app, ["verify", "--help"])
+    assert result.exit_code == 0
+    for flag in ("--player", "--season", "--week", "--sweep"):
+        assert flag in result.stdout, f"missing flag in verify --help: {flag}"
+
+
+def test_rescore_command_help_lists_dry_run() -> None:
+    result = runner.invoke(app, ["rescore", "--help"])
+    assert result.exit_code == 0
+    assert "--season" in result.stdout
+    assert "--dry-run" in result.stdout
