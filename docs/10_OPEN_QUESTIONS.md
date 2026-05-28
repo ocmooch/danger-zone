@@ -244,6 +244,33 @@ that includes at least one trade (M9 backfill will hit one). Save as
 `tests/fixtures/nfl_com_html/transactions_with_trade.html` and add a
 parser test.
 
+### M7-V1. End-to-end "every roster player has all IDs" verification deferred
+
+**Observed**: M7's `PlayerResolver` merges IDs across sources via direct
+match + fuzzy fallback and has full unit coverage, but a live "run all
+three crawlers against the user's league and assert every rostered player
+has `{gsis_id, sleeper_id, nfl_com_player_id}` populated" check has not
+been executed. Doing it now would require a live multi-source run, which
+is M8's natural scope (the API will need a `/players/{id}` endpoint that
+exposes the merged shape).
+
+**Owner**: M8 — once the API is up, add a one-shot script
+(`scripts/audit_player_ids.py` or similar) that walks the current
+roster and asserts the resolver succeeded for every row. Any holes
+become candidates for the `player_id_overrides` table.
+
+### M7-V2. PlayerResolver doesn't recover from cross-source ID conflicts
+
+**Observed**: When two sources disagree on, say, `sleeper_id` for the
+same canonical player (an actual upstream bug), the resolver logs a
+warning and refuses to overwrite the incumbent value. The operator must
+manually intervene via the `player_id_overrides` table — but the CLI
+exposes no command to do that yet.
+
+**Owner**: M10 ops — add `ff-pipeline normalize override add
+--kind sleeper_id --value 9999 --player-id 42` so operators can resolve
+conflicts without hand-writing SQL.
+
 ### M5-V7. Cookie refresh cadence still uncharacterized
 
 **Observed**: The cookie the user pasted on 2026-05-27 was refreshed

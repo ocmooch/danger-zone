@@ -45,6 +45,7 @@ from ff_pipeline.crawlers.sleeper.endpoints import (
     SleeperTrend,
 )
 from ff_pipeline.logging_config import get_logger
+from ff_pipeline.normalizer.player_ids import PlayerIdentity, PlayerResolver
 from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
@@ -175,7 +176,8 @@ def _do_run(
     client = SleeperClient(source)
 
     sleeper_players = client.players()
-    sleeper_id_updates = _sync_sleeper_ids(session, sleeper_players)
+    resolver = PlayerResolver(session)
+    sleeper_id_updates = _sync_sleeper_ids(session, sleeper_players, resolver=resolver)
     session.flush()
 
     sleeper_to_player_id = _build_sleeper_to_player_id_map(session)
@@ -263,40 +265,40 @@ def _do_run(
 # ---------------------------------------------------------------------------
 
 
-def _sync_sleeper_ids(session: Session, sleeper_players: list[SleeperPlayer]) -> int:
-    """Stamp ``players.sleeper_id`` on rows whose gsis_id matches Sleeper's.
+def _sync_sleeper_ids(
+    session: Session,
+    sleeper_players: list[SleeperPlayer],
+    *,
+    resolver: PlayerResolver,
+) -> int:
+    """Merge Sleeper-known IDs onto existing ``players`` rows.
 
-    Players Sleeper knows about but we've never seen via nflverse (no
-    matching gsis_id) are skipped — the M7 normalizer will fold those in.
-    Only counts rows where the sleeper_id actually *changed* (so re-runs
-    don't show inflated update counts).
+    The resolver does the heavy lifting: direct gsis_id match first, then
+    fuzzy name+position. Sleeper-only players (whom we've never seen via
+    nflverse or NFL.com) are *not* stubbed — that would flood ``players``
+    with thousands of rows the league will never join against. Returns
+    the count of players whose Sleeper ID was newly stamped during this
+    pass.
     """
+    _ = session  # state lives on resolver / its session — kept for symmetry
 
-    gsis_to_sleeper: dict[str, str] = {}
+    before = resolver.stats.merged_ids_by_kind.get("sleeper_id", 0)
     for sp in sleeper_players:
-        if sp.gsis_id and sp.sleeper_id:
-            gsis_to_sleeper[sp.gsis_id] = sp.sleeper_id
-
-    if not gsis_to_sleeper:
-        return 0
-
-    stmt = select(Player.player_id, Player.gsis_id, Player.sleeper_id).where(
-        Player.gsis_id.in_(list(gsis_to_sleeper))
-    )
-    rows = session.execute(stmt).all()
-
-    updates: list[dict[str, object]] = []
-    for player_id, gsis_id, current_sleeper_id in rows:
-        new_sleeper_id = gsis_to_sleeper.get(gsis_id)
-        if new_sleeper_id is None or current_sleeper_id == new_sleeper_id:
+        if not sp.sleeper_id:
             continue
-        updates.append({"player_id": player_id, "sleeper_id": new_sleeper_id})
-
-    if not updates:
-        return 0
-
-    session.bulk_update_mappings(Player, updates)  # type: ignore[arg-type]
-    return len(updates)
+        identity = PlayerIdentity(
+            name_full=sp.full_name or sp.sleeper_id,
+            name_first=sp.first_name,
+            name_last=sp.last_name,
+            position=sp.position,
+            nfl_team=sp.nfl_team,
+            gsis_id=sp.gsis_id,
+            sleeper_id=sp.sleeper_id,
+            espn_id=sp.espn_id,
+            yahoo_id=sp.yahoo_id,
+        )
+        resolver.try_match(identity, source="sleeper")
+    return resolver.stats.merged_ids_by_kind.get("sleeper_id", 0) - before
 
 
 def _build_sleeper_to_player_id_map(session: Session) -> dict[str, int]:

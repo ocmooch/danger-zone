@@ -241,6 +241,39 @@ class Player(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class PlayerIdOverride(Base):
+    """Manual pin from one external ID to an internal ``player_id``.
+
+    Consulted by the M7 normalizer *before* direct-ID or fuzzy matching, so
+    stubborn cases (e.g. "Marvin Mims Jr." vs. "Marvin Mims" — same player,
+    different display names across sources) can be resolved without code
+    changes. ``external_id_kind`` must name one of the ID columns on
+    ``players`` (``gsis_id`` / ``sleeper_id`` / ``nfl_com_player_id`` /
+    ``espn_id`` / ``yahoo_id``); the resolver enforces this at lookup time.
+    """
+
+    __tablename__ = "player_id_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "external_id_kind",
+            "external_id_value",
+            name="uq_player_id_overrides_kind_value",
+        ),
+    )
+
+    override_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_id_value: Mapped[str] = mapped_column(String, nullable=False)
+    player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_id_overrides_player"),
+        nullable=False,
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class TeamRoster(Base):
     __tablename__ = "team_rosters"
     __table_args__ = (
@@ -572,6 +605,7 @@ __all__ = [
     "PipelineRun",
     "Player",
     "PlayerAvailability",
+    "PlayerIdOverride",
     "PlayerStatsRaw",
     "PlayerStatsScored",
     "Projection",

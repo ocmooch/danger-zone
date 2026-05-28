@@ -191,9 +191,9 @@ This is the highest-risk milestone. Allow extra time and expect iteration on par
 - `normalizer/conflicts.py`: implement precedence rules from `03_DATA_SOURCES.md`
 
 **Done when**:
-- Every player on your current roster has a complete row in `players` with all relevant IDs
-- Querying by GSIS ID returns the same player as querying by Sleeper ID
-- Unit tests cover the 3-4 most likely fuzzy-match failure cases
+- [~] Every player on your current roster has a complete row in `players` with all relevant IDs — `PlayerResolver` wired into the NFL.com + Sleeper runners merges `gsis_id` / `sleeper_id` / `nfl_com_player_id` / `espn_id` / `yahoo_id` onto a single row when sources agree (or fuzzy-match the same player by name+position). End-to-end verification across a real pipeline run is deferred to the M8 API service / M9 verifier (see `10_OPEN_QUESTIONS.md` §M7-V1).
+- [x] Querying by GSIS ID returns the same player as querying by Sleeper ID — exercised by `tests/unit/test_normalizer.py::TestResolverEndToEnd::test_query_by_any_id_returns_same_player`.
+- [x] Unit tests cover the 3-4 most likely fuzzy-match failure cases — "Marvin Mims Jr." vs "Marvin Mims", "D.J. Moore" vs "DJ Moore", same name + different position (Adrian Peterson RB vs WR), and Calvin Johnson with a conflicting `sleeper_id` (must NOT merge).
 
 ---
 

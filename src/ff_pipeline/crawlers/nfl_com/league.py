@@ -65,12 +65,12 @@ from ff_pipeline.crawlers.nfl_com.urls import (
     weekly_matchups,
 )
 from ff_pipeline.logging_config import get_logger
+from ff_pipeline.normalizer.player_ids import PlayerIdentity, PlayerResolver
 from ff_pipeline.repository.models import (
     League,
     Matchup,
     Owner,
     PipelineRun,
-    Player,
     PlayerAvailability,
     Season,
     SourceHealth,
@@ -165,6 +165,11 @@ def run_nfl_com(
         season_id = _upsert_season(session, league_id, year)
         session.flush()
 
+        # One PlayerResolver per run — caches every player lookup
+        # within the run so the per-row roster/transaction/availability
+        # helpers don't re-SELECT each time.
+        resolver = PlayerResolver(session)
+
         # --- Owners + teams ---
         owners_html = fetcher.get_html(owners(league_id))
         parsed_owners = parse_owners(owners_html)
@@ -184,6 +189,7 @@ def run_nfl_com(
             team_id_by_nfl_team_id=team_id_by_nfl_team_id,
             snapshot_kind=effective_snapshot,
             warnings=warnings,
+            resolver=resolver,
         )
 
         # --- Matchups ---
@@ -208,6 +214,7 @@ def run_nfl_com(
             parsed=parsed_txns,
             team_id_by_nfl_team_id=team_id_by_nfl_team_id,
             warnings=warnings,
+            resolver=resolver,
         )
 
         # --- League-wide availability sweep ---
@@ -219,6 +226,7 @@ def run_nfl_com(
             parsed=sweep.rows,
             team_id_by_nfl_team_id=team_id_by_nfl_team_id,
             snapshot_kind=effective_snapshot,
+            resolver=resolver,
         )
 
     except AuthFailureError as exc:
@@ -513,6 +521,7 @@ def _scrape_and_upsert_rosters(
     team_id_by_nfl_team_id: dict[int, int],
     snapshot_kind: SnapshotKind,
     warnings: list[str],
+    resolver: PlayerResolver,
 ) -> tuple[int, int]:
     _ = year  # roster is fetched as "current", not year-tagged — kept for symmetry
     total_added = 0
@@ -531,6 +540,7 @@ def _scrape_and_upsert_rosters(
             week=week,
             parsed=parsed,
             snapshot_kind=snapshot_kind,
+            resolver=resolver,
         )
         total_added += counts.rows_added
         total_updated += counts.rows_updated
@@ -544,6 +554,7 @@ def _upsert_team_roster(
     week: int,
     parsed: ParsedTeamRoster,
     snapshot_kind: SnapshotKind,
+    resolver: PlayerResolver,
 ) -> _Counts:
     rows = []
     season_year = _season_year_for_team(session, internal_team_id)
@@ -551,7 +562,7 @@ def _upsert_team_roster(
         if entry.player_id is None:
             continue
         internal_player_id = _ensure_player(
-            session,
+            resolver,
             nfl_com_player_id=entry.player_id,
             name=entry.player_name,
             position=entry.position,
@@ -664,6 +675,7 @@ def _upsert_transactions(
     parsed: Iterable[ParsedTransaction],
     team_id_by_nfl_team_id: dict[int, int],
     warnings: list[str],
+    resolver: PlayerResolver,
 ) -> _Counts:
     """Append-only style upsert.
 
@@ -698,7 +710,7 @@ def _upsert_transactions(
         team_id = team_id_by_nfl_team_id.get(t.team_id) if t.team_id is not None else None
         player_id = (
             _ensure_player(
-                session,
+                resolver,
                 nfl_com_player_id=t.player_id,
                 name=t.player_name,
             )
@@ -795,6 +807,7 @@ def _upsert_availability(
     parsed: Iterable[ParsedAvailability],
     team_id_by_nfl_team_id: dict[int, int],
     snapshot_kind: SnapshotKind,
+    resolver: PlayerResolver,
 ) -> _Counts:
     is_pre_kickoff = snapshot_kind == "pre_kickoff"
     rows: list[dict[str, object]] = []
@@ -803,7 +816,7 @@ def _upsert_availability(
             team_id_by_nfl_team_id.get(a.owning_team_id) if a.owning_team_id is not None else None
         )
         internal_player_id = _ensure_player(
-            session,
+            resolver,
             nfl_com_player_id=a.player_id,
             name=a.player_name,
             position=a.position,
@@ -840,64 +853,31 @@ def _upsert_availability(
 
 
 def _ensure_player(
-    session: Session,
+    resolver: PlayerResolver,
     *,
     nfl_com_player_id: str | None,
     name: str | None,
     position: str | None = None,
     nfl_team: str | None = None,
 ) -> int:
-    """Look up or create a ``players`` row keyed on ``nfl_com_player_id``.
+    """Resolve (or create) a ``players`` row for an NFL.com observation.
 
-    M7 will reconcile NFL.com IDs with nflverse/Sleeper IDs. For M5 we
-    just need a stable internal player_id to FK into.
+    Delegates to :class:`PlayerResolver` so cross-source ID merging and
+    fuzzy matching happen here instead of being duplicated per call site.
+    The resolver may match this observation against an existing
+    nflverse-populated row (by name+position) and stamp the NFL.com ID
+    onto it — that's the M7 cross-source join the deeper-dive docs
+    promise.
     """
-    if not nfl_com_player_id:
-        # Pure-name match — last-ditch fallback used only when NFL.com
-        # markup omits the player href. Returns the first matching row,
-        # or creates one.
-        if not name:
-            raise NflComClientError("_ensure_player called with neither nfl_com_player_id nor name")
-        existing = session.execute(
-            select(Player).where(Player.name_full == name)
-        ).scalar_one_or_none()
-        if existing is not None:
-            return existing.player_id
-        return _create_player(
-            session, nfl_com_player_id=None, name=name, position=position, nfl_team=nfl_team
-        )
-    existing = session.execute(
-        select(Player).where(Player.nfl_com_player_id == nfl_com_player_id)
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing.player_id
-    return _create_player(
-        session,
-        nfl_com_player_id=nfl_com_player_id,
-        name=name,
-        position=position,
-        nfl_team=nfl_team,
-    )
-
-
-def _create_player(
-    session: Session,
-    *,
-    nfl_com_player_id: str | None,
-    name: str | None,
-    position: str | None,
-    nfl_team: str | None,
-) -> int:
-    player = Player(
+    if not nfl_com_player_id and not name:
+        raise NflComClientError("_ensure_player called with neither nfl_com_player_id nor name")
+    identity = PlayerIdentity(
         name_full=name or nfl_com_player_id or "(unknown)",
-        nfl_com_player_id=nfl_com_player_id,
         position=position,
         nfl_team=nfl_team,
-        is_active=True,
+        nfl_com_player_id=nfl_com_player_id,
     )
-    session.add(player)
-    session.flush()
-    return player.player_id
+    return resolver.resolve(identity, source="nfl_com")
 
 
 # ---------------------------------------------------------------------------
