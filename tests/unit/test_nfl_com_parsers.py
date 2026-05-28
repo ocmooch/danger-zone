@@ -64,15 +64,19 @@ def test_parse_league_home_missing_links_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_parse_owners_returns_four_rows() -> None:
+def test_parse_owners_returns_twelve_rows() -> None:
     owners = parse_owners(_read("owners.html"))
-    assert len(owners) == 4
-    names = {o.display_name for o in owners}
-    assert "cobs.direct0l" in names
+    assert len(owners) == 12
     by_team = {o.team_id: o for o in owners}
-    assert by_team[1].team_name == "Maverick"
-    assert by_team[1].nfl_user_id == "12345"
-    assert by_team[3].display_name == "slider"
+    # Viewer's own team — cross-checked against analyticsData on the
+    # league_home fixture (userID=168722, teamID=4).
+    assert by_team[4].team_name == "The Wizard Of BAA'z"
+    assert by_team[4].display_name == "sully"
+    assert by_team[4].nfl_user_id == "168722"
+    # First team in standings rank
+    assert by_team[1].team_name == "Cream of the C"
+    assert by_team[1].display_name == "harry"
+    assert by_team[1].nfl_user_id == "102530"
 
 
 def test_parse_owners_missing_table_raises() -> None:

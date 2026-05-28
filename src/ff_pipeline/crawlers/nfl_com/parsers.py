@@ -329,6 +329,9 @@ def _extract_current_year(soup: BeautifulSoup) -> int | None:
 
 _TEAM_ID_FROM_HREF = re.compile(r"/team/(\d+)")
 _USER_ID_FROM_HREF = re.compile(r"/user/(\d+)")
+# Live NFL.com renders the owner as ``<span class="userName userId-NNN">``
+# rather than an anchor; the user id is embedded in the CSS class.
+_USER_ID_FROM_CLASS = re.compile(r"userId-(\d+)")
 
 
 def parse_owners(html: str) -> list[ParsedOwner]:
@@ -340,12 +343,14 @@ def parse_owners(html: str) -> list[ParsedOwner]:
     out: list[ParsedOwner] = []
     for tr in table.select("tbody tr"):
         team_anchor = tr.select_one("a.teamName") or _first_anchor_with_href(tr, "/team/")
-        owner_anchor = tr.select_one("a.userName") or _first_anchor_with_href(tr, "/user/")
-        if team_anchor is None and owner_anchor is None:
+        owner_node = tr.select_one("span.userName") or tr.select_one("a.userName")
+        if owner_node is None:
+            owner_node = _first_anchor_with_href(tr, "/user/")
+        if team_anchor is None and owner_node is None:
             continue
         team_id = _id_from_anchor(team_anchor, _TEAM_ID_FROM_HREF) if team_anchor else None
-        user_id = _id_from_anchor(owner_anchor, _USER_ID_FROM_HREF) if owner_anchor else None
-        display_name = owner_anchor.get_text(strip=True) if owner_anchor else ""
+        user_id = _user_id_from_node(owner_node) if owner_node is not None else None
+        display_name = owner_node.get_text(strip=True) if owner_node else ""
         team_name = team_anchor.get_text(strip=True) if team_anchor else None
         out.append(
             ParsedOwner(
@@ -358,6 +363,22 @@ def parse_owners(html: str) -> list[ParsedOwner]:
     if not out:
         raise ParseError("owners: tableType-team had no parseable rows")
     return out
+
+
+def _user_id_from_node(node: Tag) -> str | None:
+    """Extract a user id from a ``<span class="userName userId-NNN">`` or an anchor."""
+    href = node.get("href")
+    if isinstance(href, str):
+        match = _USER_ID_FROM_HREF.search(href)
+        if match:
+            return match.group(1)
+    classes: list[str] | str = node.get("class") or []
+    if isinstance(classes, list):
+        for cls in classes:
+            match = _USER_ID_FROM_CLASS.search(cls)
+            if match:
+                return match.group(1)
+    return None
 
 
 def _first_anchor_with_href(node: Tag, substring: str) -> Tag | None:
