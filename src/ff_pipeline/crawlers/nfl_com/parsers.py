@@ -958,11 +958,12 @@ _AVAILABILITY_STATUS_MAP = {
 
 def parse_availability_page(html: str) -> ParsedAvailabilityPage:
     soup = BeautifulSoup(html, "lxml")
-    table = soup.select_one("table.tableType-playerStats") or soup.select_one(
-        "table.tableType-player"
+    table = (
+        soup.select_one("table.tableType-player")
+        or soup.select_one("table.tableType-playerStats")
     )
     if table is None:
-        raise ParseError("availability: missing table.tableType-playerStats")
+        raise ParseError("availability: missing table.tableType-player")
 
     rows: list[ParsedAvailability] = []
     for tr in table.select("tbody tr"):
@@ -970,7 +971,7 @@ def parse_availability_page(html: str) -> ParsedAvailabilityPage:
         if parsed is not None:
             rows.append(parsed)
     if not rows:
-        raise ParseError("availability: tableType-playerStats had no parseable rows")
+        raise ParseError("availability: tableType-player had no parseable rows")
 
     total_count = _extract_availability_total(soup)
     next_offset = _extract_next_offset(soup)
@@ -982,7 +983,9 @@ def parse_availability_page(html: str) -> ParsedAvailabilityPage:
 
 
 def _parse_availability_row(tr: Tag) -> ParsedAvailability | None:
-    player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
+    info_cell = tr.select_one(".playerNameAndInfo")
+    container: Tag = info_cell or tr
+    player_anchor = container.select_one("a.playerName") or _first_player_anchor(container)
     if player_anchor is None:
         return None
     player_id = _player_id_from_anchor(player_anchor)
@@ -990,38 +993,69 @@ def _parse_availability_row(tr: Tag) -> ParsedAvailability | None:
         return None
     player_name = player_anchor.get_text(strip=True)
 
-    pos_node = tr.select_one(".playerPosition") or tr.select_one("em.playerPosition")
-    team_node = tr.select_one(".playerTeam") or tr.select_one("em.playerTeam")
-    status_node = tr.select_one(".playerStatus") or tr.select_one(".playerOwner")
-    owner_anchor = _first_anchor_with_href(tr, "/team/")
+    position, nfl_team = _availability_position_and_team(container)
+    owner_cell = tr.select_one(".playerOwner")
+    # Owner anchor must come from the playerOwner cell only — every row
+    # contains a watch-list anchor under /league/.../team/<viewer>/...
+    # which would otherwise be misread as the player's owning team.
+    owner_anchor = owner_cell.select_one("a.teamName") if owner_cell else None
+    if owner_anchor is None and owner_cell is not None:
+        owner_anchor = _first_anchor_with_href(owner_cell, "/team/")
+        if owner_anchor is None:
+            owner_anchor = _first_anchor_with_href(owner_cell, "teamId=")
     deadline_node = tr.select_one(".waiverClaimDeadline") or tr.select_one(".claimDate")
 
-    status, owning_team_id = _resolve_availability_status(status_node, owner_anchor)
+    status, owning_team_id = _resolve_availability_status(owner_cell, owner_anchor)
     return ParsedAvailability(
         player_id=player_id,
         player_name=player_name,
-        position=pos_node.get_text(strip=True) if pos_node else None,
-        nfl_team=team_node.get_text(strip=True) if team_node else None,
+        position=position,
+        nfl_team=nfl_team,
         status=status,
         owning_team_id=owning_team_id,
         waiver_claim_deadline=deadline_node.get_text(strip=True) if deadline_node else None,
     )
 
 
+def _availability_position_and_team(container: Tag) -> tuple[str | None, str | None]:
+    """Pull position + NFL team out of the player-name cell.
+
+    Live NFL.com renders both in a single ``<em>`` ("QB - KC", "DEF").
+    Older fixture variants used ``.playerPosition`` / ``.playerTeam``
+    classes; we honour either.
+    """
+    pos_node = container.select_one("em.playerPosition") or container.select_one(".playerPosition")
+    team_node = container.select_one("em.playerTeam") or container.select_one(".playerTeam")
+    if pos_node is not None or team_node is not None:
+        return (
+            pos_node.get_text(strip=True) if pos_node else None,
+            team_node.get_text(strip=True) if team_node else None,
+        )
+    em = container.select_one("em")
+    if em is None:
+        return None, None
+    text = em.get_text(" ", strip=True)
+    if " - " in text:
+        position, _, nfl_team = text.partition(" - ")
+        return position.strip() or None, nfl_team.strip() or None
+    return text.strip() or None, None
+
+
 def _resolve_availability_status(
-    status_node: Tag | None, owner_anchor: Tag | None
+    owner_cell: Tag | None, owner_anchor: Tag | None
 ) -> tuple[str, int | None]:
     """Decide OWNED / FREE_AGENT / ON_WAIVERS for a row.
 
-    Owner anchor wins ("they're rostered → OWNED"). If absent, fall back
-    to the status text. We default to FREE_AGENT only when the text is
-    unrecognized — better than treating an unknown status as OWNED.
+    Owner anchor wins ("they're rostered → OWNED"). Otherwise we map
+    the ``.playerOwner`` text via ``_AVAILABILITY_STATUS_MAP`` and fall
+    back to FREE_AGENT when nothing else matches — better to default
+    free-agent than to treat unknown text as OWNED.
     """
     if owner_anchor is not None:
         owning_team_id = _id_from_anchor(owner_anchor, _TEAM_ID_FROM_HREF)
         if owning_team_id is not None:
             return "OWNED", owning_team_id
-    text = (status_node.get_text(strip=True) if status_node else "").lower()
+    text = (owner_cell.get_text(strip=True) if owner_cell else "").lower()
     for keyword, status in _AVAILABILITY_STATUS_MAP.items():
         if keyword in text:
             return status, None

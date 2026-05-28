@@ -28,31 +28,68 @@ def _load(name: str) -> str:
     return (FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
+def _mini_availability_page(
+    rows: list[tuple[str, str]],
+    *,
+    total: int,
+    next_offset: int | None,
+) -> str:
+    """Build a minimal availability-page HTML that the real parser accepts.
+
+    Matches the live ``tableType-player`` / ``.playerNameAndInfo`` /
+    ``.playerOwner`` markup so the parser exercises the same code path
+    as production, without the 875-row payload of the real fixture.
+    """
+    body_rows = "".join(
+        f'<tr><td class="playerNameAndInfo">'
+        f'<a class="playerName" href="/players/card?playerId={pid}">{name}</a>'
+        f"<em>WR - DET</em></td>"
+        f'<td class="playerOwner">FA</td></tr>'
+        for pid, name in rows
+    )
+    next_html = (
+        f'<div class="pagination"><span class="next">'
+        f'<a href="?offset={next_offset}">Next</a></span></div>'
+        if next_offset is not None
+        else ""
+    )
+    return (
+        f'<html><body><span class="paginationTitle">1 - {len(rows)} of {total}</span>'
+        f'<table class="tableType-player"><tbody>{body_rows}</tbody></table>'
+        f"{next_html}</body></html>"
+    )
+
+
 def test_sweep_walks_two_pages_and_returns_unique_rows() -> None:
     fetcher = _StubFetcher(
         {
-            "offset=0": _load("availability_page_0.html"),
-            "offset=25": _load("availability_page_25.html"),
+            "offset=0": _mini_availability_page(
+                [("100", "Alpha"), ("200", "Bravo"), ("300", "Charlie")],
+                total=5,
+                next_offset=3,
+            ),
+            "offset=3": _mini_availability_page(
+                [("400", "Delta"), ("500", "Echo")],
+                total=5,
+                next_offset=None,
+            ),
         }
     )
     result = sweep_availability(fetcher, league_id="36271", year=2025, week=7)
     assert result.pages_fetched == 2
     assert result.expected_total == 5
     player_ids = [r.player_id for r in result.rows]
-    assert player_ids == ["100", "777", "666", "200", "555"]
+    assert player_ids == ["100", "200", "300", "400", "500"]
 
 
 def test_sweep_dedupes_when_same_player_on_both_pages() -> None:
     # Boundary case: NFL.com sometimes overlaps pages by one row.
-    duplicate = _load("availability_page_0.html")
-    fetcher = _StubFetcher(
-        {
-            "offset=0": duplicate,
-            "offset=25": duplicate,  # will dedupe by player_id; same 3 rows
-        }
-    )
+    same_rows = [("100", "Alpha"), ("200", "Bravo"), ("300", "Charlie")]
+    page_one = _mini_availability_page(same_rows, total=3, next_offset=3)
+    page_two = _mini_availability_page(same_rows, total=3, next_offset=None)
+    fetcher = _StubFetcher({"offset=0": page_one, "offset=3": page_two})
     result = sweep_availability(fetcher, league_id="36271", year=2025, week=7)
-    # Sweep stops once the "next" link points to an offset we already saw.
+    # All three player_ids were on both pages -> deduped down to 3.
     assert len({r.player_id for r in result.rows}) == 3
 
 

@@ -46,11 +46,27 @@ if TYPE_CHECKING:
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "nfl_com_html"
 
 
+# Minimal HTML the parser accepts that signals end-of-pagination so the
+# sweep terminates after two real-fixture pages. ``total_count=1`` plus a
+# single row drives the sweep's "manual advance" fallback to a stop on
+# the very next iteration (current_offset + len(rows) >= total_count).
+_AVAILABILITY_TERMINATOR = (
+    '<html><body><span class="paginationTitle">1 - 1 of 1</span>'
+    '<table class="tableType-player"><tbody>'
+    '<tr><td class="playerNameAndInfo">'
+    '<a class="playerName" href="/players/card?playerId=999999">Sentinel</a>'
+    "<em>WR - FA</em></td>"
+    '<td class="playerOwner">FA</td></tr>'
+    "</tbody></table></body></html>"
+)
+
+
 class _StubFetcher:
     """Maps URL substrings to fixture file contents."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self._players_calls = 0
 
     def get_html(self, url: str) -> str:
         self.calls.append(url)
@@ -68,9 +84,16 @@ class _StubFetcher:
         if "transactions" in url:
             return _load("transactions.html")
         if "/players?" in url:
-            if "offset=25" in url:
+            # Real availability fixtures each advertise next_offset=26
+            # (NFL.com's pagination is 1-indexed, off-by-one from PAGE_SIZE).
+            # We serve page_0 first, page_25 second, then a terminator so
+            # the sweep stops at exactly 2 real-fixture pages plus 1 empty.
+            self._players_calls += 1
+            if self._players_calls == 1:
+                return _load("availability_page_0.html")
+            if self._players_calls == 2:
                 return _load("availability_page_25.html")
-            return _load("availability_page_0.html")
+            return _AVAILABILITY_TERMINATOR
         # Default: league home
         return _load("league_home.html")
 
@@ -230,8 +253,10 @@ def test_runner_writes_pre_kickoff_availability(session: Session) -> None:
 
     avail = session.execute(select(PlayerAvailability)).scalars().all()
     assert all(a.is_pre_kickoff_snapshot is True for a in avail)
-    # 5 unique players in the two-page fixture set.
-    assert len(avail) == 5
+    # Real fixtures: 25 players per page x 2 pages = 50 unique availability
+    # rows (the stub serves a terminator on the third call so the sweep
+    # stops cleanly without ingesting the sentinel row).
+    assert len(avail) == 50
 
 
 @pytest.mark.integration
@@ -240,13 +265,15 @@ def test_runner_audit_snapshot_does_not_overwrite_pre_kickoff(session: Session) 
     ``is_pre_kickoff_snapshot=False`` so the canonical pre-kickoff row
     survives unmolested."""
 
-    fetcher = _StubFetcher()
+    # Two distinct fetcher instances so each run gets a fresh availability
+    # call counter — otherwise the second run would see the sweep
+    # terminator on its very first /players? call.
     run_nfl_com(
         session,
         league_id="36271",
         year=2025,
         week=7,
-        fetcher=fetcher,
+        fetcher=_StubFetcher(),
         snapshot_kind="pre_kickoff",
     )
     session.commit()
@@ -256,7 +283,7 @@ def test_runner_audit_snapshot_does_not_overwrite_pre_kickoff(session: Session) 
         league_id="36271",
         year=2025,
         week=7,
-        fetcher=fetcher,
+        fetcher=_StubFetcher(),
         snapshot_kind="audit",
     )
     session.commit()
@@ -264,8 +291,11 @@ def test_runner_audit_snapshot_does_not_overwrite_pre_kickoff(session: Session) 
     avail = session.execute(select(PlayerAvailability)).scalars().all()
     pre = [a for a in avail if a.is_pre_kickoff_snapshot]
     audit = [a for a in avail if not a.is_pre_kickoff_snapshot]
-    assert len(pre) == 5
-    assert len(audit) == 5
+    # 50 unique players in pre-kickoff + 50 mirrored in audit (the two
+    # rows have different is_pre_kickoff_snapshot values, so they don't
+    # collide on the player+season+week unique key).
+    assert len(pre) == 50
+    assert len(audit) == 50
 
 
 @pytest.mark.integration
@@ -312,9 +342,13 @@ def test_runner_creates_player_stubs_for_new_nfl_com_ids(session: Session) -> No
     # same 16 nfl_com_player_ids (the same fixture is reused per team), so
     # we expect 16 unique players from the roster + 3 from the synthetic
     # availability fixtures (555, 666, 777).
-    assert "2563722" in nfl_ids  # Joe Burrow (QB)
-    assert "2569747" in nfl_ids  # Jahmyr Gibbs (RB)
-    assert {"666", "555", "777"}.issubset(nfl_ids)
+    assert "2563722" in nfl_ids  # Joe Burrow (QB) — from team roster
+    assert "2569747" in nfl_ids  # Jahmyr Gibbs (RB) — from team roster
+    # Availability fixtures (real Week 17 captures): Mahomes is the top
+    # row of page 0, Boutte is the top of page 25 — both are FA in the
+    # live league but still need a Player stub.
+    assert "2558125" in nfl_ids  # Patrick Mahomes (availability page 0)
+    assert "2570092" in nfl_ids  # Kayshon Boutte (availability page 25)
 
 
 # ---------------------------------------------------------------------------

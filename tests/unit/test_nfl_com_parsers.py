@@ -202,21 +202,29 @@ def test_parse_transactions_missing_table_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_parse_availability_page_owned_free_agent_and_waivers() -> None:
+def test_parse_availability_page_real_pagination_and_status() -> None:
     page = parse_availability_page(_read("availability_page_0.html"))
-    assert page.total_count == 5
-    assert page.next_offset == 25
-    assert len(page.rows) == 3
-    by_id = {r.player_id: r for r in page.rows}
-    assert by_id["100"].status == "OWNED"
-    assert by_id["100"].owning_team_id == 1
-    assert by_id["777"].status == "FREE_AGENT"
-    assert by_id["666"].status == "ON_WAIVERS"
-    assert by_id["666"].waiver_claim_deadline == "Wed 4:00 AM"
+    # Real Week 17 capture: 25 rows per page, 875 total available
+    # (offensive) players in the league.
+    assert page.total_count == 875
+    assert page.next_offset == 26  # NFL.com's "Next" link is 1-indexed
+    assert len(page.rows) == 25
+    # All 25 page-0 rows are FA (championship-week capture; the live
+    # league has dropped almost everyone by week 17), so we exercise
+    # the FREE_AGENT branch only here.
+    assert all(r.status == "FREE_AGENT" for r in page.rows)
+
+    mahomes = next(r for r in page.rows if r.player_name == "Patrick Mahomes")
+    assert mahomes.player_id == "2558125"
+    assert mahomes.position == "QB"
+    assert mahomes.nfl_team == "KC"
+    assert mahomes.owning_team_id is None
 
 
-def test_parse_availability_page_last_page_has_no_next() -> None:
+def test_parse_availability_page_second_page_returns_different_players() -> None:
     page = parse_availability_page(_read("availability_page_25.html"))
-    assert page.next_offset is None
-    assert page.total_count == 5
-    assert len(page.rows) == 2
+    assert len(page.rows) == 25
+    # The user captured offset=25; verify it isn't the same first row
+    # as page 0 (Mahomes), proving the two pages aren't duplicates.
+    assert page.rows[0].player_name != "Patrick Mahomes"
+    assert page.total_count == 875
