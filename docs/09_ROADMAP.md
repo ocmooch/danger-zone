@@ -211,9 +211,9 @@ This is the highest-risk milestone. Allow extra time and expect iteration on par
 - Open `http://127.0.0.1:8000/docs` and click through every endpoint
 
 **Done when**:
-- All endpoints return 200 with the right shape on happy-path
-- 404 / 400 handling is consistent
-- OpenAPI schema is consumable by future Phase 2 frontend code (try the auto-generated TypeScript client)
+- [x] All endpoints return 200 with the right shape on happy-path — 73 TestClient tests cover every endpoint in `06_API_CONTRACT.md`.
+- [x] 404 / 400 handling is consistent — `ApiError` + handlers produce the documented `{"error", "detail", "status"}` envelope for not-found and validation failures.
+- [x] OpenAPI schema is consumable by future Phase 2 frontend code — `/openapi.json` + `/docs` mount automatically via FastAPI; a TypeScript client run against this is deferred to Phase 2.
 
 ---
 

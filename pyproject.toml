@@ -112,6 +112,7 @@ quote-style = "double"
 runtime-evaluated-base-classes = [
     "ff_pipeline.repository.database.Base",
     "sqlalchemy.orm.DeclarativeBase",
+    "pydantic.BaseModel",
 ]
 
 # ============================================================

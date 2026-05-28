@@ -352,12 +352,41 @@ def verify_cmd(
 
 @app.command("serve")
 def serve_cmd(
+    host: str | None = typer.Option(
+        None, "--host", help="Bind address (default: API_HOST from settings)."
+    ),
+    port: int | None = typer.Option(
+        None, "--port", help="Bind port (default: API_PORT from settings)."
+    ),
     reload: bool = typer.Option(False, "--reload", help="Dev mode with auto-reload."),
 ) -> None:
-    """Start the FastAPI read API."""
+    """Start the FastAPI read API via uvicorn."""
     _bootstrap_settings_and_logging()
-    _ = reload
-    _stub("serve", "M8")
+
+    import uvicorn
+
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    target_host = host or settings.api_host
+    target_port = port if port is not None else settings.api_port
+
+    if reload:
+        # ``--reload`` requires an import string so uvicorn's reloader can
+        # re-import the module. The non-reload path uses a built app
+        # instance so tests / direct invocations share one engine.
+        uvicorn.run(
+            "ff_pipeline.api.main:create_app",
+            host=target_host,
+            port=target_port,
+            reload=True,
+            factory=True,
+        )
+        return
+
+    from ff_pipeline.api.main import create_app
+
+    uvicorn.run(create_app(), host=target_host, port=target_port)
 
 
 # ---------------------------------------------------------------------------
