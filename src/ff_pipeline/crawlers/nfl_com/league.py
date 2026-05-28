@@ -204,6 +204,7 @@ def run_nfl_com(
         txn_counts = _upsert_transactions(
             session,
             season_id=season_id,
+            season_year=year,
             parsed=parsed_txns,
             team_id_by_nfl_team_id=team_id_by_nfl_team_id,
             warnings=warnings,
@@ -659,6 +660,7 @@ def _upsert_transactions(
     session: Session,
     *,
     season_id: int,
+    season_year: int,
     parsed: Iterable[ParsedTransaction],
     team_id_by_nfl_team_id: dict[int, int],
     warnings: list[str],
@@ -703,7 +705,7 @@ def _upsert_transactions(
             if t.player_id
             else None
         )
-        executed_at = _parse_iso_datetime(t.executed_at)
+        executed_at = _parse_iso_datetime(t.executed_at, season_year=season_year)
         fingerprint = (
             t.transaction_type,
             team_id,
@@ -748,22 +750,35 @@ def _fingerprint_dt(value: datetime | None) -> str | None:
     return value.replace(tzinfo=None, microsecond=0).isoformat(sep=" ")
 
 
-def _parse_iso_datetime(text: str | None) -> datetime | None:
+def _parse_iso_datetime(text: str | None, *, season_year: int | None = None) -> datetime | None:
     if not text:
         return None
     text = text.strip()
-    # NFL.com uses several formats: "Sep 12, 2025 03:14 PM", ISO, etc.
-    candidates = (
+    # Formats that include their own year — NFL.com's API-style strings.
+    full_formats = (
         "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%d %H:%M:%S",
         "%b %d, %Y %I:%M %p",
         "%b %d, %Y",
     )
-    for fmt in candidates:
+    for fmt in full_formats:
         try:
             return datetime.strptime(text, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
+    # Fall back to year-less formats only when the caller can tell us
+    # which season to attribute the row to (e.g. the runner has it).
+    if season_year is not None:
+        # The history page renders dates as "Dec 28, 10:01am" — no year,
+        # lowercase am/pm with no space. Normalize before strptime.
+        normalized = text.replace("am", "AM").replace("pm", "PM")
+        no_year_formats = ("%b %d, %I:%M%p", "%b %d, %I:%M %p", "%b %d")
+        for fmt in no_year_formats:
+            try:
+                parsed = datetime.strptime(normalized, fmt)
+            except ValueError:
+                continue
+            return parsed.replace(year=season_year, tzinfo=UTC)
     return None
 
 

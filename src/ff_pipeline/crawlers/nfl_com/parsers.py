@@ -695,83 +695,173 @@ def _parse_float(text: str | None) -> float | None:
 
 
 # Map the literal NFL.com transaction-type strings to our enum values.
+# Keys are the lowercased text from the ``.transactionType`` cell.
+# Add/Waiver Claim is disambiguated downstream by the "From" cell
+# ("Free Agents" vs "Waivers"), so both share the "add" entry here.
 _TXN_TYPE_MAP = {
-    "draft pick": "draft",
-    "drafted": "draft",
+    "add": "free_agent_add",
     "added": "free_agent_add",
     "waiver claim": "waiver_add",
     "claimed off waivers": "waiver_add",
+    "drop": "drop",
     "dropped": "drop",
     "released": "drop",
     "trade": "trade",
     "traded": "trade",
+    "draft pick": "draft",
+    "drafted": "draft",
     "ir placement": "ir_placement",
     "moved to ir": "ir_placement",
     "activated from ir": "ir_activation",
     "ir activation": "ir_activation",
 }
+# "Lineup" (slot reassignment) is captured by the team_rosters table
+# instead — it has no place in the transactions log.
+_TXN_TYPES_TO_SKIP = {"lineup", "starter swap"}
+# Row classes look like ``transaction-{add|drop|roster}-NNN[-N]`` — the
+# inner numeric is the NFL.com transaction id (shared across the legs
+# of a trade or simultaneous add+drop).
+_TXN_ID_FROM_CLASS = re.compile(r"^transaction-[a-z_]+-(\d+)(?:-\d+)?$")
+_WAIVERS_TEXT_RE = re.compile(r"waivers?", re.IGNORECASE)
+_FREE_AGENT_TEXT_RE = re.compile(r"free\s+agents?", re.IGNORECASE)
 
 
 def parse_transactions(html: str) -> list[ParsedTransaction]:
     soup = BeautifulSoup(html, "lxml")
-    table = soup.select_one("table.tableType-rosterTrades") or soup.select_one(
-        "table.tableType-transactions"
+    table = (
+        soup.select_one("table.tableType-transaction")
+        or soup.select_one("table.tableType-rosterTrades")
+        or soup.select_one("table.tableType-transactions")
     )
     if table is None:
-        raise ParseError("transactions: missing table.tableType-rosterTrades")
+        raise ParseError("transactions: missing table.tableType-transaction")
 
     out: list[ParsedTransaction] = []
     for tr in table.select("tbody tr"):
         out.extend(_parse_transaction_row(tr))
     if not out:
-        raise ParseError("transactions: tableType-rosterTrades had no parseable rows")
+        raise ParseError("transactions: tableType-transaction had no parseable rows")
     return out
 
 
 def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
-    """One <tr> can describe one or more (player, direction) moves.
+    """Map one row of the live transactions log to ParsedTransaction(s).
 
-    Trades show up as a single row with multiple player anchors; we
-    emit one ParsedTransaction per anchor with the right direction.
+    Real NFL.com history-page row shape (one ``<tr>`` per move):
+        Date | Week | Type | Player(s) | From | To | By
+
+    Add / Drop emit a single record; Trade rows emit two records (one
+    for each side of the move) and rely on the runner to stitch
+    ``counterpart_team_id`` together via the shared NFL.com txn id
+    pulled from the row's CSS class. Lineup-change rows are *skipped*
+    here — they belong in team_rosters, not transactions.
     """
-    type_node = tr.select_one(".transactionType") or tr.select_one("td.transactionType")
-    date_node = tr.select_one(".transactionDate") or tr.select_one("td.transactionDate")
-    notes_node = tr.select_one(".transactionNote")
-    week_node = tr.select_one(".transactionWeek")
-
+    type_node = tr.select_one(".transactionType")
     raw_type = (type_node.get_text(strip=True) if type_node else "").lower()
+    if not raw_type or raw_type in _TXN_TYPES_TO_SKIP:
+        return []
     txn_type = _TXN_TYPE_MAP.get(raw_type) or _fuzzy_txn_type(raw_type)
-    executed_at = date_node.get_text(strip=True) if date_node else None
-    effective_week = _parse_int(week_node.get_text(strip=True) if week_node else None)
-    notes = notes_node.get_text(" ", strip=True) if notes_node else None
-    nfl_txn_id = tr.get("data-transaction-id") or tr.get("id")
-
     if txn_type is None:
         log.warning("Unknown transaction type", raw_type=raw_type)
         return []
 
-    moves: list[ParsedTransaction] = []
-    for move_node in tr.select(".playerMove, .transactionItem, td.transactionPlayer"):
-        team_anchor = _first_anchor_with_href(move_node, "/team/")
-        player_anchor = _first_player_anchor(move_node)
-        if player_anchor is None and team_anchor is None:
-            continue
-        direction = _direction_from_text(move_node.get_text(" ", strip=True))
-        moves.append(
-            ParsedTransaction(
-                nfl_transaction_id=str(nfl_txn_id) if nfl_txn_id else None,
-                transaction_type=txn_type,
-                executed_at=executed_at,
-                effective_week=effective_week,
-                team_id=_id_from_anchor(team_anchor, _TEAM_ID_FROM_HREF) if team_anchor else None,
-                counterpart_team_id=None,  # filled in by runner for trades
-                player_id=_player_id_from_anchor(player_anchor) if player_anchor else None,
-                player_name=player_anchor.get_text(strip=True) if player_anchor else None,
-                direction=direction,
-                notes=notes,
-            )
+    from_node = tr.select_one(".transactionFrom")
+    to_node = tr.select_one(".transactionTo")
+
+    # "Add" vs "Waiver Claim" — disambiguate via the From cell text.
+    if txn_type == "free_agent_add" and from_node is not None:
+        from_text = from_node.get_text(" ", strip=True)
+        if _WAIVERS_TEXT_RE.search(from_text):
+            txn_type = "waiver_add"
+
+    date_node = tr.select_one(".transactionDate")
+    week_node = tr.select_one(".transactionWeek")
+    by_node = tr.select_one(".transactionOwner")
+    player_node = tr.select_one(".playerNameAndInfo")
+
+    executed_at = date_node.get_text(strip=True) if date_node else None
+    effective_week = _parse_int(week_node.get_text(strip=True) if week_node else None)
+    notes = by_node.get_text(" ", strip=True) if by_node else None
+
+    player_anchor = (
+        player_node.select_one("a.playerName") if player_node is not None else None
+    ) or (_first_player_anchor(player_node) if player_node is not None else None)
+    player_id = _player_id_from_anchor(player_anchor) if player_anchor else None
+    player_name = player_anchor.get_text(strip=True) if player_anchor else None
+
+    from_anchor = from_node.select_one("a.teamName") if from_node is not None else None
+    to_anchor = to_node.select_one("a.teamName") if to_node is not None else None
+    from_team_id = _id_from_anchor(from_anchor, _TEAM_ID_FROM_HREF) if from_anchor else None
+    to_team_id = _id_from_anchor(to_anchor, _TEAM_ID_FROM_HREF) if to_anchor else None
+    nfl_txn_id = _txn_id_from_row_classes(tr)
+
+    if txn_type == "trade":
+        # Two records, one per side of the move. The runner stitches
+        # counterpart_team_id by matching nfl_transaction_id.
+        return [
+            _make_txn(
+                nfl_txn_id, "trade", executed_at, effective_week,
+                team_id=from_team_id, player_id=player_id,
+                player_name=player_name, direction="out", notes=notes,
+            ),
+            _make_txn(
+                nfl_txn_id, "trade", executed_at, effective_week,
+                team_id=to_team_id, player_id=player_id,
+                player_name=player_name, direction="in", notes=notes,
+            ),
+        ]
+
+    # Add / Waiver-add: player goes To a team; team_id comes from the To cell.
+    # Drop: player comes From a team; team_id comes from the From cell.
+    if txn_type == "drop":
+        team_id, direction = from_team_id, "out"
+    else:
+        team_id, direction = to_team_id, "in"
+
+    return [
+        _make_txn(
+            nfl_txn_id, txn_type, executed_at, effective_week,
+            team_id=team_id, player_id=player_id,
+            player_name=player_name, direction=direction, notes=notes,
         )
-    return moves
+    ]
+
+
+def _make_txn(
+    nfl_txn_id: str | None,
+    txn_type: str,
+    executed_at: str | None,
+    effective_week: int | None,
+    *,
+    team_id: int | None,
+    player_id: str | None,
+    player_name: str | None,
+    direction: str | None,
+    notes: str | None,
+) -> ParsedTransaction:
+    return ParsedTransaction(
+        nfl_transaction_id=nfl_txn_id,
+        transaction_type=txn_type,
+        executed_at=executed_at,
+        effective_week=effective_week,
+        team_id=team_id,
+        counterpart_team_id=None,  # filled in by runner for trades
+        player_id=player_id,
+        player_name=player_name,
+        direction=direction,
+        notes=notes,
+    )
+
+
+def _txn_id_from_row_classes(tr: Tag) -> str | None:
+    classes: list[str] | str = tr.get("class") or []
+    if not isinstance(classes, list):
+        return None
+    for cls in classes:
+        match = _TXN_ID_FROM_CLASS.match(cls)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _fuzzy_txn_type(raw: str) -> str | None:
@@ -790,6 +880,16 @@ def _fuzzy_txn_type(raw: str) -> str | None:
     return None
 
 
+def _parse_int(text: str | None) -> int | None:
+    if not text:
+        return None
+    match = re.search(r"\d+", text)
+    return int(match.group(0)) if match else None
+
+
+# Backwards compatibility — _direction_from_text is no longer used by
+# the column-based parser, but kept for any callers (and tests) that may
+# rely on the text-pattern heuristic for older fixture formats.
 def _direction_from_text(text: str) -> str | None:
     lowered = text.lower()
     if "removed" in lowered or "dropped" in lowered or "out:" in lowered:
@@ -797,13 +897,6 @@ def _direction_from_text(text: str) -> str | None:
     if "added" in lowered or "in:" in lowered or "claimed" in lowered:
         return "in"
     return None
-
-
-def _parse_int(text: str | None) -> int | None:
-    if not text:
-        return None
-    match = re.search(r"\d+", text)
-    return int(match.group(0)) if match else None
 
 
 # ---------------------------------------------------------------------------

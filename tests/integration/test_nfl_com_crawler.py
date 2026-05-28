@@ -173,12 +173,15 @@ def test_runner_writes_matchups_with_opponent_fk(session: Session) -> None:
     session.commit()
 
     matchups = session.execute(select(Matchup)).scalars().all()
-    assert len(matchups) == 4
+    # Real Week 17 schedule fixture: 6 head-to-head pairings -> 12 rows
+    # (one row per team-side, mirroring matchups schema).
+    assert len(matchups) == 12
 
-    # Pair (1 vs 2): there should be FKs to internal team rows, NOT NFL.com team_ids.
+    # All matchup team_ids should resolve to internal team rows whose
+    # team_abbrev is the NFL.com team id 1..12.
     by_team_name = {m.team_id: session.get(Team, m.team_id) for m in matchups}
     nfl_team_abbrevs = {t.team_abbrev for t in by_team_name.values() if t is not None}
-    assert nfl_team_abbrevs == {"1", "2", "3", "4"}
+    assert nfl_team_abbrevs == {str(i) for i in range(1, 13)}
 
 
 @pytest.mark.integration
@@ -194,7 +197,9 @@ def test_runner_records_transactions_idempotently(session: Session) -> None:
     )
     session.commit()
     after_first = len(session.execute(select(Transaction)).all())
-    assert after_first == 3
+    # Real fixture has 4 drops + 4 adds = 8 transactions (Lineup rows
+    # are skipped at the parser level).
+    assert after_first == 8
 
     # Re-run: identical fixtures → identical fingerprints → zero new inserts.
     run_nfl_com(

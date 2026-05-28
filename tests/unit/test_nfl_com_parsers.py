@@ -165,21 +165,35 @@ def test_parse_weekly_matchups_missing_matchups_raises() -> None:
 
 def test_parse_transactions_maps_types_and_direction() -> None:
     txns = parse_transactions(_read("transactions.html"))
-    assert len(txns) == 3
+    # Fixture has 4 Drops + 4 Adds + 16 Lineup rows; Lineup is skipped.
+    assert len(txns) == 8
     types = [t.transaction_type for t in txns]
-    assert types == ["free_agent_add", "drop", "waiver_add"]
-    assert txns[0].team_id == 1
-    assert txns[0].player_id == "777"
-    assert txns[0].player_name == "Free Agent Joe"
-    assert txns[0].direction == "in"
-    assert txns[0].effective_week == 2
-    assert txns[1].direction == "out"
-    assert txns[2].team_id == 2
-    assert txns[2].player_id == "999"
+    assert types.count("drop") == 4
+    assert types.count("free_agent_add") == 4
+
+    # First two rows: drop + add for the same NFL.com txn id 2129
+    # (the user's add+drop arrives as two adjacent rows sharing an id).
+    assert txns[0].nfl_transaction_id == "2129"
+    assert txns[0].transaction_type == "drop"
+    assert txns[0].team_id == 1  # Cream of the C
+    assert txns[0].player_name == "Taysom Hill"
+    assert txns[0].player_id == "2558954"
+    assert txns[0].direction == "out"
+    assert txns[0].effective_week == 17
+
+    assert txns[1].nfl_transaction_id == "2129"
+    assert txns[1].transaction_type == "free_agent_add"
+    assert txns[1].team_id == 1
+    assert txns[1].player_name == "Grant Calcaterra"
+    assert txns[1].direction == "in"
+
+    # Date text is left raw for the runner to coerce to datetime —
+    # the parser doesn't know the season year.
+    assert txns[0].executed_at == "Dec 28, 10:01am"
 
 
 def test_parse_transactions_missing_table_raises() -> None:
-    with pytest.raises(ParseError, match="rosterTrades"):
+    with pytest.raises(ParseError, match="tableType-transaction"):
         parse_transactions("<html><body></body></html>")
 
 
