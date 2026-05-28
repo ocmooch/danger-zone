@@ -121,12 +121,33 @@ def run_cmd(
         "--season",
         help="Restrict to a single season year (default: current calendar year).",
     ),
+    week: int | None = typer.Option(
+        None,
+        "--week",
+        help="Override the auto-detected NFL week (1-18). Only applies to --source nfl_com.",
+    ),
+    snapshot_kind: str | None = typer.Option(
+        None,
+        "--snapshot-kind",
+        help=(
+            "Override the game-time snapshot heuristic: 'pre_kickoff' marks rows as the "
+            "canonical pre-kickoff snapshot; 'audit' marks them as a non-authoritative "
+            "audit pass. Default: derive from current UTC time. Only applies to --source nfl_com."
+        ),
+    ),
     verify: bool = typer.Option(False, "--verify", help="Run data-quality checks at end."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would happen; don't write."),
 ) -> None:
     """Full sync from all sources (or just one with --source)."""
     _bootstrap_settings_and_logging()
     _ = (verify, dry_run)
+    if snapshot_kind is not None and snapshot_kind not in {"pre_kickoff", "audit"}:
+        typer.secho(
+            f"--snapshot-kind must be 'pre_kickoff' or 'audit' (got {snapshot_kind!r}).",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     if source is None:
         _stub("run (multi-source)", "M6-M8")
@@ -164,29 +185,37 @@ def run_cmd(
                 # source == "nfl_com"
                 from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
                 from ff_pipeline.crawlers.nfl_com.league import (
+                    SnapshotKind,
                     build_default_client,
                     run_nfl_com,
                 )
 
-                week = _resolve_current_week(target_year)
+                target_week = week if week is not None else _resolve_current_week(target_year)
                 cookie_value = settings.nfl_cookie.get_secret_value()
                 try:
                     with build_default_client(
                         cookie_value, settings.nfl_com_delay_seconds
                     ) as client:
+                        # mypy-friendly literal narrowing (we validated above).
+                        snapshot_arg: SnapshotKind | None = None
+                        if snapshot_kind == "pre_kickoff":
+                            snapshot_arg = "pre_kickoff"
+                        elif snapshot_kind == "audit":
+                            snapshot_arg = "audit"
                         nfl_result = run_nfl_com(
                             ss,
                             league_id=settings.nfl_league_id,
                             year=target_year,
-                            week=week,
+                            week=target_week,
                             fetcher=client,
+                            snapshot_kind=snapshot_arg,
                         )
                     ss.commit()
                 except AuthFailureError as exc:
                     typer.secho(str(exc), fg="red", err=True)
                     raise typer.Exit(code=77) from exc  # EX_NOPERM
                 typer.echo(
-                    f"nfl_com [{nfl_result.snapshot_kind}] week={week}: "
+                    f"nfl_com [{nfl_result.snapshot_kind}] week={target_week}: "
                     f"owners +{nfl_result.owners_added}~{nfl_result.owners_updated}, "
                     f"teams +{nfl_result.teams_added}~{nfl_result.teams_updated}, "
                     f"rosters +{nfl_result.rosters_added}~{nfl_result.rosters_updated}, "
