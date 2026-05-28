@@ -15,6 +15,7 @@ import pytest
 from ff_pipeline.crawlers.nfl_com.parsers import (
     ParseError,
     parse_availability_page,
+    parse_gamecenter,
     parse_league_home,
     parse_owners,
     parse_team_roster,
@@ -228,3 +229,41 @@ def test_parse_availability_page_second_page_returns_different_players() -> None
     # as page 0 (Mahomes), proving the two pages aren't duplicates.
     assert page.rows[0].player_name != "Patrick Mahomes"
     assert page.total_count == 875
+
+
+# ---------------------------------------------------------------------------
+# parse_gamecenter
+# ---------------------------------------------------------------------------
+
+
+def test_parse_gamecenter_extracts_both_sides_and_full_rosters() -> None:
+    # Real /league/.../history/2025/teamgamecenter?teamId=4 capture —
+    # Week 17 matchup of team 4 (Wizard) vs team 10 (London).
+    gc = parse_gamecenter(_read("teamgamecenter.html"))
+
+    assert gc.home.team_id == 4
+    assert gc.home.team_name == "The Wizard Of BAA'z"
+    assert gc.home.total_points == pytest.approx(84.60)
+    assert len(gc.home.entries) == 16
+
+    assert gc.away.team_id == 10
+    assert gc.away.team_name == "London on da Track"
+    assert gc.away.total_points == pytest.approx(159.12)
+    assert len(gc.away.entries) == 16
+
+    # Home QB starter on team 4 in week 17 was Joe Burrow.
+    qb = next(e for e in gc.home.entries if e.roster_slot == "QB")
+    assert qb.is_starter is True
+    assert qb.player_id == "2563722"
+    assert qb.position == "QB"
+    assert qb.nfl_team == "CIN"
+
+    # Both sides include at least one bench and one reserve slot.
+    home_slots = {e.roster_slot for e in gc.home.entries}
+    assert "BN" in home_slots
+    assert "RES" in home_slots
+
+
+def test_parse_gamecenter_missing_team_wraps_raises() -> None:
+    with pytest.raises(ParseError, match="teamWrap"):
+        parse_gamecenter("<html><body><div>nothing here</div></body></html>")

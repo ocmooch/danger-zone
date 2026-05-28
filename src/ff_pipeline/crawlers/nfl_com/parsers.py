@@ -1104,58 +1104,70 @@ class ParsedGamecenter:
 
 
 def parse_gamecenter(html: str) -> ParsedGamecenter:
+    """Parse a two-team matchup view (gamecenter or teamgamecenter).
+
+    Live NFL.com lays out the page as several disjoint sibling
+    ``.teamWrap-1`` / ``.teamWrap-2`` blocks: the first pair carries the
+    team-header anchors and totals, while later pairs hold the roster
+    tables. We therefore identify the home / away teams from the first
+    pair and *separately* group every ``tableType-player`` table by the
+    nearest ``teamWrap-N`` ancestor.
+    """
     soup = BeautifulSoup(html, "lxml")
-    sides = soup.select(".teamWrap.teamWrap-1, .teamWrap.teamWrap-2") or soup.select(
-        ".gamecenterTeamWrap"
+    home_blocks = soup.select(".teamWrap.teamWrap-1")
+    away_blocks = soup.select(".teamWrap.teamWrap-2")
+    if not home_blocks or not away_blocks:
+        # Older /gamecenter view used .gamecenterTeamWrap.
+        gc_sides = soup.select(".gamecenterTeamWrap")
+        if len(gc_sides) >= 2:
+            return ParsedGamecenter(
+                home=_parse_gamecenter_side(gc_sides[0], tables_under=[gc_sides[0]]),
+                away=_parse_gamecenter_side(gc_sides[1], tables_under=[gc_sides[1]]),
+            )
+        raise ParseError("gamecenter: missing teamWrap-1 / teamWrap-2 blocks")
+
+    return ParsedGamecenter(
+        home=_parse_gamecenter_side(home_blocks[0], tables_under=home_blocks),
+        away=_parse_gamecenter_side(away_blocks[0], tables_under=away_blocks),
     )
-    if len(sides) < 2:
-        raise ParseError("gamecenter: need two .teamWrap blocks")
-
-    parsed_sides = [_parse_gamecenter_side(s) for s in sides[:2]]
-    return ParsedGamecenter(home=parsed_sides[0], away=parsed_sides[1])
 
 
-def _parse_gamecenter_side(block: Tag) -> ParsedGamecenterSide:
-    team_anchor = block.select_one("a.teamName") or _first_anchor_with_href(block, "/team/")
+def _parse_gamecenter_side(
+    header_block: Tag, *, tables_under: list[Tag]
+) -> ParsedGamecenterSide:
+    team_anchor = (
+        header_block.select_one("a.teamImg")
+        or header_block.select_one("a.teamName")
+        or _first_anchor_with_href(header_block, "/team/")
+        or _first_anchor_with_href(header_block, "teamhome")
+    )
     if team_anchor is None:
         raise ParseError("gamecenter: side has no team anchor")
     team_id = _id_from_anchor(team_anchor, _TEAM_ID_FROM_HREF)
     if team_id is None:
-        raise ParseError("gamecenter: side team_id missing from anchor")
+        raise ParseError("gamecenter: side team_id missing from anchor / class")
     team_name = team_anchor.get_text(strip=True) or None
+    if not team_name:
+        img = team_anchor.select_one("img[alt]")
+        if img is not None:
+            alt = img.get("alt")
+            if isinstance(alt, str):
+                team_name = alt.strip() or None
 
-    total_node = block.select_one(".teamTotal") or block.select_one(".totalPts")
+    total_node = header_block.select_one(".teamTotal") or header_block.select_one(".totalPts")
     total = _parse_float(total_node.get_text(strip=True) if total_node else None)
 
     entries: list[ParsedRosterEntry] = []
-    for tr in block.select(
-        "table.tableType-fullRosterStats tbody tr, table.tableType-roster tbody tr"
-    ):
-        slot_node = tr.select_one(".teamPosition")
-        if slot_node is None:
-            continue
-        slot = slot_node.get_text(strip=True)
-        if not slot:
-            continue
-        is_starter = not (slot.startswith("BN") or slot.startswith("IR"))
-        player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
-        player_id = _player_id_from_anchor(player_anchor) if player_anchor else None
-        pos_node = tr.select_one(".playerPosition")
-        team_node = tr.select_one(".playerTeam")
-        opp_node = tr.select_one(".playerOpponent")
-        status_node = tr.select_one(".playerGameStatus")
-        entries.append(
-            ParsedRosterEntry(
-                roster_slot=slot,
-                is_starter=is_starter,
-                player_id=player_id,
-                player_name=player_anchor.get_text(strip=True) if player_anchor else None,
-                position=pos_node.get_text(strip=True) if pos_node else None,
-                nfl_team=team_node.get_text(strip=True) if team_node else None,
-                opponent=opp_node.get_text(strip=True) if opp_node else None,
-                game_status=status_node.get_text(strip=True) if status_node else None,
-            )
-        )
+    seen_rows: set[int] = set()
+    for block in tables_under:
+        for tr in block.select("table.tableType-player tbody tr, table.tableType-roster tbody tr"):
+            row_key = id(tr)
+            if row_key in seen_rows:
+                continue
+            seen_rows.add(row_key)
+            entry = _parse_roster_row(tr)
+            if entry is not None:
+                entries.append(entry)
 
     return ParsedGamecenterSide(
         team_id=team_id,
