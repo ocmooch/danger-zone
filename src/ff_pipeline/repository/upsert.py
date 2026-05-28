@@ -21,6 +21,7 @@ with matching APIs; the only difference is which ``insert`` we import.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -112,7 +113,9 @@ def upsert(
         session.execute(stmt)
 
         batch_existing = sum(
-            1 for row in chunk if tuple(row[c] for c in conflict_cols) in existing_keys
+            1
+            for row in chunk
+            if _normalize_key_tuple(tuple(row[c] for c in conflict_cols)) in existing_keys
         )
         rows_updated += batch_existing
         rows_added += len(chunk) - batch_existing
@@ -147,10 +150,11 @@ def _existing_conflict_keys(
 ) -> set[tuple[Any, ...]]:
     """Query the table for any rows whose conflict-key tuples are in chunk.
 
-    Returns the set of matching key tuples. Used to count update vs. insert
-    in the returned UpsertCounts. One small SELECT per batch — cheaper than
-    parsing dialect-specific RETURNING output, and the counts are advisory
-    (logged, not asserted on).
+    Returns the set of matching key tuples normalized via
+    ``_normalize_key_tuple``. Used to count update vs. insert in the returned
+    UpsertCounts. One small SELECT per batch — cheaper than parsing
+    dialect-specific RETURNING output, and the counts are advisory (logged,
+    not asserted on).
     """
 
     from sqlalchemy import select, tuple_
@@ -158,7 +162,24 @@ def _existing_conflict_keys(
     cols = [getattr(model, c) for c in conflict_cols]
     key_tuples = [tuple(row[c] for c in conflict_cols) for row in chunk]
     stmt = select(*cols).where(tuple_(*cols).in_(key_tuples))
-    return {tuple(r) for r in session.execute(stmt).all()}
+    return {_normalize_key_tuple(tuple(r)) for r in session.execute(stmt).all()}
+
+
+def _normalize_key_tuple(values: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Normalize datetimes so SQLite roundtrips compare equal to inputs.
+
+    SQLite's ``DateTime(timezone=True)`` is text-backed and silently drops
+    tzinfo on read, so a UTC-aware datetime inserted by the caller comes back
+    naive. Coerce both sides to naive-UTC before set membership tests.
+    """
+
+    return tuple(_normalize_key_value(v) for v in values)
+
+
+def _normalize_key_value(value: Any) -> Any:
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
 
 
 def _chunked(rows: list[dict[str, Any]], size: int) -> Iterable[list[dict[str, Any]]]:

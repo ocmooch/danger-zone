@@ -178,9 +178,7 @@ _YEAR_RE = re.compile(r"\b(20\d{2}|21\d{2})\b")
 #   * ``Y.Scores.init(..., {leagueIds:[N],week:N,gameId:N, dp:false, delay:N, season:NNNN}, ...)``
 #     — JS-literal syntax (unquoted keys), so we grab ``week`` / ``season``
 #     via targeted regex rather than a JSON load.
-_ANALYTICS_DATA_RE = re.compile(
-    r"window\.analyticsData\s*=\s*(\{.*?\});\s*\n", re.DOTALL
-)
+_ANALYTICS_DATA_RE = re.compile(r"window\.analyticsData\s*=\s*(\{.*?\});\s*\n", re.DOTALL)
 _SCORES_INIT_WEEK_RE = re.compile(r"\bweek\s*:\s*(\d+)")
 _SCORES_INIT_SEASON_RE = re.compile(r"\bseason\s*:\s*(\d+)")
 _LEAGUE_NAME_HOME_SUFFIX_RE = re.compile(r"\s+Home$")
@@ -273,9 +271,7 @@ def _extract_league_name(soup: BeautifulSoup) -> str | None:
     return None
 
 
-def _extract_week_and_season(
-    html: str, soup: BeautifulSoup
-) -> tuple[int | None, int | None]:
+def _extract_week_and_season(html: str, soup: BeautifulSoup) -> tuple[int | None, int | None]:
     """Prefer the ``Y.Scores.init`` config block, fall back to DOM scans."""
     week_match = _SCORES_INIT_WEEK_RE.search(html)
     season_match = _SCORES_INIT_SEASON_RE.search(html)
@@ -800,14 +796,26 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
         # counterpart_team_id by matching nfl_transaction_id.
         return [
             _make_txn(
-                nfl_txn_id, "trade", executed_at, effective_week,
-                team_id=from_team_id, player_id=player_id,
-                player_name=player_name, direction="out", notes=notes,
+                nfl_txn_id,
+                "trade",
+                executed_at,
+                effective_week,
+                team_id=from_team_id,
+                player_id=player_id,
+                player_name=player_name,
+                direction="out",
+                notes=notes,
             ),
             _make_txn(
-                nfl_txn_id, "trade", executed_at, effective_week,
-                team_id=to_team_id, player_id=player_id,
-                player_name=player_name, direction="in", notes=notes,
+                nfl_txn_id,
+                "trade",
+                executed_at,
+                effective_week,
+                team_id=to_team_id,
+                player_id=player_id,
+                player_name=player_name,
+                direction="in",
+                notes=notes,
             ),
         ]
 
@@ -820,9 +828,15 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
 
     return [
         _make_txn(
-            nfl_txn_id, txn_type, executed_at, effective_week,
-            team_id=team_id, player_id=player_id,
-            player_name=player_name, direction=direction, notes=notes,
+            nfl_txn_id,
+            txn_type,
+            executed_at,
+            effective_week,
+            team_id=team_id,
+            player_id=player_id,
+            player_name=player_name,
+            direction=direction,
+            notes=notes,
         )
     ]
 
@@ -958,9 +972,8 @@ _AVAILABILITY_STATUS_MAP = {
 
 def parse_availability_page(html: str) -> ParsedAvailabilityPage:
     soup = BeautifulSoup(html, "lxml")
-    table = (
-        soup.select_one("table.tableType-player")
-        or soup.select_one("table.tableType-playerStats")
+    table = soup.select_one("table.tableType-player") or soup.select_one(
+        "table.tableType-playerStats"
     )
     if table is None:
         raise ParseError("availability: missing table.tableType-player")
@@ -1132,9 +1145,7 @@ def parse_gamecenter(html: str) -> ParsedGamecenter:
     )
 
 
-def _parse_gamecenter_side(
-    header_block: Tag, *, tables_under: list[Tag]
-) -> ParsedGamecenterSide:
+def _parse_gamecenter_side(header_block: Tag, *, tables_under: list[Tag]) -> ParsedGamecenterSide:
     team_anchor = (
         header_block.select_one("a.teamImg")
         or header_block.select_one("a.teamName")

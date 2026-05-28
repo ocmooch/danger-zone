@@ -172,8 +172,8 @@ This is the highest-risk milestone. Allow extra time and expect iteration on par
 - Integration test with mocked HTTP responses
 
 **Done when**:
-- `ff-pipeline run --source sleeper` populates `projections`
-- Trending data appears in a `trending_players` table or as a denormalized JSON column on players
+- [x] `ff-pipeline run --source sleeper` populates `projections` — verified 2024 week 1 wrote 2759 rows after nflverse stamped gsis_ids
+- [x] Trending data appears in a `trending_players` table or as a denormalized JSON column on players — `trending_players` table created via migration `5cfbbf4a868f`, populated with add/drop snapshots per fetch
 
 ---
 

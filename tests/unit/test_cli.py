@@ -46,3 +46,9 @@ def test_migrate_sub_app_exposes_up_down_status() -> None:
     assert result.exit_code == 0
     for cmd in ("up", "down", "status"):
         assert cmd in result.stdout
+
+
+def test_run_command_help_lists_sleeper_as_source() -> None:
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert "sleeper" in result.stdout

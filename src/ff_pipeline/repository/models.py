@@ -483,6 +483,45 @@ class Projection(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class TrendingPlayer(Base):
+    """Snapshot of Sleeper's trending adds/drops for one (player, kind).
+
+    Sleeper exposes ``add`` and ``drop`` trending lists with a sliding
+    ``lookback_hours`` window. We store one row per fetch so historical
+    trend data is preserved — useful for "why was this guy hot last
+    Tuesday?" investigations and for the M9 waiver-priority signal work.
+    """
+
+    __tablename__ = "trending_players"
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id",
+            "trend_type",
+            "lookback_hours",
+            "fetched_at",
+            name="uq_trending_players_player_type_lookback_fetched",
+        ),
+        Index("ix_trending_players_fetched_type", "fetched_at", "trend_type"),
+    )
+
+    trending_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_trending_players_player"),
+        nullable=False,
+    )
+    trend_type: Mapped[str] = mapped_column(String(16), nullable=False)  # 'add' | 'drop'
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
+    lookback_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
@@ -542,4 +581,5 @@ __all__ = [
     "Team",
     "TeamRoster",
     "Transaction",
+    "TrendingPlayer",
 ]

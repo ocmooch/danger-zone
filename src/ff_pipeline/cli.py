@@ -124,7 +124,7 @@ def run_cmd(
     week: int | None = typer.Option(
         None,
         "--week",
-        help="Override the auto-detected NFL week (1-18). Only applies to --source nfl_com.",
+        help="Override the auto-detected NFL week (1-18). Applies to --source nfl_com / sleeper.",
     ),
     snapshot_kind: str | None = typer.Option(
         None,
@@ -150,11 +150,9 @@ def run_cmd(
         raise typer.Exit(code=2)
 
     if source is None:
-        _stub("run (multi-source)", "M6-M8")
-    if source == "sleeper":
-        _stub("run --source sleeper", "M6")
-    if source not in {"nflverse", "nfl_com"}:
-        _stub(f"run --source {source}", "M5 (nfl_com) / M6 (sleeper)")
+        _stub("run (multi-source)", "M8")
+    if source not in {"nflverse", "nfl_com", "sleeper"}:
+        _stub(f"run --source {source}", "unknown source")
 
     from datetime import datetime
 
@@ -181,6 +179,36 @@ def run_cmd(
                     f"~{nflverse_result.stats_updated} "
                     f"({nflverse_result.duration_ms} ms)"
                 )
+            elif source == "sleeper":
+                from ff_pipeline.crawlers.sleeper.runner import run_sleeper
+
+                target_week = week if week is not None else _resolve_current_week(target_year)
+                sleeper_result = run_sleeper(
+                    ss,
+                    league_id=settings.nfl_league_id,
+                    year=target_year,
+                    week=target_week,
+                )
+                ss.commit()
+                typer.echo(
+                    f"sleeper week={target_week}: "
+                    f"projections +{sleeper_result.projections_added}"
+                    f"~{sleeper_result.projections_updated}"
+                    f" (unresolved {sleeper_result.unresolved_projections}), "
+                    f"trending +{sleeper_result.trending_added}"
+                    f"~{sleeper_result.trending_updated}"
+                    f" (unresolved {sleeper_result.unresolved_trending}), "
+                    f"sleeper_ids stamped {sleeper_result.players_with_sleeper_id_updated} "
+                    f"({sleeper_result.duration_ms} ms)"
+                )
+                if not sleeper_result.scoring_rules_found:
+                    typer.secho(
+                        "warning: no scoring rules loaded for "
+                        f"league={settings.nfl_league_id} year={target_year}; "
+                        "projected_points left NULL. Run `ff-pipeline scoring load` first.",
+                        fg="yellow",
+                        err=True,
+                    )
             else:
                 # source == "nfl_com"
                 from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
