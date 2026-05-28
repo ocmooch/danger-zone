@@ -38,17 +38,23 @@ def test_parse_league_home_extracts_name_id_week_year() -> None:
     parsed = parse_league_home(_read("league_home.html"))
     assert parsed.league_id == "36271"
     assert parsed.league_name == "The Danger Zone"
-    assert parsed.current_week == 7
+    assert parsed.current_week == 17
     assert parsed.current_season_year == 2025
+    # window.analyticsData also exposes the viewer's own user + team id.
+    assert parsed.nfl_user_id == "168722"
+    assert parsed.current_team_id == 4
 
 
 def test_parse_league_home_missing_name_raises() -> None:
+    # Provide a league_id anchor so the league_id check passes; the name
+    # check is what we want to exercise here.
+    html = "<html><body><a href='/league/9/team/1'>X</a></body></html>"
     with pytest.raises(ParseError, match="leagueName"):
-        parse_league_home("<html><body><p>nothing here</p></body></html>")
+        parse_league_home(html)
 
 
 def test_parse_league_home_missing_links_raises() -> None:
-    html = "<html><body><div class='leagueName'>Lonely</div></body></html>"
+    html = "<html><body><h1 class='title'>Lonely</h1></body></html>"
     with pytest.raises(ParseError, match="league_id"):
         parse_league_home(html)
 

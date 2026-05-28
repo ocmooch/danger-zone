@@ -31,6 +31,7 @@ of this module and re-run the fixture-based unit tests.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -71,6 +72,8 @@ class ParsedLeagueHome:
     league_name: str
     current_season_year: int | None
     current_week: int | None
+    nfl_user_id: str | None = None
+    current_team_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,30 +171,70 @@ _LEAGUE_ID_FROM_HREF = re.compile(r"/league/(\d+)")
 _WEEK_FROM_TEXT = re.compile(r"Week\s+(\d+)", re.IGNORECASE)
 _YEAR_RE = re.compile(r"\b(20\d{2}|21\d{2})\b")
 
+# Live NFL.com league pages embed two reliable data sources we tap before
+# falling back to DOM heuristics:
+#   * ``window.analyticsData = { user: { leagueID, userID, teamID, ... } }``
+#     — clean JSON, gives league + user + own-team IDs.
+#   * ``Y.Scores.init(..., {leagueIds:[N],week:N,gameId:N, dp:false, delay:N, season:NNNN}, ...)``
+#     — JS-literal syntax (unquoted keys), so we grab ``week`` / ``season``
+#     via targeted regex rather than a JSON load.
+_ANALYTICS_DATA_RE = re.compile(
+    r"window\.analyticsData\s*=\s*(\{.*?\});\s*\n", re.DOTALL
+)
+_SCORES_INIT_WEEK_RE = re.compile(r"\bweek\s*:\s*(\d+)")
+_SCORES_INIT_SEASON_RE = re.compile(r"\bseason\s*:\s*(\d+)")
+_LEAGUE_NAME_HOME_SUFFIX_RE = re.compile(r"\s+Home$")
+
 
 def parse_league_home(html: str) -> ParsedLeagueHome:
     soup = BeautifulSoup(html, "lxml")
+    analytics = _extract_analytics_data(html)
 
-    # League name lives in the page title and/or an .leagueName element.
-    name_node = soup.select_one(".leagueName") or soup.select_one("h1")
-    if name_node is None:
-        raise ParseError("league_home: missing .leagueName / h1")
-    league_name = name_node.get_text(strip=True)
-
-    # League ID is everywhere — pull the first /league/{id} from any anchor.
-    league_id = _league_id_from_soup(soup)
+    league_id = _league_id_from_analytics(analytics) or _league_id_from_soup(soup)
     if league_id is None:
-        raise ParseError("league_home: could not extract league_id from links")
+        raise ParseError("league_home: could not extract league_id")
 
-    current_week = _extract_current_week(soup)
-    current_season_year = _extract_current_year(soup)
+    league_name = _extract_league_name(soup)
+    if league_name is None:
+        raise ParseError("league_home: missing leagueName / h1.title / <title>")
+
+    current_week, current_season_year = _extract_week_and_season(html, soup)
+    nfl_user_id, current_team_id = _extract_user_and_team(analytics)
 
     return ParsedLeagueHome(
         league_id=league_id,
         league_name=league_name,
         current_season_year=current_season_year,
         current_week=current_week,
+        nfl_user_id=nfl_user_id,
+        current_team_id=current_team_id,
     )
+
+
+def _extract_analytics_data(html: str) -> dict[str, Any] | None:
+    """Pull ``window.analyticsData = {...}`` JSON out of the inline script.
+
+    Returns ``None`` if the block is missing (e.g., logged-out or A/B
+    variant) so the caller can fall back to DOM heuristics rather than
+    treating its absence as a hard failure.
+    """
+    match = _ANALYTICS_DATA_RE.search(html)
+    if not match:
+        return None
+    try:
+        decoded: dict[str, Any] = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        log.warning("league_home: analyticsData block found but failed to decode as JSON")
+        return None
+    return decoded
+
+
+def _league_id_from_analytics(analytics: dict[str, Any] | None) -> str | None:
+    if not analytics:
+        return None
+    user = analytics.get("user") or {}
+    league_id = user.get("leagueID")
+    return str(league_id) if league_id else None
 
 
 def _league_id_from_soup(soup: BeautifulSoup) -> str | None:
@@ -203,6 +246,59 @@ def _league_id_from_soup(soup: BeautifulSoup) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def _extract_league_name(soup: BeautifulSoup) -> str | None:
+    """Read the league name and strip NFL.com's "<League> Home" suffix.
+
+    The live page renders ``<h1 class="title">{LeagueName} Home</h1>``;
+    the synthetic fallback used ``.leagueName``. We try both and strip a
+    trailing " Home" because the league name in the leagues table should
+    not include the page label.
+    """
+    for selector in (".leagueName", "h1.title", "h1"):
+        node = soup.select_one(selector)
+        if node is None:
+            continue
+        text = node.get_text(strip=True)
+        if text:
+            return _LEAGUE_NAME_HOME_SUFFIX_RE.sub("", text)
+    title_node = soup.select_one("title")
+    if title_node is not None:
+        title = title_node.get_text(strip=True)
+        # ``<title>The Danger Zone Home | NFL Fantasy</title>``
+        first_segment = title.split("|", 1)[0].strip()
+        if first_segment:
+            return _LEAGUE_NAME_HOME_SUFFIX_RE.sub("", first_segment)
+    return None
+
+
+def _extract_week_and_season(
+    html: str, soup: BeautifulSoup
+) -> tuple[int | None, int | None]:
+    """Prefer the ``Y.Scores.init`` config block, fall back to DOM scans."""
+    week_match = _SCORES_INIT_WEEK_RE.search(html)
+    season_match = _SCORES_INIT_SEASON_RE.search(html)
+    current_week = int(week_match.group(1)) if week_match else _extract_current_week(soup)
+    current_season_year = (
+        int(season_match.group(1)) if season_match else _extract_current_year(soup)
+    )
+    return current_week, current_season_year
+
+
+def _extract_user_and_team(
+    analytics: dict[str, Any] | None,
+) -> tuple[str | None, int | None]:
+    if not analytics:
+        return None, None
+    user = analytics.get("user") or {}
+    user_id = user.get("userID")
+    team_id = user.get("teamID")
+    try:
+        parsed_team_id = int(team_id) if team_id else None
+    except (TypeError, ValueError):
+        parsed_team_id = None
+    return (str(user_id) if user_id else None, parsed_team_id)
 
 
 def _extract_current_week(soup: BeautifulSoup) -> int | None:
@@ -286,7 +382,11 @@ def _id_from_anchor(anchor: Tag | None, pattern: re.Pattern[str]) -> int | None:
 # ---------------------------------------------------------------------------
 
 
-_PLAYER_ID_FROM_HREF = re.compile(r"/player/(\d+)")
+_PLAYER_ID_FROM_HREF = re.compile(r"playerId=(\d+)|/player/(\d+)")
+# Live NFL.com player anchors carry the id redundantly in a CSS class
+# (``playerNameId-NNN``). Used as a last-resort fallback when the href
+# is missing or shaped differently in an A/B variant.
+_PLAYER_ID_FROM_CLASS = re.compile(r"playerNameId-(\d+)")
 
 
 def parse_team_roster(html: str) -> ParsedTeamRoster:
@@ -316,7 +416,7 @@ def parse_team_roster(html: str) -> ParsedTeamRoster:
         # Bench/IR slots have BN1..BN6 / IR1..IR2 etc. Anything not BN/IR is a starter.
         is_starter = not (roster_slot.startswith("BN") or roster_slot.startswith("IR"))
 
-        player_anchor = tr.select_one("a.playerName") or _first_anchor_with_href(tr, "/player/")
+        player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
         player_id = _player_id_from_anchor(player_anchor) if player_anchor is not None else None
         player_name = player_anchor.get_text(strip=True) if player_anchor else None
 
@@ -344,12 +444,35 @@ def parse_team_roster(html: str) -> ParsedTeamRoster:
     return ParsedTeamRoster(team_id=team_id, team_name=team_name, entries=tuple(entries))
 
 
+def _first_player_anchor(node: Tag) -> Tag | None:
+    """Find the first anchor that points at a player card.
+
+    Live NFL.com uses ``/players/card?leagueId=X&playerId=NNN`` for the
+    in-page player card link and ``/player/NNN`` for the standalone page.
+    Either is fine — we just need *some* anchor that carries the player id.
+    """
+    for a in node.find_all("a", href=True):
+        href = a.get("href")
+        if not isinstance(href, str):
+            continue
+        if "playerId=" in href or "/player/" in href:
+            return a
+    return None
+
+
 def _player_id_from_anchor(anchor: Tag) -> str | None:
     href = anchor.get("href", "")
-    if not isinstance(href, str):
-        return None
-    match = _PLAYER_ID_FROM_HREF.search(href)
-    return match.group(1) if match else None
+    if isinstance(href, str):
+        match = _PLAYER_ID_FROM_HREF.search(href)
+        if match:
+            return match.group(1) or match.group(2)
+    classes: list[str] | str = anchor.get("class") or []
+    if isinstance(classes, list):
+        for cls in classes:
+            class_match = _PLAYER_ID_FROM_CLASS.search(cls)
+            if class_match:
+                return class_match.group(1)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +666,7 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
     moves: list[ParsedTransaction] = []
     for move_node in tr.select(".playerMove, .transactionItem, td.transactionPlayer"):
         team_anchor = _first_anchor_with_href(move_node, "/team/")
-        player_anchor = _first_anchor_with_href(move_node, "/player/")
+        player_anchor = _first_player_anchor(move_node)
         if player_anchor is None and team_anchor is None:
             continue
         direction = _direction_from_text(move_node.get_text(" ", strip=True))
@@ -679,7 +802,7 @@ def parse_availability_page(html: str) -> ParsedAvailabilityPage:
 
 
 def _parse_availability_row(tr: Tag) -> ParsedAvailability | None:
-    player_anchor = tr.select_one("a.playerName") or _first_anchor_with_href(tr, "/player/")
+    player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
     if player_anchor is None:
         return None
     player_id = _player_id_from_anchor(player_anchor)
@@ -801,7 +924,7 @@ def _parse_gamecenter_side(block: Tag) -> ParsedGamecenterSide:
         if not slot:
             continue
         is_starter = not (slot.startswith("BN") or slot.startswith("IR"))
-        player_anchor = tr.select_one("a.playerName") or _first_anchor_with_href(tr, "/player/")
+        player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
         player_id = _player_id_from_anchor(player_anchor) if player_anchor else None
         pos_node = tr.select_one(".playerPosition")
         team_node = tr.select_one(".playerTeam")
