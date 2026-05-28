@@ -134,21 +134,23 @@ def test_parse_team_roster_missing_table_raises() -> None:
 
 def test_parse_weekly_matchups_emits_two_rows_per_game() -> None:
     rows = parse_weekly_matchups(_read("weekly_matchups_w7.html"))
-    assert len(rows) == 4  # two matchups x two rows each
+    # 6 matchups x 2 rows each = 12. The fixture is a real Week 17
+    # schedule capture covering all 12 teams in the league.
+    assert len(rows) == 12
 
-    # First matchup: team 1 vs team 2 with 123.45 vs 98.76
+    # Spot-check the first matchup: team 4 (84.60) vs team 10 (159.12).
     by_team = {r.team_id: r for r in rows}
-    assert by_team[1].team_score == pytest.approx(123.45)
-    assert by_team[1].opponent_team_id == 2
-    assert by_team[1].opponent_score == pytest.approx(98.76)
-    assert by_team[1].game_id == "9001"
+    assert by_team[4].team_name == "The Wizard Of BAA'z"
+    assert by_team[4].team_score == pytest.approx(84.60)
+    assert by_team[4].opponent_team_id == 10
+    assert by_team[4].opponent_score == pytest.approx(159.12)
     # Mirror row
-    assert by_team[2].team_score == pytest.approx(98.76)
-    assert by_team[2].opponent_team_id == 1
+    assert by_team[10].team_score == pytest.approx(159.12)
+    assert by_team[10].opponent_team_id == 4
 
-    # Tie game in second matchup
-    assert by_team[3].team_score == pytest.approx(110.0)
-    assert by_team[3].opponent_score == pytest.approx(110.0)
+    # The schedule page does not embed gameId hrefs; that field is
+    # populated by the gamecenter parser, not this one.
+    assert all(r.game_id is None for r in rows)
 
 
 def test_parse_weekly_matchups_missing_matchups_raises() -> None:

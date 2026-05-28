@@ -327,8 +327,13 @@ def _extract_current_year(soup: BeautifulSoup) -> int | None:
 # ---------------------------------------------------------------------------
 
 
-_TEAM_ID_FROM_HREF = re.compile(r"/team/(\d+)")
+_TEAM_ID_FROM_HREF = re.compile(r"\bteamId=(\d+)|/team/(\d+)")
 _USER_ID_FROM_HREF = re.compile(r"/user/(\d+)")
+# Live NFL.com sometimes carries the team id only in a CSS class
+# (``teamName teamId-NNN``); the schedule + transactions pages use
+# ``teamhome?teamId=NNN`` in the href, the league-home playoff bracket
+# uses ``/team/NNN``. Either is acceptable.
+_TEAM_ID_FROM_CLASS = re.compile(r"teamId-(\d+)")
 # Live NFL.com renders the owner as ``<span class="userName userId-NNN">``
 # rather than an anchor; the user id is embedded in the CSS class.
 _USER_ID_FROM_CLASS = re.compile(r"userId-(\d+)")
@@ -392,10 +397,22 @@ def _id_from_anchor(anchor: Tag | None, pattern: re.Pattern[str]) -> int | None:
     if anchor is None:
         return None
     href = anchor.get("href", "")
-    if not isinstance(href, str):
-        return None
-    match = pattern.search(href)
-    return int(match.group(1)) if match else None
+    if isinstance(href, str):
+        match = pattern.search(href)
+        if match:
+            # Some patterns (e.g. _TEAM_ID_FROM_HREF) have alternative
+            # capture groups; return the first one that matched.
+            for grp in match.groups():
+                if grp:
+                    return int(grp)
+    # Fallback: pull the id from a ``teamId-NNN`` class if available.
+    classes: list[str] | str = anchor.get("class") or []
+    if pattern is _TEAM_ID_FROM_HREF and isinstance(classes, list):
+        for cls in classes:
+            class_match = _TEAM_ID_FROM_CLASS.search(cls)
+            if class_match:
+                return int(class_match.group(1))
+    return None
 
 
 # ---------------------------------------------------------------------------
