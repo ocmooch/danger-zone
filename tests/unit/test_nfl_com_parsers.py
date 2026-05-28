@@ -91,25 +91,39 @@ def test_parse_owners_missing_table_raises() -> None:
 
 def test_parse_team_roster_slot_classification() -> None:
     roster = parse_team_roster(_read("team_roster_1.html"))
-    assert roster.team_id == 1
-    assert roster.team_name == "Maverick"
-    assert len(roster.entries) == 5
+    # Fixture is team 4 ("The Wizard Of BAA'z") on the live page.
+    assert roster.team_id == 4
+    assert roster.team_name == "The Wizard Of BAA'z"
+    # Starters (QB, RB x2, WR x2, TE, R/W/T, K, DEF) + 4 bench + 1 reserve
+    # + 2 bench defenses = 16 entries total.
+    assert len(roster.entries) == 16
 
-    by_slot = {e.roster_slot: e for e in roster.entries}
-    assert by_slot["QB"].is_starter is True
-    assert by_slot["QB"].player_id == "100"
-    assert by_slot["QB"].player_name == "Lamar Jackson"
-    assert by_slot["QB"].position == "QB"
-    assert by_slot["QB"].nfl_team == "BAL"
-    assert by_slot["RB1"].is_starter is True
-    assert by_slot["BN1"].is_starter is False
-    assert by_slot["IR1"].is_starter is False
-    assert by_slot["IR1"].game_status == "Out"
+    # The QB starter should be the season's actual starter on team 4.
+    by_pos_and_slot = {(e.roster_slot, e.player_name): e for e in roster.entries}
+    qb_entry = next(e for e in roster.entries if e.roster_slot == "QB")
+    assert qb_entry.is_starter is True
+    assert qb_entry.player_name == "Joe Burrow"
+    assert qb_entry.position == "QB"
+    assert qb_entry.nfl_team == "CIN"
+    assert qb_entry.player_id == "2563722"
+
+    flex = next(e for e in roster.entries if e.roster_slot == "R/W/T")
+    assert flex.is_starter is True
+    assert flex.player_name == "Jaylen Waddle"
+
+    bench_entries = [e for e in roster.entries if e.roster_slot == "BN"]
+    assert len(bench_entries) == 6  # 4 offensive + 2 D/ST bench
+    assert all(e.is_starter is False for e in bench_entries)
+
+    res_entries = [e for e in roster.entries if e.roster_slot == "RES"]
+    assert len(res_entries) == 1
+    assert res_entries[0].is_starter is False
+    assert ("RES", "MarShawn Lloyd") in by_pos_and_slot
 
 
 def test_parse_team_roster_missing_table_raises() -> None:
-    html = "<html><body><div class='teamWrap'><a class='teamName' href='/league/1/team/1'>X</a></div></body></html>"
-    with pytest.raises(ParseError, match="tableType-roster"):
+    html = "<html><body><a class='teamImg teamId-1' href='/league/1/team/1'><img alt='X'/></a></body></html>"
+    with pytest.raises(ParseError, match="tableType-player"):
         parse_team_roster(html)
 
 

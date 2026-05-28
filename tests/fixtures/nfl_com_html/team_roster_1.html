@@ -1,58 +1,807 @@
-<!DOCTYPE html>
-<html lang="en">
-<body>
-  <div class="teamWrap">
-    <a class="teamName" href="/league/36271/team/1">Maverick</a>
-  </div>
-  <table class="tableType-roster">
-    <thead><tr><th>Slot</th><th>Player</th><th>Opponent</th></tr></thead>
-    <tbody>
-      <tr>
-        <td class="teamPosition">QB</td>
-        <td>
-          <a class="playerName" href="/player/100">Lamar Jackson</a>
-          <em class="playerPosition">QB</em>
-          <em class="playerTeam">BAL</em>
-        </td>
-        <td><span class="playerOpponent">@CIN</span> <span class="playerGameStatus">Sun 1:00</span></td>
-      </tr>
-      <tr>
-        <td class="teamPosition">RB1</td>
-        <td>
-          <a class="playerName" href="/player/200">Saquon Barkley</a>
-          <em class="playerPosition">RB</em>
-          <em class="playerTeam">PHI</em>
-        </td>
-        <td><span class="playerOpponent">vs NYG</span></td>
-      </tr>
-      <tr>
-        <td class="teamPosition">WR1</td>
-        <td>
-          <a class="playerName" href="/player/300">Justin Jefferson</a>
-          <em class="playerPosition">WR</em>
-          <em class="playerTeam">MIN</em>
-        </td>
-        <td><span class="playerOpponent">@DET</span></td>
-      </tr>
-      <tr>
-        <td class="teamPosition">BN1</td>
-        <td>
-          <a class="playerName" href="/player/400">Bench Guy</a>
-          <em class="playerPosition">WR</em>
-          <em class="playerTeam">CHI</em>
-        </td>
-        <td></td>
-      </tr>
-      <tr>
-        <td class="teamPosition">IR1</td>
-        <td>
-          <a class="playerName" href="/player/500">Hurt Player</a>
-          <em class="playerPosition">WR</em>
-          <em class="playerTeam">LAR</em>
-        </td>
-        <td><span class="playerGameStatus">Out</span></td>
-      </tr>
-    </tbody>
-  </table>
+<!doctype html>
+<!--[if lt IE 7]>  <html class="ie ie6 lte9 lte8 lte7 skinId-1"  lang="en" id="template" > <![endif]-->
+<!--[if IE 7]>     <html class="ie ie7 lte9 lte8 lte7 gt6 skinId-1" lang="en" id="template"> <![endif]-->
+<!--[if IE 8]>     <html class="ie ie8 lte9 lte8 gt6 gt7 skinId-1" lang="en" id="template"> <![endif]-->
+<!--[if IE 9]>     <html class="ie ie9 lte9 gt6 gt7 gt8 skinId-1" lang="en" id="template"> <![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!-->
+<html itemscope itemtype="http://schema.org/Organization" lang="en" class="not-ie skinId-1" id="template"  data-headlessui-focus-visible="true">
+<!--<![endif]-->
+<head>
+        <script src="/static/js/1775585038/bW9kZXJuaXpyLmpz.js" charset="utf-8"></script>
+    <script src="/min/index1?a=230443d8-649d-11e6-8b77-86f30ca893d3&g=ff-base"></script>
+    <link id="nfl-assets" /><script type="text/javascript">
+    var googletag = googletag || {};
+    googletag.cmd = googletag.cmd || [];
+    googletag.cmd.push(function() {
+        
+        googletag.pubads().enableSingleRequest();
+
+        // Disable initial load, we will use refresh() to fetch ads.
+        // Calling this function means that display() calls just
+        // register the slot as ready, but do not fetch ads for it.
+        googletag.pubads().disableInitialLoad();
+        googletag.pubads().collapseEmptyDivs();
+        // Enable services
+        googletag.enableServices();
+    });
+    (function() {
+        var gads = document.createElement("script");
+        gads.async = true;
+        gads.type = "text/javascript";
+        var useSSL = "https:" == document.location.protocol;
+        gads.src = (useSSL ? "https:" : "http:") + "//securepubads.g.doubleclick.net/tag/js/gpt.js";
+        var node =document.getElementsByTagName("script")[0];
+        node.parentNode.insertBefore(gads, node);
+    })();
+</script>
+<script>
+    /* Adobe recommends adding this snippet to handle the flicker while they change content 
+        https://docs.adobe.com/content/help/en/launch/using/extensions-ref/adobe-extension/target-extension/overview.html#adobe-target-extension-with-an-asynchronous-deployment
+    */
+    ;(function(win, doc, style, timeout) {
+        var STYLE_ID = 'at-body-style';
+        function getParent() {
+            return doc.getElementsByTagName('head')[0];
+        }
+
+        function addStyle(parent, id, def) {
+            if (!parent) {
+            return;
+            }
+
+            var style = doc.createElement('style');
+            style.id = id;
+            style.innerHTML = def;
+            parent.appendChild(style);
+        }
+
+        function removeStyle(parent, id) {
+            if (!parent) {
+            return;
+            }
+
+            var style = doc.getElementById(id);
+
+            if (!style) {
+            return;
+            }
+
+            parent.removeChild(style);
+        }
+        addStyle(getParent(), STYLE_ID, style);
+        window.setTimeout(function() {
+            removeStyle(getParent(), STYLE_ID);
+        }, timeout);
+    }(window, document, "body {opacity: 0 !important}", 4000));
+</script>
+<script src="//assets.adobedtm.com/a5ea4e8f4344/9ef398705f83/launch-767faae3c07e.min.js" async></script>
+<script type="text/javascript">
+window.analyticsData = {
+    "user": {
+        "userID": "168722",
+        "currentStandings": "7:12",
+        "leagueID": "36271",
+        "teamID": "4",
+        "leagueManager": "non-commissioner",
+        "playerType": "non-league owner",
+        "leagueType": "private",
+        "QBplayerID": "32004255-5267-9731-81c8-48673dcec5e2,32004441-4e56-7618-ab61-f08cbf558acd",
+        "RBplayerID": "32004749-4219-8578-ca06-2b870fe6f731,32004c4c-4f67-3464-78d4-33609054aa9a,32004841-5281-9909-a72d-cc3e41956f3a,32005455-5406-6215-da3b-cbf31441af43",
+        "WRplayerID": "32004144-4121-8591-4d26-4c0ac739af41,32004252-4f41-3223-e4c5-1e30dffa87f8,32005741-4408-8683-c826-c882ad6fd5c2,32004f4c-4165-9325-c259-01a521202e2f,32004d43-4351-2833-c30c-76941288e843",
+        "TEplayerID": "32004645-5214-6119-2797-33878db83d5a",
+        "KDEFplayerID": "32004241-5410-6818-f7c8-70319151cdab,10401540-f97c-2d19-6fcd-fac6490a48b7,10402310-a47e-10ea-7442-16b633633637,10404500-e7cb-7fce-3f10-4eeb269bd179",
+        "optimizePro": "",
+        "pageState": "registered",
+        "gameState": "bye-week"
+    },
+    "page": {
+        "siteName": "nfl fantasy",
+        "siteSection": "team",
+        "siteSubsection": "roster",
+        "globalDomain": "fantasy.nfl.com",
+        "contentType": "landing",
+        "pageDetail": "stats:season 2025:overall",
+        "siteLanguage": "english",
+        "optimizedFor": "desktop",
+        "pageName": "nfl fantasy:team:roster:stats:season 2025:overall"
+    }
+};
+
+</script>
+<!-- OneTrust Consent Manager -->
+<script type="text/javascript" async=true>
+    var showAds = function() {
+        if (googletag) {
+            googletag.cmd.push(function() {
+                googletag.pubads().setPrivacySettings({
+                    "restrictDataProcessing": false
+                });
+                googletag.pubads().refresh();
+            });
+        }
+    };
+    var showNonTargetedAds = function() {
+        if (googletag) {
+            googletag.cmd.push(function() {
+                googletag.pubads().setPrivacySettings({
+                    "restrictDataProcessing": true
+                });
+                googletag.pubads().refresh();
+            });
+        }
+    };
+
+    var iframeConsentDataListener;
+
+    function loadOptanonWrapper() {
+
+        if (window.OptanonWrapper && OptanonWrapper.overwritten) {
+            return;
+        }
+
+        if (!window.OptanonWrapper) {
+            setTimeout(loadOptanonWrapper, 10);
+            return;
+        }
+
+        window.OptanonWrapper = function() {
+
+            // OneTrust banner is visible, until it's dismissed we're not proceeding.
+            var oneTrustBanner = document.getElementById("onetrust-banner-sdk");
+            if (oneTrustBanner && oneTrustBanner.style.display !== "none") {
+                setTimeout(window.OptanonWrapper, 50);
+                return;
+            }
+
+            window.dataLayer.push({
+                event: 'OneTrustGroupsUpdated'
+            });
+            var gdprApplies = window.OptanonActiveGroups.match(/,C0004,/) ? 0 : 1;
+
+            if (gdprApplies) {
+                showNonTargetedAds();
+            } else {
+                showAds();
+            }
+
+            // Ads in iframes need to follow the consent settings of the parent page.
+            if (iframeConsentDataListener) {
+                window.removeEventListener('message', iframeConsentDataListener);
+            }
+            iframeConsentDataListener = function(event) {
+                if (typeof event.data === 'object' && event.data.type === 'getConsent') {
+                    event.source.postMessage({
+                        type: 'consentData',
+                        gdprApplies: gdprApplies
+                    }, '*');
+                }
+            };
+            window.addEventListener('message', iframeConsentDataListener);
+        };
+        window.OptanonWrapper.overwritten = true;
+    }
+    setTimeout(loadOptanonWrapper, 10);
+</script>
+<!-- End OneTrust ConsentManager --><script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "url": "https://fantasy.nfl.com/",
+    "logo": "https://fantasy.nfl.com/jslib/nav/images/fantasy-logo.svg"
+   }
+</script>
+<script type="text/javascript" src="https://cdns.gigya.com/js/gigya.js?apikey=3_WPLZFkJ278FjSau2FfLCrTRUyksAjeYpcva-qIfGl71F4VWrI-7Xb5y0snqKXDva"></script>
+    <script>
+    (function (w) {
+
+        var FF = w.FF = w.FF || {};
+        FF.constants = {
+            AD_ORD:         1779934569,
+            ENV:            "production",
+            RENDER_START:   new Date(),
+            TIME:           1779938169000,
+            PLAYER_CARD_FEATURE: ""
+        };
+
+    }(window));
+    </script>
+    <!-- Loads the NFL constants -->
+    <script src="/static/js/1775585038/bmZsLWNvbnN0YW50cy5qcw...js"></script>
+    <script>
+      // Overwrite nfl constants with system defaults.
+      window.nfl.constants.ID_MANAGER = 'https://id.nfl.com/oidc/op/v1.0/3_3g_DApOD0TCeN6ZJpzQMr7H1cIbtqtHwDjKVESN3N5oohMleIozT0I9WecPZeytT/authorize?client_id=QQGrZiryRodzyfcyi_Cn-O-g&redirect_uri=https%3A%2F%2Ffantasy.nfl.com&response_type=code&scope=openid%20profile%20email%20fantasy';
+    </script>
+    <title>My Team | NFL Fantasy</title>
+    <meta name="msvalidate.01" content="EDD46A4B9FD14F0A47471FDE9821BA49"/>    <!-- print css -->
+        <!-- shared css -->
+        <link rel="stylesheet" type="text/css" href="/static/css/1775585039/cHVyZS1taW4uY3NzO3lyZXNldC5jc3M7Zm9udHMuY3NzO3NpdGUuY3NzO2ZvbnRmYWNlLmNzcztvdmVybGF5LmNzczt0YWJsZS5jc3M7cGFnaW5hdGlvbi5jc3M7Y2x1YkltYWdlcy5jc3M7bmZsTmF2LmNzcztmb3Jtc05vTGVzcy5jc3M7cGxheWVyQ2FyZC5jc3M7ZHluYW1pY0Vycm9yLmNzcztlcnJvcnMuY3NzO3ZpZGVvLmNzczttaXNjUHRzLmNzcztuYXZCYXIuY3NzO3Bvc2l0aW9uLW5hdi5jc3M7bmF2LWJhci5jc3M7dGFiQmFyLmNzczt0YWItYmFyLmNzcztsZWFybk1vcmUuY3NzO3BhcnRuZXJzLWxvZ2luLmNzcztwb3B1cC5jc3M7bW9kYWwtbG9naW4uY3NzO2ZhbnRhc3ktaGVhZGVyLmNzcztmZi1zYXAtbW9kYWwuY3NzO3l1aTItc2tpbi1zYW0tY2FsZW5kYXItbWluLmNzczt1cHNlbGwuY3Nz.css" />
+        <!-- page css  -->
+        <!-- main css file -->
+    <link rel="stylesheet" type="text/css" href="/static/css/1775585038/dGVhbUNvbmZpcm1NZXNzYWdlLmNzczt0ZWFtRGV0YWlsLmNzczt0ZWFtRGV0YWlsQWN0aXZlLmNzczt0ZWFtTm90ZXMuY3NzO3RlYW1PcHRpbWl6ZVByb0RpYWxvZy5jc3M7dGVhbU9wdGltaXplUHJvU25hY2tiYXJzLmNzczt3ZWVrTmF2LmNzcztsZWdlbmQuY3NzO3RlYW1BY3Rpb25zLmNzczt0ZWFtLmNzcztwbGF5ZXJDb21wYXJpc29uLmNzcztwcmVzdGl0aWFsLmNzcztmZi1zYXAtbW9kYWwuY3NzO3RhYi1iYXIuY3NzO25hdi1iYXIuY3Nz.css" />
+    
+
+    </head>
+
+<body id="teamHomePage" class="noJs yui-skin-sam yui3-skin-sam g-a">
+
+
+<div id="doc">
+    <a class="skip-to-content-link" href="#bd">
+        Skip to content
+    </a>
+
+        <div id="hd-wrap">
+        <div id="hd">
+            <link type="text/css" rel="stylesheet" href="//fantasy.nfl.com/jslib/nav/index.css" />
+<script src="//fantasy.nfl.com/jslib/nav/index.js"></script>
+<div id="nfl-fantasy-nav"></div>
+<script type="text/javascript">
+    (function() {
+        var nav = window.NFL_FANTASY_NAV('#nfl-fantasy-nav', '36271');
+    }());
+</script>
+<noscript>
+    <div id="noJsMessage">
+        <p>Free Fantasy Football | 2015 Fantasy Football - NFL.com relies heavily on Javascript.</p>
+        <p class="last">For the ultimate experience please enable Javascript in your browser.</p>
+    </div>
+</noscript>
+        </div>
+    </div>
+            <div id="subHd">
+        <div id="googleadtag-BANNER1009461203" class="ad ad-BANNER" style="width: 728px; height: 90px;" >
+    <script >
+    if (window.googletag) {
+        googletag.cmd.push(function() {
+            var path = "/4595/fantasy.nfl.com/team/home",
+                size = [728, 90],
+                id = "googleadtag-BANNER1009461203",
+                pubService = googletag.pubads();
+            googletag.defineSlot(path, size, id).
+                addService(pubService).
+                setTargeting('s1', 'team').setTargeting('s2', 'home').
+                setTargeting("slot", "top").
+                setTargeting("test", "").
+                setTargeting('leagueSpon', 'default').setTargeting('class', 'subHeaderBANNER').
+                setTargeting("url", "team_home");
+
+        });
+    }
+    </script>
+</div><style>
+    .g-a #bd, .g-b #bd, .g-c #bd { padding-top: 20px; }
+    #bd h1.title { display: none; }
+</style>
+<div class="subHeaderTOPPERcontainer">
+    <h1>My Team</h1>
+    <span class="halfBg"></span>
+    <div id="googleadtag-TOPPER35501487" class="ad ad-TOPPER" style="width: 500px; height: 70px;" >
+    <script >
+    if (window.googletag) {
+        googletag.cmd.push(function() {
+            var path = "/4595/fantasy.nfl.com/team/home",
+                size = [500, 70],
+                id = "googleadtag-TOPPER35501487",
+                pubService = googletag.pubads();
+            googletag.defineSlot(path, size, id).
+                addService(pubService).
+                setTargeting('s1', 'team').setTargeting('s2', 'home').
+                setTargeting("slot", "spon").
+                setTargeting("test", "").
+                setTargeting('leagueSpon', 'default').setTargeting('class', 'subHeaderTOPPER').
+                setTargeting("url", "team_home");
+
+        });
+    }
+    </script>
+</div>
+</div>    </div>
+            <div id="bd-wrap">
+    <div id="bd" role="main">
+
+        
+        
+        
+        
+                            <div id="primary"><div id="primaryContent">
+                <div id="teamDetail" class="mod matchupFinal">
+    <div class="content quickinfo">
+        <div class="hd">
+
+            <!-- left 70% of width -->
+            <div class="quickInfoWrap">
+                <div class="quickInfo">
+                    <div class="header">
+                        <!-- dropdown -->
+                        <form action="/league/36271/team" method="GET" class="team-select">
+                            <div id="quickinfo_teamselector" class="selector closed">
+                                <div>
+                                    <span class="selecter-selected" data-value="4">
+                                        <span class="label">The Wizard Of BAA'z</span>
+                                        <span class="arrow-down">&#9662;</span>
+                                    </span>
+                                </div>
+                                <div class="selecter-options">
+                                                                            <span class="selecter-item" data-value="1">
+                                            <span>Cream of the C</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="2">
+                                            <span>The ESPNstein Files</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="3">
+                                            <span>JFCFPWCPGAWWLTDOSGT</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="4">
+                                            <span>The Wizard Of BAA'z</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="5">
+                                            <span>The Princess McBride</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="6">
+                                            <span>FROM FIRST TO LAST</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="7">
+                                            <span>Rev Russell's Sunday Service</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="8">
+                                            <span>Character Zero RB</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="9">
+                                            <span>F this Tenacious Fie</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="10">
+                                            <span>London on da Track</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="11">
+                                            <span>ROBZILLA</span>
+                                        </span>
+                                                                            <span class="selecter-item" data-value="12">
+                                            <span>Batesohardithurts</span>
+                                        </span>
+                                                                    </div>
+                            </div>
+
+    <!--                        -->                            <input class="hidden" name="week" type="hidden" value="17"/>                        </form>
+
+                        <!-- owners and trophy room -->
+                        <span class="right-side">
+                            <!-- owners -->
+                            Manager: <ul class="owners"><li class="first last"><span class="userName userId-168722">sully</span></li></ul><span class="pipe">&nbsp;|&nbsp;</span><ul class="action"><li class="first last"><a href="/league/36271?bracketType=championship&standingsTab=playoffs" >Playoff Bracket</a></li></ul>
+                        </span>
+
+                    </div>
+                    <hr />
+
+                    <div class="bd bd-pre">
+                                                    <div class="teamWrap">
+                            <a href="/league/36271/team/4" class="teamImg teamId-4"><img src="https://fantasy.nfl.com/image/0d98c9e17850093e9a5be53673f724cf.jpg?&x=40&y=40" alt="The Wizard Of BAA'z" width="40" height="40"/><b></b></a><ul class="teamStats"><li class="first"><em>Rank</em> <strong>7</strong></li><li><em>Record</em> <strong><span class="teamRecord teamId-4">7-7-0</span></strong></li><li class="last"><em>Streak</em> <strong><span class="teamStreak teamId-4">L1</span></strong></li></ul>                                                                        <!--
+                                        <a href="https://www.nfl.com/fcoy?fantasy_lenovo_fcoy_myteamrank" target="_blank">
+                                            <div class="fantasy-coach-year">
+                                                <div>
+                                                    <i class="qb-sprite lenovo"></i>&nbsp;FCOY Rank
+                                                </div>
+                                                <div class="bar-wrapper">
+                                                    <span class="percentage-bar">
+                                                        <span style="width: 0%"></span>
+                                                    </span>
+                                                    <span class="percentage-rank">
+                                                        -                                                    </span>
+                                                </div>
+                                            </div>
+                                        </a>
+                                        -->
+                                
+                            <ul class="teamStats"><li class="seasonResult first last"><em>Season Result</em> <strong>8th Place</strong></li></ul>
+                            </div>
+
+                                                                    </div>
+                </div>
+            </div>
+
+            <!-- left 30% of width -->
+            <div class="promoWrap">
+            <a href="https://www.nfl.com/nflsundaytickettv" target="_parent"><img border="0" src="https://static.www.nfl.com/league/apps/fantasy/image/sundayTicket_230x100.png" alt="NFL Sunday Ticket" width="230" height="100" /></a>
+            </div>
+        </div>
+
+
+
+        <div class="ft">
+                    </div>
+    </div>
+</div>
+
+
+<div id="teamHome" class="mod dynamicModule teamActions history-teamHome moduleName-teamHome">
+    <div class="content">
+        <div class="bd">
+
+
+        <form method="post" action="/league/36271/team/4/rosteredit">
+                <input type="hidden" name="week" value="17">
+        <input type="hidden" name="statCategory" value="stats">
+        <input type="hidden" name="statType" value="seasonStats">
+        <div class="wrap"><div class="week-nav-dropdown-wrap"><ul class="week-nav-dropdown week-nav-dropdown-label"><li class="wl wl-17 first last"><span>Week 17</span></li></ul><ul class="week-nav-dropdown week-nav-dropdown-full"><li class="ww ww-1 first"><a href="/league/36271/team/4?week=1"  class="w-1"><span>Week 1</span></a></li><li class="ww ww-2"><a href="/league/36271/team/4?week=2"  class="w-2"><span>Week 2</span></a></li><li class="ww ww-3"><a href="/league/36271/team/4?week=3"  class="w-3"><span>Week 3</span></a></li><li class="ww ww-4"><a href="/league/36271/team/4?week=4"  class="w-4"><span>Week 4</span></a></li><li class="ww ww-5"><a href="/league/36271/team/4?week=5"  class="w-5"><span>Week 5</span></a></li><li class="ww ww-6"><a href="/league/36271/team/4?week=6"  class="w-6"><span>Week 6</span></a></li><li class="ww ww-7"><a href="/league/36271/team/4?week=7"  class="w-7"><span>Week 7</span></a></li><li class="ww ww-8"><a href="/league/36271/team/4?week=8"  class="w-8"><span>Week 8</span></a></li><li class="ww ww-9"><a href="/league/36271/team/4?week=9"  class="w-9"><span>Week 9</span></a></li><li class="ww ww-10"><a href="/league/36271/team/4?week=10"  class="w-10"><span>Week 10</span></a></li><li class="ww ww-11"><a href="/league/36271/team/4?week=11"  class="w-11"><span>Week 11</span></a></li><li class="ww ww-12"><a href="/league/36271/team/4?week=12"  class="w-12"><span>Week 12</span></a></li><li class="ww ww-13"><a href="/league/36271/team/4?week=13"  class="w-13"><span>Week 13</span></a></li><li class="ww ww-14"><a href="/league/36271/team/4?week=14"  class="w-14"><span>Week 14</span></a></li><li class="ww ww-15"><a href="/league/36271/team/4?week=15"  class="w-15"><span>Week 15</span></a></li><li class="ww ww-16"><a href="/league/36271/team/4?week=16"  class="w-16"><span>Week 16</span></a></li><li class="ww ww-17 selected last"><a href="/league/36271/team/4?week=17"  class="w-17"><span>Week 17</span></a></li></ul></div><div class="statCategoryNav tab-bar"><ul><li id="plS" class="selected first last"><a href="/league/36271/team/4?week=17"  class="dynamic"><span><span class="effect"></span><span class="text">Stats</span></span></a></li></ul></div><div class='stat-type-nav'><ul class="weekNav weekNav-full nav-bar" aria-labelledby="seasonMenu"><li class="wl label first" id="weekLabel"><span><span class="effect"></span><span class="text">Weeks:</span></span></li><li class="ww ww-1"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=1&week=17"  class="dynamic w-1" title="Week 1"><span><span class="effect"></span><span class="text">1</span></span></a></li><li class="ww ww-2"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=2&week=17"  class="dynamic w-2" title="Week 2"><span><span class="effect"></span><span class="text">2</span></span></a></li><li class="ww ww-3"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=3&week=17"  class="dynamic w-3" title="Week 3"><span><span class="effect"></span><span class="text">3</span></span></a></li><li class="ww ww-4"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=4&week=17"  class="dynamic w-4" title="Week 4"><span><span class="effect"></span><span class="text">4</span></span></a></li><li class="ww ww-5"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=5&week=17"  class="dynamic w-5" title="Week 5"><span><span class="effect"></span><span class="text">5</span></span></a></li><li class="ww ww-6"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=6&week=17"  class="dynamic w-6" title="Week 6"><span><span class="effect"></span><span class="text">6</span></span></a></li><li class="ww ww-7"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=7&week=17"  class="dynamic w-7" title="Week 7"><span><span class="effect"></span><span class="text">7</span></span></a></li><li class="ww ww-8"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=8&week=17"  class="dynamic w-8" title="Week 8"><span><span class="effect"></span><span class="text">8</span></span></a></li><li class="ww ww-9"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=9&week=17"  class="dynamic w-9" title="Week 9"><span><span class="effect"></span><span class="text">9</span></span></a></li><li class="ww ww-10"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=10&week=17"  class="dynamic w-10" title="Week 10"><span><span class="effect"></span><span class="text">10</span></span></a></li><li class="ww ww-11"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=11&week=17"  class="dynamic w-11" title="Week 11"><span><span class="effect"></span><span class="text">11</span></span></a></li><li class="ww ww-12"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=12&week=17"  class="dynamic w-12" title="Week 12"><span><span class="effect"></span><span class="text">12</span></span></a></li><li class="ww ww-13"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=13&week=17"  class="dynamic w-13" title="Week 13"><span><span class="effect"></span><span class="text">13</span></span></a></li><li class="ww ww-14"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=14&week=17"  class="dynamic w-14" title="Week 14"><span><span class="effect"></span><span class="text">14</span></span></a></li><li class="ww ww-15"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=15&week=17"  class="dynamic w-15" title="Week 15"><span><span class="effect"></span><span class="text">15</span></span></a></li><li class="ww ww-16"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=16&week=17"  class="dynamic w-16" title="Week 16"><span><span class="effect"></span><span class="text">16</span></span></a></li><li class="ww ww-17"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=weekStats&statWeek=17&week=17"  class="dynamic w-17" title="Week 17"><span><span class="effect"></span><span class="text">17</span></span></a></li><li class="ww-w2"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=twoWeekStats&week=17"  class="dynamic" title="Last 2 Weeks"><span><span class="effect"></span><span class="text">Last 2 WKS</span></span></a></li><li class="ww-w2"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=fourWeekStats&week=17"  class="dynamic" title="Last 4 Weeks"><span><span class="effect"></span><span class="text">Last 4 WKS</span></span></a></li><li id="st2025" class="st-item st-selected last"><a href="/league/36271/team/4?statCategory=stats&statSeason=2025&statType=seasonStats&week=17"  class="dynamic" title="2025 Season"><span><span class='effect'></span><span class='text'>2025 Season</span></span></a><button aria-label="Seasons" aria-controls="seasonMenu"><b></b></button><div class="st-menu" id="seasonMenu" role="menu" aria-label="Seasons"><a aria-haspopup="true" class="dynamic first" href="/league/36271/team/4?statCategory=stats&amp;statSeason=2019&amp;statType=seasonStats&amp;week=17" role="menuitem">2019 Season</a><a aria-haspopup="true" class="dynamic " href="/league/36271/team/4?statCategory=stats&amp;statSeason=2020&amp;statType=seasonStats&amp;week=17" role="menuitem">2020 Season</a><a aria-haspopup="true" class="dynamic " href="/league/36271/team/4?statCategory=stats&amp;statSeason=2021&amp;statType=seasonStats&amp;week=17" role="menuitem">2021 Season</a><a aria-haspopup="true" class="dynamic " href="/league/36271/team/4?statCategory=stats&amp;statSeason=2022&amp;statType=seasonStats&amp;week=17" role="menuitem">2022 Season</a><a aria-haspopup="true" class="dynamic " href="/league/36271/team/4?statCategory=stats&amp;statSeason=2023&amp;statType=seasonStats&amp;week=17" role="menuitem">2023 Season</a><a aria-haspopup="true" class="dynamic " href="/league/36271/team/4?statCategory=stats&amp;statSeason=2024&amp;statType=seasonStats&amp;week=17" role="menuitem">2024 Season</a><a aria-haspopup="true" class="dynamic selected last" href="/league/36271/team/4?statCategory=stats&amp;statSeason=2025&amp;statType=seasonStats&amp;week=17" role="menuitem">2025 Season</a></div></li></ul></div></div>        <div class="tableWrap" id="tableWrap-O"><table cellpadding="0" cellspacing="0" class="tableType-player hasGroups"><thead><tr class="first"><th class="teamPosition first">&nbsp;</th><th class="playerNameAndInfo">&nbsp;</th><th class="playerOpponent">&nbsp;</th><th class="playerGameStatus">&nbsp;</th><th class="group passing firstgroup-passing" colspan="3" scope="colgroup"><em><b></b><span>Passing</span></em></th><th class="group rushing firstgroup-rushing" colspan="2" scope="colgroup"><em><b></b><span>Rushing</span></em></th><th class="group receiving firstgroup-receiving" colspan="3" scope="colgroup"><em><b></b><span>Receiving</span></em></th><th class="group return firstgroup-return" scope="colgroup"><em><b></b><span>Ret</span></em></th><th class="group fumble firstgroup-fumble" scope="colgroup"><em><b></b><span>Fum</span></em></th><th class="group misc firstgroup-misc" scope="colgroup"><em><b></b><span>Misc</span></em></th><th class="group points firstgroup-points last" scope="colgroup"><em><b></b><span>Fantasy</span></em></th></tr><tr class="last"><th class="teamPosition first" scope="col"><span>POS</span></th><th class="playerNameAndInfo" scope="col"><span>Offense</span></th><th aria-label="Opponent" class="playerOpponent" scope="col"><span>Opp</span></th><th class="playerGameStatus" scope="col"><span>Status</span></th><th aria-label="Passing Yards" class="stat stat_5 numeric" scope="col"><span>Yds</span></th><th aria-label="Passing Touchdowns" class="stat stat_6 numeric" scope="col"><span>TD</span></th><th aria-label="Interceptions" class="stat stat_7 numeric" scope="col"><span>Int</span></th><th aria-label="Rush Yards" class="stat stat_14 numeric" scope="col"><span>Yds</span></th><th aria-label="Rush Touchdowns" class="stat stat_15 numeric" scope="col"><span>TD</span></th><th aria-label="Receptions" class="stat stat_20 numeric" scope="col"><span>Rec</span></th><th aria-label="Receiving Yards" class="stat stat_21 numeric" scope="col"><span>Yds</span></th><th aria-label="Receiving Touchdowns" class="stat stat_22 numeric" scope="col"><span>TD</span></th><th aria-label="Return Touchdowns" class="stat stat_28 numeric" scope="col"><span>TD</span></th><th aria-label="Fumble Lost" class="stat stat_30 numeric" scope="col"><span>Lost</span></th><th aria-label="Two Point Conversion" class="stat stat_32 numeric" scope="col"><span>2PT</span></th><th class="stat statTotal numeric last" scope="col"><span>Points</span></th></tr></thead><tbody><tr class="player-1-0 odd first"><td class="teamPosition first"><span class="final">QB</span></td><td class="playerNameAndInfo"><div class="c c-cin"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2563722" class="playerCard playerName playerNameFull playerNameId-2563722 what-playerCard">Joe Burrow</a> <em>QB - CIN</em>    </div></td><td class="playerOpponent">ARI</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b7a92-311e-11f0-b670-ae1250fadad1 r-w sgType-h"><a href="https://www.nfl.com/games/cardinals-at-bengals-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">37</em><b>-</b><em class="s-h">14</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2563722">1809</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2563722">17</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2563722">5</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2563722">41</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2563722">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2563722">-</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2563722">-</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2563722">-</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2563722">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2563722">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2563722">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2563722">136.46</span></td></tr><tr class="player-2-0 even"><td class="teamPosition first"><span class="final">RB</span></td><td class="playerNameAndInfo"><div class="c c-det"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2569747" class="playerCard playerName playerNameFull playerNameId-2569747 what-playerCard">Jahmyr Gibbs</a> <em>RB - DET</em>    </div></td><td class="playerOpponent">@MIN</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b6ce0-311e-11f0-b670-ae1250fadad1 r-l sgType-a"><a href="https://www.nfl.com/games/lions-at-vikings-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">10</em><b>-</b><em class="s-h">23</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2569747">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2569747">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2569747">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2569747">1223</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2569747">13</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2569747">77</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2569747">616</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2569747">5</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2569747">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2569747">1</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2569747">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2569747">382.90</span></td></tr><tr class="player-2-1 odd"><td class="teamPosition first"><span class="final">RB</span></td><td class="playerNameAndInfo"><div class="c c-den"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2574090" class="playerCard playerName playerNameFull playerNameId-2574090 what-playerCard">RJ Harvey</a> <em>RB - DEN</em>    </div></td><td class="playerOpponent">@KC</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b71fe-311e-11f0-b670-ae1250fadad1 r-w sgType-a"><a href="https://www.nfl.com/games/broncos-at-chiefs-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">20</em><b>-</b><em class="s-h">13</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2574090">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2574090">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2574090">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2574090">540</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2574090">7</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2574090">47</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2574090">356</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2574090">5</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2574090">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2574090">1</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2574090">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2574090">207.60</span></td></tr><tr class="player-3-0 even"><td class="teamPosition first"><span class="final">WR</span></td><td class="playerNameAndInfo"><div class="c c-lar"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2543495" class="playerCard playerName playerNameFull playerNameId-2543495 what-playerCard">Davante Adams</a> <em>WR - LAR</em> <strong class="status status-ia" title="Inactive">IA</strong>   </div></td><td class="playerOpponent">@ATL</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f93acbca-311e-11f0-b670-ae1250fadad1 r-l sgType-a"><a href="https://www.nfl.com/games/rams-at-falcons-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">24</em><b>-</b><em class="s-h">27</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2543495">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2543495">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2543495">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2543495">-</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2543495">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2543495">60</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2543495">789</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2543495">14</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2543495">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2543495">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2543495">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2543495">224.90</span></td></tr><tr class="player-3-1 odd"><td class="teamPosition first"><span class="final">WR</span></td><td class="playerNameAndInfo"><div class="c c-no"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2567973" class="playerCard playerName playerNameFull playerNameId-2567973 what-playerCard">Chris Olave</a> <em>WR - NO</em> <strong class="status status-ia" title="Inactive">IA</strong>   </div></td><td class="playerOpponent">@TEN</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f93abe7c-311e-11f0-b670-ae1250fadad1 r-w sgType-a"><a href="https://www.nfl.com/games/saints-at-titans-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">34</em><b>-</b><em class="s-h">26</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2567973">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2567973">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2567973">1</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2567973">-3</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2567973">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2567973">100</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2567973">1163</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2567973">9</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2567973">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2567973">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2567973">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2567973">275.00</span></td></tr><tr class="player-4-0 even"><td class="teamPosition first"><span class="final">TE</span></td><td class="playerNameAndInfo"><div class="c c-dal"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2567496" class="playerCard playerName playerNameFull playerNameId-2567496 what-playerCard">Jake Ferguson</a> <em>TE - DAL</em>    </div></td><td class="playerOpponent">@WAS</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b6416-311e-11f0-b670-ae1250fadad1 r-w sgType-a"><a href="https://www.nfl.com/games/cowboys-at-commanders-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">30</em><b>-</b><em class="s-h">23</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2567496">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2567496">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2567496">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2567496">1</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2567496">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2567496">82</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2567496">600</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2567496">8</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2567496">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2567496">2</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2567496">1</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2567496">188.10</span></td></tr><tr class="player-10-0 odd"><td class="teamPosition first"><span class="final"><em>R/W/<br>T</em></span></td><td class="playerNameAndInfo"><div class="c c-mia"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2566292" class="playerCard playerName playerNameFull playerNameId-2566292 what-playerCard">Jaylen Waddle</a> <em>WR - MIA</em> <strong class="status status-ia" title="Inactive">IA</strong>   </div></td><td class="playerOpponent">TB</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f93aaf3d-311e-11f0-b670-ae1250fadad1 r-w sgType-h"><a href="https://www.nfl.com/games/buccaneers-at-dolphins-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">20</em><b>-</b><em class="s-h">17</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2566292">8</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2566292">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2566292">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2566292">28</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2566292">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2566292">64</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2566292">910</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2566292">6</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2566292">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2566292">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2566292">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2566292">197.12</span></td></tr><tr class="insertedplayer-10-0 benchLabel"><td colspan="16"><div><b>Bench</b></div></td></tr><tr class="player-20-1 even"><td class="teamPosition first"><span class="final">BN</span></td><td class="playerNameAndInfo"><div class="c c-was"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2572564" class="playerCard playerName playerNameFull playerNameId-2572564 what-playerCard">Jayden Daniels</a> <em>QB - WAS</em> <strong class="status status-ia" title="Inactive">IA</strong> <a class="playerNote playerCard what-playerCard playerNote-breaking" title="View Breaking Player News" onclick="return false" href="/players/card?leagueId=36271&playerId=2572564">View News</a>  </div></td><td class="playerOpponent">DAL</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b6416-311e-11f0-b670-ae1250fadad1 r-l sgType-h"><a href="https://www.nfl.com/games/cowboys-at-commanders-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">23</em><b>-</b><em class="s-h">30</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2572564">1262</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2572564">8</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2572564">3</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2572564">278</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2572564">2</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2572564">-</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2572564">-</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2572564">-</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2572564">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2572564">2</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2572564">1</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2572564">114.28</span></td></tr><tr class="player-20-2 odd"><td class="teamPosition first"><span class="final">BN</span></td><td class="playerNameAndInfo"><div class="c c-jax"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2574235" class="playerCard playerName playerNameFull playerNameId-2574235 what-playerCard">Bhayshul Tuten</a> <em>RB - JAX</em>    </div></td><td class="playerOpponent">@IND</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b90fc-311e-11f0-b670-ae1250fadad1 r-w sgType-a"><a href="https://www.nfl.com/games/jaguars-at-colts-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">23</em><b>-</b><em class="s-h">17</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2574235">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2574235">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2574235">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2574235">307</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2574235">5</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2574235">10</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2574235">79</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2574235">2</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2574235">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2574235">1</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2574235">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2574235">88.60</span></td></tr><tr class="player-20-3 even"><td class="teamPosition first"><span class="final">BN</span></td><td class="playerNameAndInfo"><div class="c c-phi"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2562238" class="playerCard playerName playerNameFull playerNameId-2562238 what-playerCard">A.J. Brown</a> <em>WR - PHI</em>    </div></td><td class="playerOpponent">@BUF</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f93ac30f-311e-11f0-b670-ae1250fadad1 r-w sgType-a"><a href="https://www.nfl.com/games/eagles-at-bills-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">13</em><b>-</b><em class="s-h">12</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2562238">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2562238">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2562238">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2562238">-</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2562238">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2562238">78</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2562238">1003</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2562238">7</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2562238">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2562238">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2562238">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2562238">225.30</span></td></tr><tr class="player-20-4 odd"><td class="teamPosition first"><span class="final">BN</span></td><td class="playerNameAndInfo"><div class="c c-lac"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2572477" class="playerCard playerName playerNameFull playerNameId-2572477 what-playerCard">Ladd McConkey</a> <em>WR - LAC</em>    </div></td><td class="playerOpponent">HOU</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b8404-311e-11f0-b670-ae1250fadad1 r-l sgType-h"><a href="https://www.nfl.com/games/texans-at-chargers-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">16</em><b>-</b><em class="s-h">20</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2572477">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2572477">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2572477">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2572477">-</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2572477">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2572477">66</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2572477">789</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2572477">6</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2572477">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2572477">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2572477">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2572477">182.90</span></td></tr><tr class="player-21-1 even last"><td class="teamPosition first"><span class="final">RES</span></td><td class="playerNameAndInfo"><div class="c c-gb"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2572042" class="playerCard playerName playerNameFull playerNameId-2572042 what-playerCard">MarShawn Lloyd</a> <em>RB - GB</em> <strong class="status status-ir" title="Injured Reserve">IR</strong> <a class="playerNote playerCard what-playerCard playerNote-breaking" title="View Breaking Player News" onclick="return false" href="/players/card?leagueId=36271&playerId=2572042">View News</a>  </div></td><td class="playerOpponent">BAL</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b7fa5-311e-11f0-b670-ae1250fadad1 r-l sgType-h"><a href="https://www.nfl.com/games/ravens-at-packers-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">24</em><b>-</b><em class="s-h">41</em></span></a></div></div></td><td class="stat stat_5 numeric"><span class="playerStat statId-5 playerId-2572042">-</span></td><td class="stat stat_6 numeric"><span class="playerStat statId-6 playerId-2572042">-</span></td><td class="stat stat_7 numeric"><span class="playerStat statId-7 playerId-2572042">-</span></td><td class="stat stat_14 numeric"><span class="playerStat statId-14 playerId-2572042">-</span></td><td class="stat stat_15 numeric"><span class="playerStat statId-15 playerId-2572042">-</span></td><td class="stat stat_20 numeric"><span class="playerStat statId-20 playerId-2572042">-</span></td><td class="stat stat_21 numeric"><span class="playerStat statId-21 playerId-2572042">-</span></td><td class="stat stat_22 numeric"><span class="playerStat statId-22 playerId-2572042">-</span></td><td class="stat stat_28 numeric"><span class="playerStat statId-28 playerId-2572042">-</span></td><td class="stat stat_30 numeric"><span class="playerStat statId-30 playerId-2572042">-</span></td><td class="stat stat_32 numeric"><span class="playerStat statId-32 playerId-2572042">-</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2572042">0.00</span></td></tr></tbody></table></div><div class="tableWrap" id="tableWrap-K"><table cellpadding="0" cellspacing="0" class="tableType-player hasGroups"><thead><tr class="first"><th class="teamPosition first">&nbsp;</th><th class="playerNameAndInfo">&nbsp;</th><th class="playerOpponent">&nbsp;</th><th class="playerGameStatus">&nbsp;</th><th class="group pat firstgroup-pat" scope="colgroup"><em><b></b><span>PAT</span></em></th><th class="group fgMade firstgroup-fgMade" colspan="5" scope="colgroup"><em><b></b><span>FG Made</span></em></th><th class="group points firstgroup-points last" scope="colgroup"><em><b></b><span>Fantasy</span></em></th></tr><tr class="last"><th class="teamPosition first" scope="col"><span>POS</span></th><th class="playerNameAndInfo" scope="col"><span>Kicker</span></th><th aria-label="Opponent" class="playerOpponent" scope="col"><span>Opp</span></th><th class="playerGameStatus" scope="col"><span>Status</span></th><th aria-label="PAT Made" class="stat stat_33 numeric" scope="col"><span>Made</span></th><th aria-label="0-19 Yard Field Goal" class="stat stat_35 numeric" scope="col"><span>0-19</span></th><th aria-label="20-29 Yard Field Goal" class="stat stat_36 numeric" scope="col"><span>20-29</span></th><th aria-label="30-39 Yard Field Goal" class="stat stat_37 numeric" scope="col"><span>30-39</span></th><th aria-label="40-49 Yard Field Goal" class="stat stat_38 numeric" scope="col"><span>40-49</span></th><th aria-label="50+ Yard Field Goal" class="stat stat_39 numeric" scope="col"><span>50+</span></th><th class="stat statTotal numeric last" scope="col"><span>Points</span></th></tr></thead><tbody><tr class="player-7-0 odd first last"><td class="teamPosition first"><span class="final">K</span></td><td class="playerNameAndInfo"><div class="c c-det"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=2571759" class="playerCard playerName playerNameFull playerNameId-2571759 what-playerCard">Jake Bates</a> <em>K - DET</em>    </div></td><td class="playerOpponent">@MIN</td><td class="playerGameStatus"><div class="pt offense"><div class="sg sgStatus-final sgId-f91b6ce0-311e-11f0-b670-ae1250fadad1 r-l sgType-a"><a href="https://www.nfl.com/games/lions-at-vikings-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">10</em><b>-</b><em class="s-h">23</em></span></a></div></div></td><td class="stat stat_33 numeric"><span class="playerStat statId-33 playerId-2571759">54</span></td><td class="stat stat_35 numeric"><span class="playerStat statId-35 playerId-2571759">-</span></td><td class="stat stat_36 numeric"><span class="playerStat statId-36 playerId-2571759">6</span></td><td class="stat stat_37 numeric"><span class="playerStat statId-37 playerId-2571759">8</span></td><td class="stat stat_38 numeric"><span class="playerStat statId-38 playerId-2571759">9</span></td><td class="stat stat_39 numeric"><span class="playerStat statId-39 playerId-2571759">4</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-2571759">143.00</span></td></tr></tbody></table></div><div class="tableWrap" id="tableWrap-DT"><table cellpadding="0" cellspacing="0" class="tableType-player hasGroups"><thead><tr class="first"><th class="teamPosition first">&nbsp;</th><th class="playerNameAndInfo">&nbsp;</th><th class="playerOpponent">&nbsp;</th><th class="playerGameStatus">&nbsp;</th><th class="group tackles firstgroup-tackles" scope="colgroup"><em><b></b><span>Tackles</span></em></th><th class="group turnover firstgroup-turnover" colspan="2" scope="colgroup"><em><b></b><span>Turnover</span></em></th><th class="group defScore firstgroup-defScore" colspan="2" scope="colgroup"><em><b></b><span>Score</span></em></th><th class="group defRet firstgroup-defRet" scope="colgroup"><em><b></b><span>Ret</span></em></th><th class="group defPts firstgroup-defPts" scope="colgroup"><em><b></b><span>Points</span></em></th><th class="group defYds firstgroup-defYds" scope="colgroup"><em><b></b><span>Yards</span></em></th><th class="group points firstgroup-points last" scope="colgroup"><em><b></b><span>Fantasy</span></em></th></tr><tr class="last"><th class="teamPosition first" scope="col"><span>POS</span></th><th class="playerNameAndInfo" scope="col"><span>Defense Team</span></th><th aria-label="Opponent" class="playerOpponent" scope="col"><span>Opp</span></th><th class="playerGameStatus" scope="col"><span>Status</span></th><th class="stat stat_45 numeric" scope="col"><span>Sack</span></th><th aria-label="Interception" class="stat stat_46 numeric" scope="col"><span>Int</span></th><th aria-label="Fumble Recovery" class="stat stat_47 numeric" scope="col"><span>Fum Rec</span></th><th aria-label="Safety" class="stat stat_49 numeric" scope="col"><span>Saf</span></th><th aria-label="Defense Touchdown" class="stat stat_50 numeric" scope="col"><span>TD</span></th><th aria-label="Return Touchdowns" class="stat stat_53 numeric" scope="col"><span>TD</span></th><th aria-label="Points Allowed" class="stat stat_54 numeric" scope="col"><span>Pts Allow</span></th><th aria-label="Yards Allowed" class="stat stat_62 numeric" scope="col"><span>Yds Allow</span></th><th class="stat statTotal numeric last" scope="col"><span>Points</span></th></tr></thead><tbody><tr class="player-8-0 odd first"><td class="teamPosition first"><span class="final">DEF</span></td><td class="playerNameAndInfo"><div class="c c-sf"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=100029" class="playerCard playerName playerNameFull playerNameId-100029 what-playerCard">San Francisco 49ers</a> <em>DEF</em>    </div></td><td class="playerOpponent">CHI</td><td class="playerGameStatus"><div class="pt defense"><div class="sg sgStatus-final sgId-f93ac772-311e-11f0-b670-ae1250fadad1 r-w sgType-h"><a href="https://www.nfl.com/games/bears-at-49ers-2025-reg-17" target="_blank"><span class="rt">Win,</span> <span><em class="s-a">42</em><b>-</b><em class="s-h">38</em></span></a></div></div></td><td class="stat stat_45 numeric"><span class="playerStat statId-45 playerId-100029">20</span></td><td class="stat stat_46 numeric"><span class="playerStat statId-46 playerId-100029">6</span></td><td class="stat stat_47 numeric"><span class="playerStat statId-47 playerId-100029">10</span></td><td class="stat stat_49 numeric"><span class="playerStat statId-49 playerId-100029">-</span></td><td class="stat stat_50 numeric"><span class="playerStat statId-50 playerId-100029">1</span></td><td class="stat stat_53 numeric"><span class="playerStat statId-53 playerId-100029">-</span></td><td class="stat stat_54 numeric"><span class="playerStat statId-54 playerId-100029">363</span></td><td class="stat stat_62 numeric"><span class="playerStat statId-62 playerId-100029">5784</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-100029">103.00</span></td></tr><tr class="insertedplayer-8-0 benchLabel"><td colspan="13"><div><b>Bench</b></div></td></tr><tr class="player-20-5 even"><td class="teamPosition first"><span class="final">BN</span></td><td class="playerNameAndInfo"><div class="c c-kc"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=100016" class="playerCard playerName playerNameFull playerNameId-100016 what-playerCard">Kansas City Chiefs</a> <em>DEF</em>    </div></td><td class="playerOpponent">DEN</td><td class="playerGameStatus"><div class="pt defense"><div class="sg sgStatus-final sgId-f91b71fe-311e-11f0-b670-ae1250fadad1 r-l sgType-h"><a href="https://www.nfl.com/games/broncos-at-chiefs-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">13</em><b>-</b><em class="s-h">20</em></span></a></div></div></td><td class="stat stat_45 numeric"><span class="playerStat statId-45 playerId-100016">35</span></td><td class="stat stat_46 numeric"><span class="playerStat statId-46 playerId-100016">10</span></td><td class="stat stat_47 numeric"><span class="playerStat statId-47 playerId-100016">4</span></td><td class="stat stat_49 numeric"><span class="playerStat statId-49 playerId-100016">-</span></td><td class="stat stat_50 numeric"><span class="playerStat statId-50 playerId-100016">-</span></td><td class="stat stat_53 numeric"><span class="playerStat statId-53 playerId-100016">-</span></td><td class="stat stat_54 numeric"><span class="playerStat statId-54 playerId-100016">318</span></td><td class="stat stat_62 numeric"><span class="playerStat statId-62 playerId-100016">5126</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-100016">137.00</span></td></tr><tr class="player-20-6 odd last"><td class="teamPosition first"><span class="final">BN</span></td><td class="playerNameAndInfo"><div class="c c-det"><b></b><a onclick="return false" href="/players/card?leagueId=36271&playerId=100010" class="playerCard playerName playerNameFull playerNameId-100010 what-playerCard">Detroit Lions</a> <em>DEF</em>    </div></td><td class="playerOpponent">@MIN</td><td class="playerGameStatus"><div class="pt defense"><div class="sg sgStatus-final sgId-f91b6ce0-311e-11f0-b670-ae1250fadad1 r-l sgType-a"><a href="https://www.nfl.com/games/lions-at-vikings-2025-reg-17" target="_blank"><span class="rt">Loss,</span> <span><em class="s-a">10</em><b>-</b><em class="s-h">23</em></span></a></div></div></td><td class="stat stat_45 numeric"><span class="playerStat statId-45 playerId-100010">49</span></td><td class="stat stat_46 numeric"><span class="playerStat statId-46 playerId-100010">13</span></td><td class="stat stat_47 numeric"><span class="playerStat statId-47 playerId-100010">6</span></td><td class="stat stat_49 numeric"><span class="playerStat statId-49 playerId-100010">1</span></td><td class="stat stat_50 numeric"><span class="playerStat statId-50 playerId-100010">-</span></td><td class="stat stat_53 numeric"><span class="playerStat statId-53 playerId-100010">1</span></td><td class="stat stat_54 numeric"><span class="playerStat statId-54 playerId-100010">411</span></td><td class="stat stat_62 numeric"><span class="playerStat statId-62 playerId-100010">5642</span></td><td class="stat statTotal numeric last"><span class="playerSeasonTotal playerSeason-2025 playerId-100010">128.00</span></td></tr></tbody></table></div>
+        <ul class="legend legendType-status"><li class="pre first"><b></b> <span>Yet to Play</span></li><li class="active"><b></b> <span>In Play</span></li><li class="final last"><b></b> <span>Final</span></li></ul>
+        <input type="hidden" name="csrf" value="de4b97751d35e4845751f067bb4c96dbac7184138902a021a5a9f12ea0803c30" />        </form>
+
+        </div>
+
+    </div>
+</div>
+
+<div id="testNode"></div>
+<noscript>
+<style>
+.tableWrap .teamPositionEditDrag {
+    display:none;
+}
+.tableWrap .teamPositionEdit{
+    display:table-cell;
+    *display:block;
+    width:40px;
+}
+.tableWrap .teamPositionEdit select {
+    position:static;
+    left:-9000px;
+}
+#teamHome input.submit {
+    display:block;
+}
+#teamHome .buttonBar {
+    display:none;
+}
+</style>
+</noscript>
+
+
+
+            </div></div>            
+                        <div class="sh s"></div>
+        <div class="sh t"></div>
+        </div>
+
+    </div>
+            <div id="ft-wrap">
+        <div id="ft">
+            <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+<script> 
+window.nflLibHostName = "p.nfltags.com";
+window.nflLibPath = "/nfl/live";
+$(window).on("load", function () {
+    var MutationObserver =
+        window.MutationObserver ||
+        window.WebKitMutationObserver ||
+        window.MozMutationObserver;
+    var reactInited = false;
+    $.ajax({
+        url: "https://www.nfl.com/_libraries/fragments/assets",
+        type: "get",
+        dataType: "html",
+        success: function (data) {
+            data = data.replace(/window\.gigya[^;]*;/g, "");
+            data = data.replace(/"\/compiledassets/g,
+                        '"https://www.nfl.com/compiledassets');
+            var appendTo = $(document.createDocumentFragment());
+            appendTo.append(data);
+            appendTo.find(`link[rel="icon"]`).remove();
+            // Remove Tailwind CSS from global scope to prevent site-wide conflicts
+            appendTo.find('link[href*="tailwind.generated.css"]').remove();
+            $("#nfl-assets").replaceWith(appendTo);
+            $.ajax({
+                url: "https://www.nfl.com/_libraries/fragments/footer-fragment",
+                type: "get",
+                dataType: "html",
+                success: function (data) {
+                    $("#nfl-footer").replaceWith(data);
+                },
+            });
+        },
+    });
+    if (MutationObserver) {
+        // check for the require lib
+        var body = document.querySelector("body");
+        var observer = new MutationObserver(function (mutations) {
+            if (
+                window.requirejs &&
+                window.requirejs.config &&
+                window.Y &&
+                window.Y.React &&
+                !reactInited
+            ) {
+                window.Y.React.init();
+                reactInited = true;
+            }
+        });
+        observer.observe(body, { subtree: true, childList: true });
+    } else {
+        // if no browser support, use set timeout to wait for require
+        window.setTimeout(function () {
+            if (window.Y && window.Y.React && !reactInited) {
+                window.Y.React.init();
+                reactInited = true;
+            }
+        }, 2000);
+    }
+});
+</script>
+
+<div id="nfl-footer"></div>
+<script>
+window.dartWallpaperRender = function (obj) {
+    YUI().use("node", function (Y) {
+        var config = Y.merge({
+                background_color: "#FFF",
+                background_tiling: "no-repeat",
+                background_position: "center 145px",
+                image_url: "",
+                link_url: ""
+            }, obj),
+            bodyDoc = Y.one("body #doc");
+
+        if (config.background_color.indexOf("#") == -1) {
+            config.background_color = "#" + config.background_color;
+        }
+
+        try { // wrapped in try/catch in case we get bad data from dclk
+            bodyDoc.setStyle("background", [
+                config.background_color,
+                config.image_url ? "url(" + config.image_url + ")" : "none",
+                config.background_tiling,
+                config.background_position
+                ].join(" ")
+            );
+            /*
+            if (config.link_url) {
+
+                bodyDoc.on("click", function (event) {
+                    var targetId = event.target.get("id");
+                    if (targetId != 'bd-wrap' && targetId != 'subHd') {
+                        return;
+                    }
+                    event.preventDefault();
+                    window.open(config.link_url);
+                });
+            }*/
+        } catch (e) {
+            console.log(e);
+        }
+
+    });
+};
+</script>
+<div id="googleadtag-BACKGROUND1431144095" class="ad ad-BACKGROUND" style="width: 1px; height: 1px;" >
+    <script >
+    if (window.googletag) {
+        googletag.cmd.push(function() {
+            var path = "/4595/fantasy.nfl.com/team/home",
+                size = [1, 1],
+                id = "googleadtag-BACKGROUND1431144095",
+                pubService = googletag.pubads();
+            googletag.defineSlot(path, size, id).
+                addService(pubService).
+                setTargeting('s1', 'team').setTargeting('s2', 'home').
+                setTargeting("slot", "top").
+                setTargeting("test", "").
+                setTargeting('leagueSpon', 'default').
+                setTargeting("url", "team_home");
+
+        });
+    }
+    </script>
+</div>        </div>
+    </div>
+    </div>
+<script type="text/javascript">
+FF.constants.RENDER_END = new Date();
+YEXT = null;
+var SYSTEMENVIRONMENT = "production";
+var ADPATH = "fantasy.nfl.com";
+var VIDEOPLAYERFILENAME = "https://static.nfl.com/static/site/" + nfl.constants.ASSET_VERSION + "/flash/video/inline-video-player.swf";
+var LEAGUEID = '36271';
+var TEAMID = '4';
+var VIDEOPLAYERHTML = true;
+var FANTASY_COOKIE_NAME = 'ff';
+var FANTASY_JS_HOST = 'fantasy.nfl.com';
+</script>
+<script>
+(function(){
+    // allow groups in scripts to propagate
+    var yConfigGroups = ( window.YUI_config ) ? window.YUI_config.groups : {};
+
+    window.YUI_config = {
+        comboBase : "/min/index1?a=230443d8-649d-11e6-8b77-86f30ca893d3&b=static/js/yui/3.15.0/build&f=",        combine : true,
+        comboSep : ",",
+        root : "",
+        timeout: 10000,
+        modules:  {
+
+            siteSpecific: {
+               fullpath: "/static/js/1775585038/aGFzaFRhZy5qcztzbHlub2RlLmpzO292ZXJsYXktbW9kYWwuanM7ZGF0YXNjaGVtYUNvbnRlbnQuanM7ZHluYW1pY01vZHVsZS5qczthdXRvY29tcGxldGUuanM7dXRpbC5qcztwYWdlVHJhY2tpbmcuanM7c3dmT2JqZWN0LmpzO3ZpZGVvLmpzO3JlYWN0LmpzO3ZpZGVvUmVhY3QuanM7cGxheWVyLmpzO3BsYXllckNhcmQuanM7YWRzLmpzO3Njb3Jlcy5qcztpbWFnZXMuanM7dGVhbU1hbmFnZXJBc3Npc3QuanM7ZmYtYWpheC1mb3JtLmpzO2ZmLXBhcnRuZXJzLWxvZ2luLmpzO2ZmLWNoYXJ0cy1wbGF5ZXItY2FyZC5qcztmZi1uZmwtdXNlci5qcztkZXYtbG9naW4uanM..js",
+               requires: ["plugin"]
+            }
+    ,            pageSpecific: {
+               fullpath: "/static/js/1775585038/YmVmb3JldW5sb2FkLmpzO3RlYW1Ib21lLmpzO3RlYW1Sb3N0ZXJFZGl0LmpzO3RlYW1Ub3RhbHMuanM7cGxheWVyVG90YWxzLmpzO3BsYXllclN0YXRzLmpzO2dhbWVTdGF0dXMuanM7dGVhbU1hbmFnZXJBc3Npc3QuanM7cHJlc3RpdGlhbC5qcztmZi1jb3VudGRvd24tY2xvY2suanM7b25UaGVGaWVsZC5qcztvcHRpbWl6ZVByby5qcw...js",
+               requires: ["plugin"]
+            }
+,            teamManagerAssistCss : {
+                fullpath:'/static/css/1775585038/dGVhbU1hbmFnZXJBc3Npc3QuY3Nz.css',
+                type:'css'
+            }
+        }
+    };
+    window.YUI_config.groups = yConfigGroups;
+
+if (window.nfl) {
+    NFL_config = window.NFL_config || {},
+    YUI_config = window.YUI_config || {};
+
+    // YUI_config.comboBase = 'http://yui.yahooapis.com/combo?';
+    YUI_config.comboBase = "/min/index1?a=230443d8-649d-11e6-8b77-86f30ca893d3&b=static/js/yui/3.15.0/build&f="
+    YUI_config.combine = true;
+    YUI_config.comboSep = ",";
+    YUI_config.root = "";
+    YUI_config.modules = YUI_config.modules || {};
+    window.isDev = false;//set this to true to run gamecenter against prod endpoints
+    var Constants = nfl.constants;
+    YUI_config.groups.nfl = {
+        base: Constants.SCRIPT_PATH + '/scripts/modules/',
+        combine: true,
+        comboBase: [
+            Constants.NFL_COMBO_URL,
+            "?",
+            encodeURIComponent(Constants.ASSET_VERSION + Constants.ASSET_BUILD),
+            "&b=",
+            encodeURIComponent("yui3/static/" + Constants.ASSET_VERSION + "/scripts/modules"),
+            "&ss=anyraw&f="
+        ].join(""),
+        comboSep: ",",
+        root: "",
+        filter: {
+            searchExp: '([^\\/]+)\\/\\1-min\\.(js|css)',
+            replaceStr: "$1.$2"
+        },
+        modules: {
+            'nfl-carousel': { requires: ['plugin', 'base-build', 'nfl-lang', 'array-extras'], optional: 'anim' },
+            'nfl-centerpiece': { requires: ['node', 'anim', 'widget', 'base-build', 'nfl-lang', 'nfl-carousel', 'nfl-subnav' ], optional: ['nfl-video'] },
+            'nfl-lang': { requires: ['querystring'] },
+            'nfl-pagination': { requires: ['plugin', 'base-build', 'nfl-lang'] },
+            'nfl-subnav': { requires: [ 'node', 'plugin', 'base-build', 'classnamemanager', 'array-extras' ], optional: ['nfl-history-manager'] },
+            'widget-node-builder': { requires: [ 'node-base' ] },
+            'modal-mask': { requires: [ 'base-build', 'base', 'widget', 'widget-stack', 'node' ] },
+            'modal-login': { requires: ['base-build', 'base', 'widget', 'widget-position', 'widget-position-align', 'widget-stack', 'modal-mask', 'widget-node-builder', 'event-touch', 'json-parse', 'transition' ], skinnable : true },
+        }
+    }
+}
+})();
+YUI( YUI_config ).use("pageSpecific",
+"siteSpecific",
+"ads",
+"anim",
+"anim-color",
+"async-queue",
+"autocomplete",
+"base",
+"cache",
+"dataschema",
+"datasource",
+"dump",
+"dynamic-modules",
+"event",
+"event-custom",
+"event-valuechange",
+"ff-player-compare-modal",
+"history",
+"io",
+"json-parse",
+"loader",
+"node",
+"node-event-simulate",
+"on-the-field",
+"overlay",
+"overlay-modal",
+"page-tracking",
+"player",
+"playerCard",
+"plugin",
+"react-video",
+"scores",
+"slynode",
+"team-home",
+"util",
+"video",
+"widget",
+"widget-position",
+"widget-position-align",
+'ac-plugin',
+'ac-widget',
+'ads',
+'beforeunload',
+'dataschema-jsoncontent',
+'datasource-jsoncontentschema',
+'dev-login',
+'dynamic-modules',
+'ff-ajax-form',
+'ff-charts-player-card',
+'ff-countdown-clock',
+'ff-nfl-user',
+'ff-partners-login',
+'game-status',
+'images',
+'on-the-field',
+'optimize-pro',
+'overlay-modal',
+'page-tracking',
+'player',
+'player-stats',
+'player-totals',
+'playerCard',
+'prestitial',
+'react',
+'react-video',
+'scores',
+'slynode',
+'swfobject',
+'team-home',
+'team-manager-assist',
+'team-roster-edit',
+'team-totals',
+'util',
+'video', function (Y) {
+    FF.constants.YUI_START = new Date();
+    Y.one('#teamHomePage').removeClass('noJs');
+
+        (function () {
+        try { Y.Util.init(document.body) }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+    (function () {
+        try { Y.PageTracking.init() }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+    (function () {
+        try { Y.TeamHome.init(false) }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+    (function () {
+        try { Y.Scores.init(
+    {"36271":{"fractionalPts":true,"negativePts":true,"ptsFormat":"2","stats":{"5":{"scoringType":"yards_per_point","modifier":"25","isBonus":0,"positionCategory":"O"},"6":{"scoringType":"points","modifier":"4","isBonus":0,"positionCategory":"O"},"7":{"scoringType":"points","modifier":"-2","isBonus":0,"positionCategory":"O"},"9":{"scoringType":"points","modifier":"1","isBonus":1,"positionCategory":"O"},"10":{"scoringType":"points","modifier":"3","isBonus":1,"positionCategory":"O"},"11":{"scoringType":"points","modifier":"1","isBonus":1,"positionCategory":"O"},"12":{"scoringType":"points","modifier":"3","isBonus":1,"positionCategory":"O"},"14":{"scoringType":"yards_per_point","modifier":"10","isBonus":0,"positionCategory":"O"},"15":{"scoringType":"points","modifier":"6","isBonus":0,"positionCategory":"O"},"16":{"scoringType":"points","modifier":"1","isBonus":1,"positionCategory":"O"},"17":{"scoringType":"points","modifier":"3","isBonus":1,"positionCategory":"O"},"18":{"scoringType":"points","modifier":"1","isBonus":1,"positionCategory":"O"},"19":{"scoringType":"points","modifier":"3","isBonus":1,"positionCategory":"O"},"20":{"scoringType":"points","modifier":"1","isBonus":0,"positionCategory":"O"},"21":{"scoringType":"yards_per_point","modifier":"10","isBonus":0,"positionCategory":"O"},"22":{"scoringType":"points","modifier":"6","isBonus":0,"positionCategory":"O"},"23":{"scoringType":"points","modifier":"1","isBonus":1,"positionCategory":"O"},"24":{"scoringType":"points","modifier":"3","isBonus":1,"positionCategory":"O"},"25":{"scoringType":"points","modifier":"1","isBonus":1,"positionCategory":"O"},"26":{"scoringType":"points","modifier":"3","isBonus":1,"positionCategory":"O"},"28":{"scoringType":"points","modifier":"6","isBonus":0,"positionCategory":"O"},"30":{"scoringType":"points","modifier":"-2","isBonus":0,"positionCategory":"O"},"32":{"scoringType":"points","modifier":"2","isBonus":0,"positionCategory":"O"},"33":{"scoringType":"points","modifier":"1","isBonus":0,"positionCategory":"K"},"35":{"scoringType":"points","modifier":"3","isBonus":0,"positionCategory":"K"},"36":{"scoringType":"points","modifier":"3","isBonus":0,"positionCategory":"K"},"37":{"scoringType":"points","modifier":"3","isBonus":0,"positionCategory":"K"},"38":{"scoringType":"points","modifier":"3","isBonus":0,"positionCategory":"K"},"39":{"scoringType":"points","modifier":"5","isBonus":0,"positionCategory":"K"},"45":{"scoringType":"points","modifier":"1","isBonus":0,"positionCategory":"DT"},"46":{"scoringType":"points","modifier":"2","isBonus":0,"positionCategory":"DT"},"47":{"scoringType":"points","modifier":"2","isBonus":0,"positionCategory":"DT"},"49":{"scoringType":"points","modifier":"2","isBonus":0,"positionCategory":"DT"},"50":{"scoringType":"points","modifier":"6","isBonus":0,"positionCategory":"DT"},"53":{"scoringType":"points","modifier":"6","isBonus":0,"positionCategory":"DT"},"55":{"scoringType":"points","modifier":"10","isBonus":0,"positionCategory":"DT"},"56":{"scoringType":"points","modifier":"7","isBonus":0,"positionCategory":"DT"},"57":{"scoringType":"points","modifier":"4","isBonus":0,"positionCategory":"DT"},"58":{"scoringType":"points","modifier":"1","isBonus":0,"positionCategory":"DT"},"59":{"scoringType":"points","modifier":"0","isBonus":0,"positionCategory":"DT"},"60":{"scoringType":"points","modifier":"-1","isBonus":0,"positionCategory":"DT"},"61":{"scoringType":"points","modifier":"-4","isBonus":0,"positionCategory":"DT"},"63":{"scoringType":"points","modifier":"10","isBonus":0,"positionCategory":"DT"},"64":{"scoringType":"points","modifier":"7","isBonus":0,"positionCategory":"DT"},"65":{"scoringType":"points","modifier":"4","isBonus":0,"positionCategory":"DT"},"66":{"scoringType":"points","modifier":"1","isBonus":0,"positionCategory":"DT"},"67":{"scoringType":"points","modifier":"0","isBonus":0,"positionCategory":"DT"},"68":{"scoringType":"points","modifier":"-1","isBonus":0,"positionCategory":"DT"},"69":{"scoringType":"points","modifier":"-4","isBonus":0,"positionCategory":"DT"}},"adjustedPts":{"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0}}},
+    {"36271":{"1":{"100021":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10403200-69ab-9ea6-5af5-e240fbc08bea"},"2506121":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005249-5665-1634-a192-77c9c8e6262e"},"2555260":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32005052-4528-5723-d1b2-96e92ebc1241"},"2557978":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"3200434f-4e46-1999-59e9-253cedeec3a5"},"2560757":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004a41-4332-3395-efb0-6c7b75de50af"},"2562685":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004d45-5436-3377-5806-d2746f1b94aa"},"2562699":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"3200504f-4c28-3188-35b8-d0ae9db0f68a"},"2565295":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"3200444f-5732-9751-c08c-8032929e63eb"},"2566343":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005354-4570-3131-4f2a-53760868c1d8"},"2567232":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200414c-4c70-2582-4cca-1a2070c9a090"},"2568063":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004341-4c06-9215-cbbd-0f05f10e4bfa"},"2569558":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"3200524f-4236-8260-6d5f-ae47fe2e0128"},"2570059":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005455-4339-9910-7816-4a6883d99032"},"2570341":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"3200534d-4982-9636-a18c-5da6fbdaa80c"},"2572147":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004c49-5422-8870-662a-03e5e5f1c33d"},"2574004":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004255-5203-5840-2355-001d8c81311e"},"2574014":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004c4f-5645-6221-1f26-a303114b69f8"}},"2":{"100005":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"10400810-db30-43d6-221c-620006f3ca19"},"100032":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10405110-ec3c-669e-2614-db3dc1736e95"},"2550545":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"3200424f-5374-3355-5a91-480dcb22e23b"},"2558116":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004a4f-4e02-6624-33bd-3ba151b7013d"},"2560888":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005355-5433-3526-b2bf-88d6b83781c0"},"2561036":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004441-5246-6141-9e5c-6e7d32a03e33"},"2564007":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32004c4f-5613-0776-be4c-ce231b05c522"},"2565941":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004348-4169-4469-b021-d2c20a7d7cf5"},"2568036":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004b4e-4976-4772-52fc-5e9b627ab7bb"},"2569765":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005245-4526-3142-e96f-a871c08a1138"},"2572219":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"3200424f-5719-6560-aaaa-d9f4cc244721"},"2572486":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005649-4410-3821-f78f-4dbf76ad9374"},"2573992":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d43-4d51-4957-830f-234e646a998f"},"2574514":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004841-4d77-3946-bc04-1f7201601885"},"2574585":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004547-4251-9113-2459-a72f5ed777af"}},"3":{"100025":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10403700-b939-3cbd-3d16-24d4d6742fa2"},"2555334":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"3200474f-4621-9636-7354-d2eb6365d257"},"2558105":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200474f-4454-9393-6eec-24189dd66641"},"2558138":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005045-5209-5343-a8b2-b2085b20ed79"},"2558172":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200454c-4c29-6383-45c6-7b06fb12848c"},"2560968":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004241-5219-2674-af43-1519254e563d"},"2562378":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200484f-4342-2041-c442-6c874885b155"},"2562502":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d4f-4e48-7374-a044-7fb197b6b501"},"2562721":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005341-4d63-6097-eab1-34810e00be67"},"2563596":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004241-5355-5802-e27b-153ecc1a567e"},"2563731":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004849-4738-7791-9f89-d556c4b59b9a"},"2565114":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004a45-4e49-7457-3af8-79760d0083cb"},"2565830":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32005049-5451-6805-5aec-d4afcbd52e25"},"2567862":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32005749-4c41-5359-809b-caeaa1db84d0"},"2569819":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005354-5270-2090-cc17-67cd6da43535"},"2572405":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004245-4e64-9191-567b-28b29177bf93"},"2572411":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004841-5264-8677-2fca-6edc0b245f94"}},"4":{"100010":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"10401540-f97c-2d19-6fcd-fac6490a48b7"},"100016":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"10402310-a47e-10ea-7442-16b633633637"},"100029":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10404500-e7cb-7fce-3f10-4eeb269bd179"},"2543495":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004144-4121-8591-4d26-4c0ac739af41"},"2562238":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004252-4f41-3223-e4c5-1e30dffa87f8"},"2563722":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32004255-5267-9731-81c8-48673dcec5e2"},"2566292":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32005741-4408-8683-c826-c882ad6fd5c2"},"2567496":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004645-5214-6119-2797-33878db83d5a"},"2567973":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004f4c-4165-9325-c259-01a521202e2f"},"2569747":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004749-4219-8578-ca06-2b870fe6f731"},"2571759":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004241-5410-6818-f7c8-70319151cdab"},"2572042":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004c4c-4f67-3464-78d4-33609054aa9a"},"2572477":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d43-4351-2833-c30c-76941288e843"},"2572564":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004441-4e56-7618-ab61-f08cbf558acd"},"2574090":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004841-5281-9909-a72d-cc3e41956f3a"},"2574235":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005455-5406-6215-da3b-cbf31441af43"}},"5":{"100030":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10404600-adcd-28ac-5826-b4d95ec2a228"},"2553112":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004d59-4540-7253-949f-65e474226c01"},"2557997":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004d43-4303-5988-790d-0077d6a4692b"},"2559205":{"active":false,"positionId":"20","nflPlayerId":"32004b4f-4f01-2942-8546-7e952267f829"},"2562492":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004d45-5917-1606-4197-8f46779fb9b7"},"2563327":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004a4f-4820-1643-b9f5-85f0b9ca0916"},"2568117":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004d43-4274-3360-cc50-43990383247d"},"2569921":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32005249-4315-2916-ce74-9a69e469f940"},"2570335":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004348-4154-8773-f098-b6f992d916a2"},"2572129":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d49-5405-6120-269b-4e222571d8ba"},"2572162":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005448-4f41-9793-7e94-7811f8a76eb2"},"2572186":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200574f-5274-1496-c9ca-5c4709faa05b"},"2572189":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200434f-5278-3995-2ab1-10c11dc750f2"},"2572294":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32004d41-5928-9639-2999-10019fb4c292"},"2574062":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32005341-4d33-8622-de8a-1e3d03b08479"},"2574374":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004845-4e14-4466-e552-da8f305c6946"}},"6":{"100017":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10402510-8931-0d5f-9815-79bb79649a65"},"2552408":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32005741-4c50-9040-67d6-042691fb535a"},"2558019":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004b41-4d24-4058-5a3b-01bd39e6a25d"},"2563203":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004d43-4c09-0068-cde1-c8dac1b4b74a"},"2564556":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004a45-4626-9287-c454-479b942cbd26"},"2566127":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"3200434f-4c65-4119-2a51-095ba724d414"},"2567637":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005741-5431-6591-b680-d3a3d3536d62"},"2568159":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005049-4357-6156-653f-e3c2b6d1b9bc"},"2568282":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32005741-4c39-1813-7d3e-48047712136d"},"2569861":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200444f-5768-6145-dd60-3fbae406310a"},"2570912":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005749-4c68-2260-5e7f-2ef51fd68bf8"},"2572003":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004e49-5811-8212-6abe-fc1a8b4f4942"},"2572333":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004a4f-4867-9524-edd3-b9ccfa7618ee"},"2574174":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004d41-5226-2884-e765-cb430266e649"},"2574419":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32004441-5273-5504-d6f2-f2d3f25131e8"}},"7":{"79860":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32005354-4113-4157-19b1-37e6835d09b9"},"100011":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"10401800-ab22-323d-721a-cee4713c4c2d"},"100031":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10404900-d59e-b449-ef75-961e09ca027e"},"2555341":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004845-4e61-7052-805d-daad1175a3b2"},"2558262":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200484f-4c28-0459-95b9-52d98e1b03e6"},"2560800":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d41-5948-3453-e6ac-1ecff99fdcf6"},"2560957":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200414e-4470-1433-75dd-307507e53173"},"2565899":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004855-4217-9324-a63d-319921de85bb"},"2566049":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32005749-4c35-1486-bb3e-8b9e35992111"},"2568048":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32005749-4c69-1962-4085-d9c826d8709c"},"2568493":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32005741-5265-9612-2e68-f9e5f43ac527"},"2570026":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004e41-4355-9347-35af-af88fcaf7ee9"},"2571750":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004155-4241-5291-a962-44bbbaa0d32a"},"2571997":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004652-4154-5210-6c05-a56029ed000f"},"2572255":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005741-5351-9225-4aef-42e21658d0ee"},"2574298":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004a45-4142-7291-3a65-da29eaedce27"}},"8":{"100015":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10402250-89fe-7b86-ef98-9062cd354256"},"2560955":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"3200414c-4c52-9264-bedc-c4ddaf201fe7"},"2562734":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005349-4e18-6919-d1e6-003f4632ba87"},"2563848":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004c41-4d13-8457-fcbe-d37fdbd87233"},"2563965":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32005357-4922-8476-53db-e64aaf6e01f5"},"2566409":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"3200534d-4920-6016-573c-fcc767bafc4d"},"2567715":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005049-4518-5673-88cc-339d3b35d4c9"},"2568435":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004449-4314-7658-769e-ef70b4b4ddb7"},"2569642":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004252-4f34-0581-a205-5f41836f80e9"},"2570386":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200524f-4479-7090-bc9d-40ffbbc0f4c6"},"2572354":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"3200414c-4c06-3734-6e11-4c57194f79b4"},"2572507":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005045-4130-7677-7b9e-0f0ef8659c89"},"2574043":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004641-4e28-8395-3765-a6a5bade7bb1"},"2574170":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004849-4722-8409-9777-0ef748df904a"},"2574204":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005741-5271-7637-9a66-3790edc85a60"},"2574608":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004352-4f39-0640-549c-50768e5c1613"}},"9":{"100013":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10402120-b0bc-693d-098a-803014096eb0"},"2540258":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004b45-4c01-2458-b7b6-3a14cdb414dd"},"2543468":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004556-4153-4309-b2ed-6b8233f6fea5"},"2557898":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004b55-5053-4597-b958-87408c31956f"},"2560995":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"3200474f-4559-5520-b7af-5e002aedafbb"},"2562489":{"gameId":"f91b6416-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004d43-4c27-8328-8097-b130ba0e8060"},"2564148":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32005441-5943-1618-c081-5dd6b2d0b829"},"2565953":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004d43-5057-1021-94d9-4d594be79c9e"},"2566397":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004741-4960-6964-7702-692656fad861"},"2567586":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200444f-5504-3165-5639-a63528da6f6e"},"2568012":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200524f-4271-7726-8cbf-ec8b4c6b1627"},"2570062":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004143-4810-3822-6a71-b10965e0a57a"},"2570275":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004a4f-4882-3261-dcd8-a43c8f7c5608"},"2571913":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32005749-4c17-6897-a516-9754023602e6"},"2572351":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005452-4111-6277-e892-3ab02612e4c2"}},"10":{"100022":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10403300-f235-cf9b-6d3a-2f182be48dd1"},"2540154":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200414c-4c53-2966-dfa9-55ae464e7b3d"},"2552608":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004449-4721-8895-fc23-d2bf4c921bd4"},"2556075":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004845-4e60-2843-9b64-3cd8fac319c3"},"2558266":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004b49-5438-8290-eeed-c9c9cca62ec1"},"2562299":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004a4f-4e16-5462-39a4-3b4fa743c66f"},"2566163":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32004c41-5751-4099-56fc-f565c8d26c06"},"2566382":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004341-5271-6520-cf4c-d6916bc87e00"},"2567250":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004c4f-4e01-3463-a3e9-f95e800c8bba"},"2567565":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005749-4c34-4909-bc5e-bde59d1a8826"},"2569257":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d41-5312-5056-fafb-b3b690e395a1"},"2569795":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005350-4511-3961-6914-5e32243e62c5"},"2569912":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32005354-5218-8631-c965-3e23bcc23565"},"2570224":{"gameId":"f91b7a92-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005749-4c75-2419-b58e-7c21d98d871e"},"2573940":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004c4f-4f73-2927-e3fa-114dc0dcbfe0"},"2574015":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004d4f-4e11-6385-d542-4b47928ce72b"}},"11":{"100009":{"gameId":"f91b71fe-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10401400-b89b-96e5-55d1-caa7e18de3d8"},"2560813":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32004d4f-4f27-2423-f0b4-728a741b03cb"},"2562736":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200534c-4150-0077-315f-47cff2877b23"},"2564676":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004a4f-4839-8789-b667-8ea48cd31497"},"2566157":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004554-4942-6541-8c54-a69299f0a040"},"2567328":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"3200434f-4f15-1970-d2e5-e575c819187c"},"2567334":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005348-4110-7427-f34a-bb0aa1d8e556"},"2568216":{"gameId":"f93ac772-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32005055-5224-3289-b108-8aab5e23b748"},"2569110":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005348-4108-9447-3491-eb73ad07ef30"},"2569888":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005741-5360-4325-2e4f-b11d5ed26427"},"2570074":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004144-4449-1056-9ba9-b09766bad478"},"2572342":{"gameId":"f91b880d-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004e41-4240-0459-a77d-033b6932cbbb"},"2572546":{"gameId":"f93aaf3d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32004952-5673-1762-cc21-a0207d2553dd"},"2574063":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005341-4e47-8221-56fd-8e3864421298"},"2574217":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004855-4e81-6230-a487-ca19d012c037"},"2574365":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"3200424f-5253-2439-75ca-57c23ad71615"},"2574406":{"gameId":"f93abe7c-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32005348-4f76-8898-2122-c8ee34c8b6a6"}},"12":{"100001":{"gameId":"f93acbca-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"10400200-f401-4e53-5175-0974e4f16cf7"},"100007":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"10401050-5e38-b907-1be1-55b91b19c057"},"100027":{"gameId":"f91b8c07-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"8","nflPlayerId":"10403900-8251-6892-d81c-4348525c2d47"},"2556521":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"7","nflPlayerId":"32004641-4914-4264-2765-80ae068118ab"},"2557976":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004d49-5856-4388-c611-05b6fcff1d1d"},"2562377":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004a41-4373-4615-60ca-982d07046841"},"2562407":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004849-4c32-6301-179f-7d7fb01289c2"},"2564136":{"gameId":"f91b90fc-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"10","nflPlayerId":"32005049-5422-8050-a8f8-f5210135a4b3"},"2564832":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"1","nflPlayerId":"32004855-5276-7022-85cf-a74490936f42"},"2565045":{"gameId":"f91b8404-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004845-5203-1169-a699-ce41d700202a"},"2566073":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"32005354-4241-5291-a564-57e98d35161d"},"2568030":{"gameId":"f93ab8ed-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"2","nflPlayerId":"32004841-4c18-9796-85f0-25933f010ae8"},"2569573":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"3","nflPlayerId":"3200464c-4f57-7002-1160-832e9618f0fd"},"2569594":{"gameId":"f93ac30f-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"32004b49-4e06-9130-e563-7edd228031c8"},"2569726":{"gameId":"f91b6ce0-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"21","nflPlayerId":"32004c41-5064-0235-3970-b5e5514839fc"},"2572513":{"gameId":"f91b767d-311e-11f0-b670-ae1250fadad1","active":true,"positionId":"4","nflPlayerId":"32004241-5223-5889-95d9-0ba3aeeb36ed"},"2574130":{"gameId":"f91b7fa5-311e-11f0-b670-ae1250fadad1","active":false,"positionId":"20","nflPlayerId":"3200474f-4c06-8614-8bd5-a546b4ab4775"}}}},
+    {"playerStats":[],"gameData":[]},
+    false,
+    {leagueIds:[36271],week:17,gameId:102025, dp:false, delay:0, season:2025},
+    "https://api2.fantasy.nfl.com"
+    );
+ }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+    (function () {
+        try { Y.OnTheField.init(60000, 25000) }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+    (function () {
+        try { Y.Player.init(); }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+    (function () {
+        try { Y.DevLogin.init(); }
+        catch (err) { Y.log('initErrorCatch:' + err.message); return false; }
+    }());
+
+    window.Y = Y;
+
+    // debug info used in full.php
+    FF.constants.YUI_END = new Date();
+    Y.on('domready', function () {
+        // console.log('YUI domready event fired');
+        FF.constants.DOM_READY = new Date();
+    });
+    Y.on('contentready', function () { FF.constants.CONTENT_READY = new Date(); });
+    Y.on('available', function () { FF.constants.AVAILABLE = new Date(); });
+
+});
+</script>
+
 </body>
 </html>
+<!-- prd-fantasy-php-74776f7888-pffnl -->

@@ -56,15 +56,13 @@ class _StubFetcher:
         self.calls.append(url)
         if "/owners" in url:
             return _load("owners.html")
-        if "/team/1" in url:
-            return _load("team_roster_1.html")
         if "/team/" in url:
-            # Team 2/3/4 share the same fixture but with the team_id swapped.
-            # Returning the same parsed rows is fine for FK testing.
-            tid = url.rsplit("/team/", 1)[1].split("?")[0]
-            return _load("team_roster_1.html").replace(
-                '/team/1">Maverick', f'/team/{tid}">Team {tid}'
-            )
+            # Every team URL returns the same real roster fixture. The
+            # runner FKs rosters off the internal team_id it computes from
+            # the owners list, not off the parsed page's own team_id, so
+            # repeating one team's roster across all 12 owners is fine for
+            # exercising the upsert + FK plumbing.
+            return _load("team_roster_1.html")
         if "schedule" in url:
             return _load("weekly_matchups_w7.html")
         if "transactions" in url:
@@ -108,8 +106,8 @@ def test_runner_populates_league_season_owners_teams(session: Session) -> None:
     )
     session.commit()
 
-    assert result.owners_added == 4
-    assert result.teams_added == 4
+    assert result.owners_added == 12
+    assert result.teams_added == 12
 
     league = session.execute(select(League)).scalar_one()
     assert league.league_id == "36271"
@@ -121,12 +119,20 @@ def test_runner_populates_league_season_owners_teams(session: Session) -> None:
     owners = session.execute(select(Owner)).scalars().all()
     teams = session.execute(select(Team)).scalars().all()
     assert {o.display_name for o in owners} == {
-        "cobs.direct0l",
-        "iceman",
-        "slider",
-        "merlin",
+        "harry",
+        "scott",
+        "mike",
+        "sully",
+        "Dan",
+        "Dave",
+        "Gregg",
+        "Chris",
+        "Jeff",
+        "Rob",
+        "Jimbo",
+        "Kofi",
     }
-    assert len(teams) == 4
+    assert len(teams) == 12
 
 
 @pytest.mark.integration
@@ -143,11 +149,13 @@ def test_runner_populates_rosters_with_pre_kickoff_flag(session: Session) -> Non
     session.commit()
 
     rosters = session.execute(select(TeamRoster)).scalars().all()
-    # 4 teams x 5 slots each = 20 roster rows
-    assert len(rosters) == 20
+    # 12 teams x 16 roster entries each (from the real team_roster_1
+    # fixture, reused per team) = 192 roster rows.
+    assert len(rosters) == 192
     assert all(r.was_locked_at_kickoff is True for r in rosters)
-    # Sanity: the BN1 slot exists and is not a starter.
-    bn = [r for r in rosters if r.roster_slot == "BN1"]
+    # Sanity: bench slots are labeled "BN" (unsuffixed) on the live page,
+    # and they are non-starters.
+    bn = [r for r in rosters if r.roster_slot == "BN"]
     assert bn and all(r.is_starter is False for r in bn)
 
 
@@ -295,11 +303,13 @@ def test_runner_creates_player_stubs_for_new_nfl_com_ids(session: Session) -> No
 
     players = session.execute(select(Player)).scalars().all()
     nfl_ids = {p.nfl_com_player_id for p in players if p.nfl_com_player_id}
-    # 5 roster slots x 4 teams = 20 entries, but they all share the same 5
-    # nfl_com_player_ids (because the fixture is reused per team). Plus 2
-    # additional from the availability page (777, 666, 555).
-    assert {"100", "200", "300", "400", "500"}.issubset(nfl_ids)
-    assert {"666", "555"}.issubset(nfl_ids)
+    # 16 roster entries x 12 teams = 192 references but they all share the
+    # same 16 nfl_com_player_ids (the same fixture is reused per team), so
+    # we expect 16 unique players from the roster + 3 from the synthetic
+    # availability fixtures (555, 666, 777).
+    assert "2563722" in nfl_ids  # Joe Burrow (QB)
+    assert "2569747" in nfl_ids  # Jahmyr Gibbs (RB)
+    assert {"666", "555", "777"}.issubset(nfl_ids)
 
 
 # ---------------------------------------------------------------------------

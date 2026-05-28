@@ -410,59 +410,108 @@ _PLAYER_ID_FROM_HREF = re.compile(r"playerId=(\d+)|/player/(\d+)")
 _PLAYER_ID_FROM_CLASS = re.compile(r"playerNameId-(\d+)")
 
 
+_NON_STARTER_SLOTS = ("BN", "IR", "RES")
+
+
 def parse_team_roster(html: str) -> ParsedTeamRoster:
     soup = BeautifulSoup(html, "lxml")
 
-    team_anchor = soup.select_one(".teamWrap a.teamName") or _first_anchor_with_href(soup, "/team/")
-    if team_anchor is None:
-        raise ParseError("team_roster: cannot find team header anchor")
-    team_id = _id_from_anchor(team_anchor, _TEAM_ID_FROM_HREF)
+    team_id, team_name = _extract_team_header(soup)
     if team_id is None:
-        raise ParseError("team_roster: team_id not extractable from anchor href")
-    team_name = team_anchor.get_text(strip=True) or None
+        raise ParseError("team_roster: team_id not extractable from page header")
 
-    table = soup.select_one("table.tableType-roster")
-    if table is None:
-        raise ParseError("team_roster: missing table.tableType-roster")
+    tables = soup.select("table.tableType-player") or soup.select("table.tableType-roster")
+    if not tables:
+        raise ParseError("team_roster: missing table.tableType-player / tableType-roster")
 
     entries: list[ParsedRosterEntry] = []
-    for tr in table.select("tbody tr"):
-        slot_node = tr.select_one(".teamPosition") or tr.select_one("td.teamPosition")
-        if slot_node is None:
-            # Some rows (separator headers) have no slot; skip.
-            continue
-        roster_slot = slot_node.get_text(strip=True)
-        if not roster_slot:
-            continue
-        # Bench/IR slots have BN1..BN6 / IR1..IR2 etc. Anything not BN/IR is a starter.
-        is_starter = not (roster_slot.startswith("BN") or roster_slot.startswith("IR"))
-
-        player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
-        player_id = _player_id_from_anchor(player_anchor) if player_anchor is not None else None
-        player_name = player_anchor.get_text(strip=True) if player_anchor else None
-
-        position_node = tr.select_one(".playerPosition") or tr.select_one("em.playerPosition")
-        nfl_team_node = tr.select_one(".playerTeam") or tr.select_one("em.playerTeam")
-        opp_node = tr.select_one(".playerOpponent")
-        status_node = tr.select_one(".playerGameStatus")
-
-        entries.append(
-            ParsedRosterEntry(
-                roster_slot=roster_slot,
-                is_starter=is_starter,
-                player_id=str(player_id) if player_id is not None else None,
-                player_name=player_name,
-                position=position_node.get_text(strip=True) if position_node else None,
-                nfl_team=nfl_team_node.get_text(strip=True) if nfl_team_node else None,
-                opponent=opp_node.get_text(strip=True) if opp_node else None,
-                game_status=status_node.get_text(strip=True) if status_node else None,
-            )
-        )
+    for table in tables:
+        for tr in table.select("tbody tr"):
+            entry = _parse_roster_row(tr)
+            if entry is not None:
+                entries.append(entry)
 
     if not entries:
-        raise ParseError("team_roster: tableType-roster had no rows")
+        raise ParseError("team_roster: roster tables had no parseable rows")
 
     return ParsedTeamRoster(team_id=team_id, team_name=team_name, entries=tuple(entries))
+
+
+def _extract_team_header(soup: BeautifulSoup) -> tuple[int | None, str | None]:
+    """Read the team id + name from the page header.
+
+    Live NFL.com puts the team name in the team-image anchor's ``<img alt>``
+    rather than the anchor's text, and the header doesn't render an
+    ``a.teamName`` element. We try ``a.teamImg`` first, then fall back to
+    any anchor whose href looks like ``/team/NNN``.
+    """
+    candidate = soup.select_one("a.teamImg") or soup.select_one(".teamWrap a.teamName")
+    if candidate is None:
+        candidate = _first_anchor_with_href(soup, "/team/")
+    if candidate is None:
+        return None, None
+    team_id = _id_from_anchor(candidate, _TEAM_ID_FROM_HREF)
+    name_text = candidate.get_text(strip=True)
+    if not name_text:
+        img = candidate.select_one("img[alt]")
+        if img is not None:
+            alt = img.get("alt")
+            if isinstance(alt, str):
+                name_text = alt.strip()
+    return team_id, name_text or None
+
+
+def _parse_roster_row(tr: Tag) -> ParsedRosterEntry | None:
+    slot_node = tr.select_one(".teamPosition") or tr.select_one("td.teamPosition")
+    if slot_node is None:
+        return None
+    roster_slot = slot_node.get_text(strip=True)
+    if not roster_slot:
+        return None
+    is_starter = not any(roster_slot.startswith(prefix) for prefix in _NON_STARTER_SLOTS)
+
+    player_anchor = tr.select_one("a.playerName") or _first_player_anchor(tr)
+    player_id = _player_id_from_anchor(player_anchor) if player_anchor is not None else None
+    player_name = player_anchor.get_text(strip=True) if player_anchor else None
+
+    position, nfl_team = _position_and_team_from_row(tr)
+    opp_node = tr.select_one(".playerOpponent")
+    status_node = tr.select_one(".playerGameStatus")
+
+    return ParsedRosterEntry(
+        roster_slot=roster_slot,
+        is_starter=is_starter,
+        player_id=str(player_id) if player_id is not None else None,
+        player_name=player_name,
+        position=position,
+        nfl_team=nfl_team,
+        opponent=opp_node.get_text(strip=True) if opp_node else None,
+        game_status=status_node.get_text(strip=True) if status_node else None,
+    )
+
+
+def _position_and_team_from_row(tr: Tag) -> tuple[str | None, str | None]:
+    """Pull position + NFL team from a roster row.
+
+    Live NFL.com renders both in a single ``<em>`` (``"QB - CIN"`` for
+    offense, ``"DEF"`` alone for team defenses). Fall back to the older
+    ``.playerPosition`` / ``.playerTeam`` classes if present.
+    """
+    pos_node = tr.select_one("em.playerPosition") or tr.select_one(".playerPosition")
+    team_node = tr.select_one("em.playerTeam") or tr.select_one(".playerTeam")
+    if pos_node is not None or team_node is not None:
+        return (
+            pos_node.get_text(strip=True) if pos_node else None,
+            team_node.get_text(strip=True) if team_node else None,
+        )
+    em = tr.select_one("em")
+    if em is None:
+        return None, None
+    text = em.get_text(" ", strip=True)
+    if " - " in text:
+        position, _, nfl_team = text.partition(" - ")
+        return position.strip() or None, nfl_team.strip() or None
+    return text.strip() or None, None
 
 
 def _first_player_anchor(node: Tag) -> Tag | None:
