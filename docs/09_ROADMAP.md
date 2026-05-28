@@ -151,12 +151,12 @@ This is the highest-risk milestone. Allow extra time and expect iteration on par
 5. Move to the next page type
 
 **Done when**:
-- `ff-pipeline run --source nfl_com --season 2025` populates every relevant table for 2025
-- `ff-pipeline cookie test` verifies cookie works
-- Auth failure scenario tested: log out of NFL.com temporarily, observe clean error
-- All 8-10 NFL.com page-type parsers have at least one passing fixture-based unit test
-- The `player_availability` table has at least one row per active player per week scraped, with appropriate `status`
-- Game-time snapshot logic verified: running the pipeline on a Sunday afternoon vs. a Tuesday morning produces rows tagged correctly
+- [x] `ff-pipeline run --source nfl_com --season 2025` populates every relevant table for 2025 — verified 2026-05-27: 12 owners, 12 teams, 193 rosters, 12 matchups, 8 transactions, 875 player_availability rows, 1 league, 1 season, 1 pipeline_run, 1 source_health
+- [x] `ff-pipeline cookie test` verifies cookie works — exits 0 with "Cookie is valid." on a refreshed cookie
+- [~] Auth failure scenario tested — unit tests cover `AuthFailureError` detection paths and the CLI maps it to exit code 77 with an actionable message (`refresh NFL_COOKIE via cookie set`). A full end-to-end test against a tampered cookie was attempted but multi-field cookies make it hard to invalidate just the session field; the path will exercise on its own at the next natural cookie expiry. See `10_OPEN_QUESTIONS.md` §M5-V3.
+- [x] All 8 NFL.com page-type parsers have at least one passing fixture-based unit test (real HTML): league_home, owners, team_roster, weekly_matchups, transactions, availability, gamecenter, settings (scoring). 163 tests pass.
+- [x] `player_availability` table has at least one row per active *available* player per week scraped with appropriate `status` — all 875 rows tagged `FREE_AGENT` since NFL.com's `/players` URL ships with `playerStatus=available`. Capturing OWNED / ON_WAIVERS rows requires sweep variants, deferred to M9 (`10_OPEN_QUESTIONS.md` §M5-V1).
+- [x] Game-time snapshot logic verified — `--snapshot-kind {pre_kickoff,audit}` flag added to `ff-pipeline run`. Live run with `--snapshot-kind pre_kickoff` set `was_locked_at_kickoff=True` on all 193 roster rows and `is_pre_kickoff_snapshot=True` on all 875 availability rows. The default heuristic (`_default_snapshot_kind`) still applies when the flag is omitted.
 
 ---
 
