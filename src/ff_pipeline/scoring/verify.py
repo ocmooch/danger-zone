@@ -130,9 +130,13 @@ def verify_player(
             note=f"player_not_found: {player_name!r}",
         )
 
-    season = session.execute(
-        select(Season).where(Season.league_id == league_id, Season.year == season_year)
-    ).scalars().first()
+    season = (
+        session.execute(
+            select(Season).where(Season.league_id == league_id, Season.year == season_year)
+        )
+        .scalars()
+        .first()
+    )
     if season is None:
         return VerifyComparison(
             player_id=player.player_id,
@@ -160,8 +164,9 @@ def verify_player(
             note=f"scoring_rules_missing: season_id={season.season_id}",
         )
 
-    our_points = _our_player_points(session, player_id=player.player_id,
-                                    season_year=season_year, week=week, rules=rules)
+    our_points = _our_player_points(
+        session, player_id=player.player_id, season_year=season_year, week=week, rules=rules
+    )
 
     nfl_points = _find_nfl_com_points_for_player(
         session,
@@ -203,9 +208,13 @@ def verify_season_sweep(
     is fetched at most once per week.
     """
 
-    season = session.execute(
-        select(Season).where(Season.league_id == league_id, Season.year == season_year)
-    ).scalars().first()
+    season = (
+        session.execute(
+            select(Season).where(Season.league_id == league_id, Season.year == season_year)
+        )
+        .scalars()
+        .first()
+    )
     if season is None:
         return VerifyReport(
             comparisons=(),
@@ -231,9 +240,7 @@ def verify_season_sweep(
             if nfl_team_id in gamecenter_by_team:
                 continue
             try:
-                html = fetcher.get_html(
-                    team_gamecenter(league_id, season_year, nfl_team_id, week)
-                )
+                html = fetcher.get_html(team_gamecenter(league_id, season_year, nfl_team_id, week))
             except Exception as exc:
                 log.warning(
                     "verify: gamecenter fetch failed",
@@ -281,12 +288,7 @@ def verify_season_sweep(
 
 
 def _find_player_by_name(session: Session, name: str) -> Player | None:
-    stmt = (
-        select(Player)
-        .where(Player.name_full.ilike(name))
-        .order_by(Player.player_id)
-        .limit(1)
-    )
+    stmt = select(Player).where(Player.name_full.ilike(name)).order_by(Player.player_id).limit(1)
     found = session.execute(stmt).scalars().first()
     if found is not None:
         return found
@@ -319,7 +321,9 @@ def _our_player_points(
                 PlayerStatsRaw.season_year == season_year,
                 PlayerStatsRaw.week == week,
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     if not rows:
         return None
@@ -353,15 +357,13 @@ def _find_nfl_com_points_for_player(
         return None
     target_nfl_player_id = player.nfl_com_player_id
     matchups = list(
-        session.execute(
-            select(Matchup).where(Matchup.season_id == season_id, Matchup.week == week)
-        ).scalars().all()
+        session.execute(select(Matchup).where(Matchup.season_id == season_id, Matchup.week == week))
+        .scalars()
+        .all()
     )
     teams = {
         team.team_id: team
-        for team in session.execute(
-            select(Team).where(Team.season_id == season_id)
-        ).scalars().all()
+        for team in session.execute(select(Team).where(Team.season_id == season_id)).scalars().all()
     }
     nfl_team_id_by_internal = _nfl_team_id_lookup(list(teams.values()))
 
@@ -375,9 +377,7 @@ def _find_nfl_com_points_for_player(
                 continue
             visited.add(nfl_team_id)
             try:
-                html = fetcher.get_html(
-                    team_gamecenter(league_id, season_year, nfl_team_id, week)
-                )
+                html = fetcher.get_html(team_gamecenter(league_id, season_year, nfl_team_id, week))
                 gc = parse_gamecenter(html)
             except Exception as exc:
                 log.warning(
@@ -406,15 +406,13 @@ def _compare_side(
     """Compare every starter on one side of a gamecenter view."""
 
     # Look up every starter's internal player_id in a single query.
-    nfl_com_player_ids = [
-        e.player_id for e in side_entries if e.is_starter and e.player_id
-    ]
+    nfl_com_player_ids = [e.player_id for e in side_entries if e.is_starter and e.player_id]
     if not nfl_com_player_ids:
         return []
     player_rows = list(
-        session.execute(
-            select(Player).where(Player.nfl_com_player_id.in_(nfl_com_player_ids))
-        ).scalars().all()
+        session.execute(select(Player).where(Player.nfl_com_player_id.in_(nfl_com_player_ids)))
+        .scalars()
+        .all()
     )
     by_nfl_id = {p.nfl_com_player_id: p for p in player_rows if p.nfl_com_player_id}
 

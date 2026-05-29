@@ -270,7 +270,12 @@ Also delivered in M9:
 - Commit, push to GitHub if desired
 
 **Done when**:
-- A fresh clone + `uv sync` + populated `.env` + `ff-pipeline init` + `ff-pipeline run` works end-to-end without consulting other docs
+- [x] README quick-start reflects the shipped CLI (`scoring load`, `backup`, `verify --sweep`, `run --snapshot-kind`); dead `docs/prerequisites.md` reference removed; exit-code table linked.
+- [x] `08_OPERATIONS.md` matches the actual exit codes (`77` for auth, `4` for config, `65/69/64` per `sysexits.h`); `backup` and `scoring load` documented; cron section points to `scripts/cron.example` instead of stale absolute paths.
+- [x] `docs/RUNBOOK.md` covers cookie expiry, mid-backfill resume, scoring drift, parser breakage, DB corruption, bad `.env`, disk pressure, API 500s, and game-time-state snapshots.
+- [x] `CONTRIBUTING.md` codifies the branch model, commit standard (incl. AI trailers), dev workflow, and PR gates.
+- [x] `pyproject.toml` carries the real description + `ocmooch` author line + keywords.
+- [x] Full pytest + ruff + mypy sweep is green.
 
 ---
 

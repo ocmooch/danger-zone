@@ -222,9 +222,7 @@ def test_backfill_runs_each_source_per_season(
     assert {r.mode for r in runs} == {BACKFILL_MODE}
 
 
-def test_backfill_skips_completed_years(
-    session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_backfill_skips_completed_years(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(backfill_module, "run_nflverse", _stub_nflverse_runner())
     monkeypatch.setattr(backfill_module, "run_nfl_com", _stub_nfl_com_runner())
     client = _StubClient()
@@ -254,9 +252,7 @@ def test_backfill_skips_completed_years(
     assert all(o.status == "skipped" for o in result.per_season)
 
 
-def test_backfill_force_overrides_skip(
-    session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_backfill_force_overrides_skip(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(backfill_module, "run_nflverse", _stub_nflverse_runner())
     monkeypatch.setattr(backfill_module, "run_nfl_com", _stub_nfl_com_runner())
     run_backfill(

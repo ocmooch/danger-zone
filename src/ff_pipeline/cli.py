@@ -300,10 +300,7 @@ def backfill_cmd(
     source: list[str] | None = typer.Option(  # noqa: B008  (typer-idiomatic)
         None,
         "--source",
-        help=(
-            "Restrict to one source per flag, repeatable: nflverse | nfl_com. "
-            "Default: both."
-        ),
+        help=("Restrict to one source per flag, repeatable: nflverse | nfl_com. Default: both."),
     ),
     week: int = typer.Option(
         1,
@@ -372,9 +369,7 @@ def backfill_cmd(
         ]
         chosen = tuple(ordered)
 
-    cookie_value = (
-        settings.nfl_cookie.get_secret_value() if "nfl_com" in chosen else None
-    )
+    cookie_value = settings.nfl_cookie.get_secret_value() if "nfl_com" in chosen else None
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as ss:
@@ -406,8 +401,7 @@ def backfill_cmd(
             fg=color,
         )
     typer.echo(
-        f"Backfill: completed={result.completed}, skipped={result.skipped}, "
-        f"failed={result.failed}"
+        f"Backfill: completed={result.completed}, skipped={result.skipped}, failed={result.failed}"
     )
     if result.aborted_at is not None:
         src, yr = result.aborted_at
@@ -582,9 +576,7 @@ def verify_cmd(
     try:
         with Session(engine) as ss:
             try:
-                with build_default_client(
-                    cookie_value, settings.nfl_com_delay_seconds
-                ) as client:
+                with build_default_client(cookie_value, settings.nfl_com_delay_seconds) as client:
                     if sweep:
                         report = verify_season_sweep(
                             ss,

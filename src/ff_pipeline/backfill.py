@@ -107,9 +107,7 @@ def run_backfill(
     """
 
     if start_year > end_year:
-        raise ValueError(
-            f"start_year ({start_year}) must be <= end_year ({end_year}) for backfill"
-        )
+        raise ValueError(f"start_year ({start_year}) must be <= end_year ({end_year}) for backfill")
 
     already_done = _existing_backfill_progress(session)
     outcomes: list[SeasonOutcome] = []
@@ -132,8 +130,12 @@ def run_backfill(
                 key = (source, year)
                 if not force and key in already_done:
                     outcomes.append(
-                        SeasonOutcome(source=source, year=year, status="skipped",
-                                      detail="prior backfill run succeeded")
+                        SeasonOutcome(
+                            source=source,
+                            year=year,
+                            status="skipped",
+                            detail="prior backfill run succeeded",
+                        )
                     )
                     log.info(
                         "Backfill skipping already-completed step",
@@ -156,8 +158,12 @@ def run_backfill(
                     # surface a clean abort to the CLI.
                     session.commit()
                     outcomes.append(
-                        SeasonOutcome(source=source, year=year, status="failed",
-                                      detail=f"AuthFailureError: {exc}")
+                        SeasonOutcome(
+                            source=source,
+                            year=year,
+                            status="failed",
+                            detail=f"AuthFailureError: {exc}",
+                        )
                     )
                     aborted_at = key
                     log.warning(
@@ -169,8 +175,12 @@ def run_backfill(
                 except Exception as exc:
                     session.commit()
                     outcomes.append(
-                        SeasonOutcome(source=source, year=year, status="failed",
-                                      detail=f"{type(exc).__name__}: {exc}")
+                        SeasonOutcome(
+                            source=source,
+                            year=year,
+                            status="failed",
+                            detail=f"{type(exc).__name__}: {exc}",
+                        )
                     )
                     aborted_at = key
                     log.error(

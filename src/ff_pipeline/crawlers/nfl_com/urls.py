@@ -54,8 +54,7 @@ def team_gamecenter(league_id: str, year: int, team_id: int | str, week: int) ->
     ``gamecenter`` and ``teamgamecenter`` markup.
     """
     return (
-        f"{BASE_URL}/league/{league_id}/history/{year}/teamgamecenter"
-        f"?teamId={team_id}&week={week}"
+        f"{BASE_URL}/league/{league_id}/history/{year}/teamgamecenter?teamId={team_id}&week={week}"
     )
 
 

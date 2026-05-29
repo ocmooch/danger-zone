@@ -378,13 +378,14 @@ def perform_backup(
         )
     if not sqlite_path.exists():
         raise BackupError(
-            f"Database file does not exist yet: {sqlite_path}. "
-            "Run `ff-pipeline init` first."
+            f"Database file does not exist yet: {sqlite_path}. Run `ff-pipeline init` first."
         )
 
     backup_dir.mkdir(parents=True, exist_ok=True)
     today = today or datetime.now(tz=UTC).date()
-    backup_path = backup_dir / f"{BACKUP_FILENAME_PREFIX}{today.isoformat()}{BACKUP_FILENAME_SUFFIX}"
+    backup_path = (
+        backup_dir / f"{BACKUP_FILENAME_PREFIX}{today.isoformat()}{BACKUP_FILENAME_SUFFIX}"
+    )
     _sqlite_online_backup(sqlite_path, backup_path)
     bytes_written = backup_path.stat().st_size
 
