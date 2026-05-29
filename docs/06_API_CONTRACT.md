@@ -68,7 +68,7 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /players` | Searchable index. Query: `?name=`, `?position=`, `?nfl_team=`, `?active=true` |
+| `GET /players` | Searchable index. Query: `?name=`, `?position=`, `?nfl_team=`, `?active=true`, plus exact-match ID lookups `?gsis_id=`, `?sleeper_id=`, `?nfl_com_player_id=` (a player is queryable by any external ID — see M7) |
 | `GET /players/{player_id}` | Player metadata + cross-platform IDs |
 | `GET /players/{player_id}/stats?season={y}&week={w}` | Stats (raw + league-adjusted) for the player |
 | `GET /players/{player_id}/ownership` | History of which teams have owned this player (and when) |

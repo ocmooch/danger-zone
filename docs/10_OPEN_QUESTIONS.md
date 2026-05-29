@@ -139,6 +139,242 @@ These are stated here so they're not re-litigated later:
 
 ---
 
+## Future manual-access work (surfaced during M5 verification)
+
+These were discovered while running the live NFL.com crawler against the
+real league. Each is a concrete follow-up but explicitly **out of M5
+scope**. They will get picked up by the milestone listed beside each.
+
+### M5-V1. Availability sweep only sees `FREE_AGENT` rows
+
+**Observed (2026-05-27 live run)**: All 875 rows persisted to
+`player_availability` for `(season_year=2025, week=17)` were tagged
+`status='FREE_AGENT'`. NFL.com's `/league/{id}/players?...` URL ships
+with `playerStatus=available` baked into the rendered pagination links,
+so OWNED and ON_WAIVERS rows never appear via that endpoint.
+
+**Implication**: The `player_availability` table currently captures
+only the *available* slice of the player universe. Owned players'
+status is implicit from the `team_rosters` table, but ON_WAIVERS
+players are not captured anywhere yet.
+
+**Owner**: M9 (backfill) or whichever milestone first needs full
+status coverage. Likely fix: have the runner sweep `playerStatus=owned`
+and `playerStatus=waivers` URL variants in addition to the default.
+
+**Phase 1 wrap-up decision (2026-05-29)**: Deferred to Phase 2. The
+sweep variants only earn their keep once waiver analytics consume them,
+and that's a Phase 2 concern. It is also the offseason — every player is
+currently unowned/available, so a live OWNED/ON_WAIVERS sweep would
+capture nothing right now; historical ownership is already covered by the
+gamecenter-backed `team_rosters` table (2010–2025 populated). Revisit
+when Phase 2 first needs free-agent-vs-waiver distinctions, scraping the
+`playerStatus=owned` / `playerStatus=waivers` variants at that time.
+
+### M5-V2. Transactions page is paginated; runner only reads page 1
+
+**Observed**: The transactions log on the real league surfaced only 8
+records (4 Add + 4 Drop) for the 2025 season, all from week 17. The
+parser handled them correctly. NFL.com's history transactions page is
+paginated by `?offset=` like the players page, but the runner doesn't
+iterate.
+
+**Implication**: Pre-week-17 transactions are not in the DB.
+
+**Owner**: M9 backfill (historical seasons need this anyway) — wire
+a sweep over the `?offset=` pagination on `/history/{year}/transactions`,
+mirroring `sweep_availability`.
+
+### M5-V3. Live auth-failure path not end-to-end verified
+
+**Observed**: Unit tests cover `AuthFailureError` detection (signin
+marker, 302 to id.nfl.com, `test_auth()` returning False) and the CLI
+maps `AuthFailureError` → exit code 77 with the actionable
+"refresh NFL_COOKIE via `ff-pipeline cookie set`" message. A manual
+end-to-end test was attempted by flipping a single character mid-cookie
+in `.env`, but the run still authenticated successfully — NFL.com
+cookies are multi-field, and flipping one char usually lands in a
+non-session field (timestamp, locale, GDPR consent token).
+
+**Implication**: The full chain "stale session → AuthFailureError →
+typer.Exit(77) → friendly message" is verified only by code inspection
++ unit tests, not by a real end-to-end run.
+
+**Owner**: Reviewed at the natural next cookie expiry — the cookie
+will become invalid on its own and the next scheduled run will exercise
+the path properly. Add a `source_health` row check at that point.
+
+### M5-V4. Off-by-one in NFL.com player-page pagination
+
+**Observed**: The "Next" link on each `/league/.../players?...` page
+advances `offset` by 26, not 25, even though the page renders 25 rows
+("1 - 25 of 875"). The sweep's manual-advance fallback handles this
+correctly, but it means at least one row may be skipped at each page
+boundary.
+
+**Implication**: Live sweep reported 875 unique rows for a stated
+total of 875, so in practice the off-by-one doesn't lose data here —
+NFL.com appears to be 1-indexed internally and our `offset=PAGE_SIZE*N`
+fallback hits the right slice. Worth confirming on a non-end-of-season
+week, when the player universe is denser.
+
+**Owner**: M9 — switch to a `current_offset + len(rows)`-based advance
+instead of trusting NFL.com's "Next" href, and verify against a
+mid-season capture.
+
+### M5-V5. Some pages NOT in M5 — captured fixtures available
+
+The user-captured `teamgamecenter.html` lives at
+`/history/2025/teamgamecenter?teamId=N` (the per-team weekly view).
+This is the gamecenter parser's fixture. **Other pages that M9
+backfill will need but M5 doesn't parse**:
+
+- `/league/{id}/history/{year}/draftresults` — draft picks
+- `/league/{id}/history/{year}/standings` — final standings
+- `/league/{id}/history/{year}/playoffs` — playoff bracket
+- `/league/{id}/gamecenter?gameId={N}` — game-ID-keyed gamecenter
+  (distinct URL pattern from teamgamecenter)
+- A `playerStatus=owned` and `playerStatus=waivers` variant of the
+  players page (see M5-V1)
+
+**Owner**: M9. Have the user capture HTML for each before that work
+starts; iterate selectors using the M5 "real fixture, then test, then
+runner" loop that worked here.
+
+### M5-V6. Trade-row markup not exercised against a real fixture
+
+**Observed**: `parse_transactions` includes a "Trade" branch that emits
+two `ParsedTransaction` records sharing an NFL.com transaction id, but
+the real 2025 fixture contained no trade rows (only Add/Drop/Lineup).
+The branch is unit-tested only indirectly (by structural reasoning).
+
+**Owner**: Manual capture of a historical season's transactions page
+that includes at least one trade (M9 backfill will hit one). Save as
+`tests/fixtures/nfl_com_html/transactions_with_trade.html` and add a
+parser test.
+
+### M7-V1. End-to-end "every roster player has all IDs" verification deferred
+
+**Observed**: M7's `PlayerResolver` merges IDs across sources via direct
+match + fuzzy fallback and has full unit coverage, but a live "run all
+three crawlers against the user's league and assert every rostered player
+has `{gsis_id, sleeper_id, nfl_com_player_id}` populated" check has not
+been executed. Doing it now would require a live multi-source run, which
+is M8's natural scope (the API will need a `/players/{id}` endpoint that
+exposes the merged shape).
+
+**Owner**: M8 — once the API is up, add a one-shot script
+(`scripts/audit_player_ids.py` or similar) that walks the current
+roster and asserts the resolver succeeded for every row. Any holes
+become candidates for the `player_id_overrides` table.
+
+### M7-V2. PlayerResolver doesn't recover from cross-source ID conflicts
+
+**Observed**: When two sources disagree on, say, `sleeper_id` for the
+same canonical player (an actual upstream bug), the resolver logs a
+warning and refuses to overwrite the incumbent value. The operator must
+manually intervene via the `player_id_overrides` table — but the CLI
+exposes no command to do that yet.
+
+**Owner**: M10 ops — add `ff-pipeline normalize override add
+--kind sleeper_id --value 9999 --player-id 42` so operators can resolve
+conflicts without hand-writing SQL.
+
+### M5-V7. Cookie refresh cadence still uncharacterized
+
+**Observed**: The cookie the user pasted on 2026-05-27 was refreshed
+just before this session. We do not know the natural TTL.
+
+**Implication**: M10's cron schedule (weekly Sunday sync) will silently
+start failing once the cookie expires. The pipeline does write a
+`source_health` row with `status='auth_failure'` when that happens, but
+the operator has to notice.
+
+**Owner**: M10 ops — add a "cookie staleness" check that runs `cookie test`
+ahead of every scheduled sync and emits a desktop notification (or
+similar) on failure. Track observed TTLs in the project memory so the
+schedule can be tuned.
+
+### P1-V1. 2010–2015 scoring rules are unknown — those seasons stay unscored
+
+**Observed (Phase 1 completion, 2026-05-29)**: The league's current
+scoring ruleset (`.project-src/dz-rules.csv`, 51 rules) was loaded and
+propagated to seasons **2016–2025**, which `verify --sweep` confirms
+against NFL.com gamecenter totals. For **2010–2015** we have no evidence
+that the same ruleset was in force — NFL.com's history pages render
+final per-player *points* but do not expose the era's *rule table*, and
+league settings from that period were not captured.
+
+**Implication**: Reconstruction (`ff-pipeline reconstruct`) populates
+real standings, matchups, and per-week lineups for **all** seasons
+2010–2025, but `player_stats_scored` is intentionally left empty for
+2010–2015. nflverse `player_stats_raw` for those years remains available,
+so the seasons can be scored retroactively the moment a trustworthy
+ruleset is sourced. Phase 2 features that read scored points must treat
+2010–2015 as a known gap, not a bug.
+
+**Owner**: deferred until real 2010–2015 scoring rules can be sourced
+(e.g. from the user's archived league settings, NFL.com league-history
+settings pages if still reachable, or member recollection). Fix path:
+load the period-correct rules with `scoring load --season <YR>`, then
+`rescore --season <YR>` and `verify --sweep --season <YR>`. Decision and
+rationale tracked in `docs/PHASE1_COMPLETION_PLAN.md` §0.2 and §5.
+
+### P1-V2. Long-TD-length bonuses are unscored — the dominant `verify` real-delta class
+
+**Observed (Phase 1 completion, 2026-05-29)**: After the historical
+reconstruction and identity merge, the residual `verify --sweep`
+failures that are *not* DST units split into a steady ~12–18 per season
+of genuine point deltas, almost all of them a clean **−1.00, −4.00, or
+−8.00** (our score lower than NFL.com). These are the
+`*_yards_bonus_long_td_40` / `_50` bonuses: a TD of 40+ yards is +1 and a
+TD of 50+ yards is +3, and because the 50+ tier *stacks* on the 40+
+tier, a single 50+ yard TD is worth **+4**. The bonus rows exist in
+`scoring_rules` (loaded from `dz-rules.csv`), but the scoring engine never
+receives a value for them: nflverse's weekly `player_stats` aggregates
+carry season/week totals (`passing_yards`, `passing_tds`, …) with **no
+per-TD distance**, so "count of TDs of 40+/50+ yards" cannot be derived.
+This is documented as out-of-scope in
+`src/ff_pipeline/crawlers/nflverse/stat_keys.py` and
+`docs/05_SCORING_ENGINE.md` §threshold-bonuses. Example: 2016 W1 Drew
+Brees (−4) and Brandin Cooks (−4) — the *same* long TD pass credits both
+the passer and the receiver, which is why such deltas come in pairs.
+
+**Implication**: This is a data-source gap, not an engine or rule bug.
+Every starter who scored a 40+/50+ yard TD in a swept week shows a small
+fixed under-score; everyone else matches NFL.com exactly. It caps the
+achievable `verify` pass rate but is fully explained and bounded.
+
+**Owner**: Phase 2 (or an M7 follow-up). Fix path: ingest nflverse
+play-by-play (`load_pbp`, already a known dependency per
+`02_ARCHITECTURE.md`), derive per-week counts of each player's 40+/50+
+yard passing/rushing/receiving TDs into `player_stats_raw`, map them to
+the existing `*_bonus_long_td_*` stat keys, and `rescore`. The engine and
+rules already handle the keys — only the input values are missing.
+
+### P1-V3. Ambiguous abbreviated names can't be auto-merged to a single identity
+
+**Observed (Phase 1 completion, 2026-05-29)**: The gamecenter lineup
+pages render abbreviated names ("E. Pineiro"). `scripts/merge_split_player_identities.py`
+folds those stubs onto the stats-bearing nflverse row by
+(first-initial, last-token, position) — 539 merges applied. But when two
+real players share that key (e.g. "D. Johnson" = David vs Duke Johnson,
+both RB; J.J. vs Jordy Nelson, both WR), the merge **deliberately
+skips** (≈44 stubs) rather than guess. Those starters still resolve to a
+statless stub and surface as `our_raw_stats_missing` in `verify`.
+
+**Implication**: A small, bounded set of historical starters can't be
+scored/verified until their identity is pinned by hand. Conservative by
+design — a wrong fold would silently mis-attribute another player's
+stats (the merge logic was tightened specifically to stop an id-conflict
+shortcut from mis-folding "J. Nelson" into Jordy Nelson).
+
+**Owner**: optional manual cleanup. Fix path: add the correct
+`nfl_com_player_id` → canonical `player_id` pair to `player_id_overrides`
+(the resolver consults it first), or extend the merge script with a
+curated allowlist for known ambiguous names, then re-run reconstruction
+for the affected weeks.
+
 ## Questions to revisit at end of Phase 1
 
 These should be re-evaluated before starting Phase 2:

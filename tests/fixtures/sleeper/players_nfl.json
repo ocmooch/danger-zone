@@ -1,0 +1,50 @@
+{
+  "4034": {
+    "player_id": "4034",
+    "first_name": "Patrick",
+    "last_name": "Mahomes",
+    "full_name": "Patrick Mahomes",
+    "position": "QB",
+    "team": "KC",
+    "gsis_id": "00-0033873",
+    "espn_id": 3139477,
+    "yahoo_id": 30123,
+    "active": true
+  },
+  "421": {
+    "player_id": "421",
+    "first_name": "Travis",
+    "last_name": "Kelce",
+    "full_name": "Travis Kelce",
+    "position": "TE",
+    "team": "KC",
+    "gsis_id": "00-0030506",
+    "espn_id": 15847,
+    "yahoo_id": 26686,
+    "active": true
+  },
+  "7553": {
+    "player_id": "7553",
+    "first_name": "Justin",
+    "last_name": "Jefferson",
+    "full_name": "Justin Jefferson",
+    "position": "WR",
+    "team": "MIN",
+    "gsis_id": "00-0036322",
+    "espn_id": 4262921,
+    "yahoo_id": 32692,
+    "active": true
+  },
+  "99999": {
+    "player_id": "99999",
+    "first_name": "Phantom",
+    "last_name": "Rookie",
+    "full_name": "Phantom Rookie",
+    "position": "RB",
+    "team": "FA",
+    "gsis_id": null,
+    "espn_id": null,
+    "yahoo_id": null,
+    "active": false
+  }
+}

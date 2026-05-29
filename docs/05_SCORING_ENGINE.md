@@ -20,7 +20,8 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `passing_2pt_conversions` (per 2pt)
 - `passing_yards_bonus_300` (flat bonus at 300+ yards)
 - `passing_yards_bonus_400` (flat bonus at 400+ yards)
-- `passing_yards_bonus_long_td_40` (flat bonus per TD of 40+ yards)
+- `passing_yards_bonus_long_td_40` (per TD of 40+ yards)
+- `passing_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier)
 
 ### Rushing
 - `rushing_yards` (per yard)
@@ -28,7 +29,8 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `rushing_2pt_conversions` (per 2pt)
 - `rushing_yards_bonus_100` (flat at 100+)
 - `rushing_yards_bonus_200` (flat at 200+)
-- `rushing_yards_bonus_long_td_40` (per long TD)
+- `rushing_yards_bonus_long_td_40` (per TD of 40+ yards)
+- `rushing_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier)
 
 ### Receiving
 - `receptions` (per reception — this is the PPR knob; could be 0, 0.5, or 1.0)
@@ -37,7 +39,8 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `receiving_2pt_conversions` (per 2pt)
 - `receiving_yards_bonus_100` (flat at 100+)
 - `receiving_yards_bonus_200` (flat at 200+)
-- `receiving_yards_bonus_long_td_40` (per long TD)
+- `receiving_yards_bonus_long_td_40` (per TD of 40+ yards)
+- `receiving_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier)
 
 ### Miscellaneous offensive
 - `fumbles_lost` (usually negative)
@@ -61,15 +64,21 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `defensive_tds` (per defensive TD)
 - `special_teams_tds` (per ST TD — kickoff/punt returns, blocked kicks)
 - `blocked_kicks` (per blocked FG/punt/PAT)
-- `points_allowed_0` (flat bonus for shutout)
-- `points_allowed_1_6` (flat for 1-6 PA)
-- `points_allowed_7_13` (flat for 7-13)
-- `points_allowed_14_20` (flat for 14-20)
-- `points_allowed_21_27` (flat for 21-27, often 0)
-- `points_allowed_28_34` (flat, often negative)
-- `points_allowed_35_plus` (flat, often more negative)
+- `points_allowed` (single stat keyed by every bracket rule's `threshold_min` /
+  `threshold_max`; brackets `0`, `1-6`, `7-13`, `14-20`, `21-27`, `28-34`, `35+`
+  are typical; the engine matches the bracket whose `[min, max]` contains the
+  reported value)
+- `total_yards_allowed` (single stat with bracket-gated rules, same range-gating
+  pattern as `points_allowed`; brackets typically `0-99`, `100-199`, `200-299`,
+  `300-399`, `400-449`, `450-499`, `500+`)
 
-This covers virtually every standard and custom rule used in NFL.com leagues. If your league has something exotic (e.g., team-defense yards-allowed brackets), it'll need to be added as a new stat key — but the architecture supports it without schema changes.
+> **Bracket-gated stats use one stat key + many rules**, not one stat key per
+> bracket. The crawler emits a single numeric value (e.g. `points_allowed: 13`)
+> and the engine picks the matching bracket rule. This is how M4's scoring
+> loader handles The Danger Zone's brackets; the same shape applies to any
+> league adding new bracket families.
+
+This covers virtually every standard and custom rule used in NFL.com leagues. If your league has something exotic, it'll need to be added as a new stat key — but the architecture supports it without schema changes.
 
 ## ScoringRules data class
 

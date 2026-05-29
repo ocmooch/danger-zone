@@ -29,13 +29,22 @@ ENV/
 # uv
 .uv/
 
-# Data — generated, not source
-data/
+# Data — generated, not source. Track the directory shells via .gitkeep
+# so first-run code can write into them without mkdir.
+data/*
 !data/.gitkeep
+!data/logs/
+!data/backups/
+!data/nflverse_cache/
+data/logs/*
+!data/logs/.gitkeep
+data/backups/*
+!data/backups/.gitkeep
+data/nflverse_cache/*
+!data/nflverse_cache/.gitkeep
 
 # Logs
 *.log
-logs/
 
 # Database backups
 *.db
@@ -62,6 +71,3 @@ Thumbs.db
 # Raw HTML captures (these can get large; opt-in)
 data/raw_pages/
 data/parse_failures/
-
-# nflverse cache (regeneratable)
-data/nflverse_cache/
