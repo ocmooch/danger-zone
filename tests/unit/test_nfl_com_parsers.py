@@ -11,9 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 
 from ff_pipeline.crawlers.nfl_com.parsers import (
     ParseError,
+    _position_and_team_from_row,
     parse_availability_page,
     parse_gamecenter,
     parse_league_home,
@@ -267,3 +269,29 @@ def test_parse_gamecenter_extracts_both_sides_and_full_rosters() -> None:
 def test_parse_gamecenter_missing_team_wraps_raises() -> None:
     with pytest.raises(ParseError, match="teamWrap"):
         parse_gamecenter("<html><body><div>nothing here</div></body></html>")
+
+
+# ---------------------------------------------------------------------------
+# _position_and_team_from_row — junk-position rejection
+# ---------------------------------------------------------------------------
+
+
+def _row(em_html: str) -> object:
+    tr = BeautifulSoup(f"<table><tr>{em_html}</tr></table>", "lxml").select_one("tr")
+    assert tr is not None
+    return tr
+
+
+def test_position_parses_valid_em() -> None:
+    assert _position_and_team_from_row(_row("<em>QB - CIN</em>")) == ("QB", "CIN")
+    # Team defenses render the position alone, no team.
+    assert _position_and_team_from_row(_row("<em>DEF</em>")) == ("DEF", None)
+
+
+def test_position_rejects_ui_note_and_slot_label() -> None:
+    # Inactive players: NFL.com reuses the <em> for a watch-list note.
+    assert _position_and_team_from_row(
+        _row("<em>Season is Over - Add to Watch List</em>")
+    ) == (None, None)
+    # Unfilled flex slot leaks its slot label into the position <em>.
+    assert _position_and_team_from_row(_row("<em>R/W/ T</em>")) == (None, None)

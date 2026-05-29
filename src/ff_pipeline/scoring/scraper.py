@@ -69,7 +69,7 @@ from datetime import datetime
 # Path is used as a runtime type for typer-decorated CLI entry-point callers
 # that import via get_type_hints; keep it as an eager import.
 from pathlib import Path  # noqa: TC003
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.repository.upsert import UpsertCounts, upsert
@@ -478,7 +478,7 @@ def _normalize_label(label: str) -> str:
 # directly. Kicking and Defense use a single shared category each.
 
 
-_OFFENSE_LABELS: dict[str, tuple] = {
+_OFFENSE_LABELS: dict[str, tuple[Any, ...]] = {
     # Passing
     "passing yards": ("per_unit", "passing", "passing_yards", 25.0),
     "passing touchdowns": ("per_unit", "passing", "passing_tds", 1.0),
@@ -546,7 +546,7 @@ _OFFENSE_LABELS: dict[str, tuple] = {
 }
 
 
-_KICKING_LABELS: dict[str, tuple] = {
+_KICKING_LABELS: dict[str, tuple[Any, ...]] = {
     "pat made": ("per_unit", "kicking", "extra_point_made", 1.0),
     "fg made 0-19": ("per_unit", "kicking", "field_goal_made_0_19", 1.0),
     "fg made 20-29": ("per_unit", "kicking", "field_goal_made_20_29", 1.0),
@@ -556,7 +556,7 @@ _KICKING_LABELS: dict[str, tuple] = {
 }
 
 
-_DEFENSE_LABELS: dict[str, tuple] = {
+_DEFENSE_LABELS: dict[str, tuple[Any, ...]] = {
     "sacks": ("per_unit", "defense", "sacks", 1.0),
     "interceptions": ("per_unit", "defense", "interceptions", 1.0),
     "fumbles recovered": ("per_unit", "defense", "fumbles_recovered", 1.0),
@@ -588,7 +588,7 @@ _DEFENSE_LABELS: dict[str, tuple] = {
 }
 
 
-def _emit_rules_for_spec(spec: tuple, value: str, raw_text: str) -> list[ParsedRule]:
+def _emit_rules_for_spec(spec: tuple[Any, ...], value: str, raw_text: str) -> list[ParsedRule]:
     kind = spec[0]
     if kind == "per_unit":
         _, category, stat_key, default_unit = spec

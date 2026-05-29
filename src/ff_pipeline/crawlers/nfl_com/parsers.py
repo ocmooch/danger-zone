@@ -430,6 +430,39 @@ _PLAYER_ID_FROM_CLASS = re.compile(r"playerNameId-(\d+)")
 
 _NON_STARTER_SLOTS = ("BN", "IR", "RES")
 
+#: Real NFL.com position codes. The roster/availability tables render a
+#: player's position in a bare ``<em>`` ("QB - CIN", or "DEF" alone), but
+#: that same ``<em>`` slot is reused for non-position notes when the
+#: position cell is empty — inactive players show "Season is Over - Add to
+#: Watch List", and an unfilled flex slot can surface its slot label
+#: ("R/W/T"). Those leak in as bogus positions, and a bogus position then
+#: blocks the normalizer's name+position fuzzy match (it filters candidates
+#: by position), spawning a duplicate player row that never merges with the
+#: nflverse stats row. We whitelist known codes and treat anything else as
+#: "position unknown" (None) so the resolver can still match by name.
+_KNOWN_POSITIONS = frozenset(
+    {
+        # Offense + DST + kicking
+        "QB", "RB", "FB", "WR", "TE", "K", "PK", "P", "DEF", "DST",
+        # IDP / defensive (availability pages expose these)
+        "DL", "DE", "DT", "NT", "EDGE", "LB", "OLB", "ILB", "MLB",
+        "DB", "CB", "S", "SS", "FS",
+    }
+)
+
+
+def _clean_position(raw: str | None) -> str | None:
+    """Return ``raw`` only if it is a recognized NFL position code.
+
+    Whitespace is collapsed and the token upper-cased before the
+    whitelist check. Unrecognized text (UI notes, slot labels) becomes
+    ``None`` rather than a fake position. See ``_KNOWN_POSITIONS``.
+    """
+    if raw is None:
+        return None
+    candidate = re.sub(r"\s+", "", raw).upper()
+    return candidate if candidate in _KNOWN_POSITIONS else None
+
 
 def parse_team_roster(html: str) -> ParsedTeamRoster:
     soup = BeautifulSoup(html, "lxml")
@@ -531,8 +564,16 @@ def _position_and_team_from_row(tr: Tag) -> tuple[str | None, str | None]:
     text = em.get_text(" ", strip=True)
     if " - " in text:
         position, _, nfl_team = text.partition(" - ")
-        return position.strip() or None, nfl_team.strip() or None
-    return text.strip() or None, None
+        cleaned = _clean_position(position)
+        # An invalid position prefix means the whole "X - Y" cell is a UI
+        # note (e.g. "Season is Over - Add to Watch List"), not a
+        # position/team line — drop both rather than leak "Y" as a team.
+        if cleaned is None:
+            return None, None
+        return cleaned, nfl_team.strip() or None
+    # Bare ``<em>`` — only "DEF"-style position-only cells are real; any
+    # other free text (UI notes, slot labels) is not a position.
+    return _clean_position(text), None
 
 
 def _first_player_anchor(node: Tag) -> Tag | None:
@@ -1058,8 +1099,11 @@ def _availability_position_and_team(container: Tag) -> tuple[str | None, str | N
     text = em.get_text(" ", strip=True)
     if " - " in text:
         position, _, nfl_team = text.partition(" - ")
-        return position.strip() or None, nfl_team.strip() or None
-    return text.strip() or None, None
+        cleaned = _clean_position(position)
+        if cleaned is None:
+            return None, None
+        return cleaned, nfl_team.strip() or None
+    return _clean_position(text), None
 
 
 def _resolve_availability_status(

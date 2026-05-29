@@ -390,6 +390,27 @@ def test_verify_sweep_returns_empty_when_season_missing(
         weeks=(1,),
     )
     assert report.total == 0
+    assert report.note is not None
+    assert "season_not_found" in report.note
+
+
+def test_verify_sweep_notes_when_rules_missing(session: Session) -> None:
+    # A season row with no scoring_rules — the case `--season 2024` hit on
+    # the populated DB. Must not look like a clean pass: surface a note.
+    session.add(League(league_id="36271", name="The Danger Zone", platform="nfl_com"))
+    session.add(Season(league_id="36271", year=2024, status="completed"))
+    session.commit()
+
+    report = verify_season_sweep(
+        session,
+        league_id="36271",
+        season_year=2024,
+        fetcher=_Fetcher(),
+        weeks=(1,),
+    )
+    assert report.total == 0
+    assert report.note is not None
+    assert "scoring_rules_missing" in report.note
 
 
 __all__ = [
@@ -397,6 +418,7 @@ __all__ = [
     "test_verify_player_handles_missing_raw_stats",
     "test_verify_player_pass_within_tolerance",
     "test_verify_player_returns_clean_error_when_player_not_found",
+    "test_verify_sweep_notes_when_rules_missing",
     "test_verify_sweep_returns_empty_when_season_missing",
     "test_verify_sweep_walks_starters_and_compares",
 ]

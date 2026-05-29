@@ -583,6 +583,22 @@ def test_list_players_filter_nfl_team_and_active(client: TestClient) -> None:
     assert len(body["data"]) == 1
 
 
+def test_list_players_by_gsis_and_sleeper_id_same_row(client: TestClient) -> None:
+    # M7 goal / Phase 1 spot-check: a player is queryable by any external ID
+    # and every ID resolves to the same canonical players row.
+    by_gsis = client.get("/players?gsis_id=00-0034796").json()["data"]
+    by_sleeper = client.get("/players?sleeper_id=4881").json()["data"]
+    assert len(by_gsis) == 1
+    assert len(by_sleeper) == 1
+    assert by_gsis[0]["player_id"] == by_sleeper[0]["player_id"]
+    assert by_gsis[0]["name_full"] == "Lamar Jackson"
+
+
+def test_list_players_by_unknown_external_id_empty(client: TestClient) -> None:
+    body = client.get("/players?gsis_id=00-9999999").json()
+    assert body["data"] == []
+
+
 def test_get_player(client: TestClient) -> None:
     body = client.get("/players/1").json()
     assert body["data"]["name_full"] == "Lamar Jackson"

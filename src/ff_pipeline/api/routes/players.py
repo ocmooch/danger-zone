@@ -52,6 +52,9 @@ def list_players_endpoint(
     position: Annotated[str | None, Query()] = None,
     nfl_team: Annotated[str | None, Query()] = None,
     active: Annotated[bool | None, Query()] = None,
+    gsis_id: Annotated[str | None, Query()] = None,
+    sleeper_id: Annotated[str | None, Query()] = None,
+    nfl_com_player_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Envelope[list[PlayerOut]]:
@@ -61,6 +64,9 @@ def list_players_endpoint(
         position=position,
         nfl_team=nfl_team,
         active=active,
+        gsis_id=gsis_id,
+        sleeper_id=sleeper_id,
+        nfl_com_player_id=nfl_com_player_id,
         limit=limit,
         offset=offset,
     )
