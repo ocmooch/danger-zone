@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -32,6 +32,7 @@ from ff_pipeline.logging_config import get_logger
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from sqlalchemy import Table
     from sqlalchemy.orm import Session
 
     from ff_pipeline.repository.database import Base
@@ -122,7 +123,7 @@ def upsert(
 
     log.debug(
         "Upsert complete",
-        table=table.name,
+        table=cast("Table", table).name,
         rows_added=rows_added,
         rows_updated=rows_updated,
     )

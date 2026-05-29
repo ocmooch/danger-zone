@@ -94,22 +94,26 @@ class LiveNflverseSource:
     def load_player_stats(self, seasons: Sequence[int]) -> pl.DataFrame:
         import nflreadpy as nfl  # local import keeps test paths cheap
 
-        return nfl.load_player_stats(seasons=list(seasons))
+        frame: pl.DataFrame = nfl.load_player_stats(seasons=list(seasons))
+        return frame
 
     def load_players(self) -> pl.DataFrame:
         import nflreadpy as nfl
 
-        return nfl.load_players()
+        frame: pl.DataFrame = nfl.load_players()
+        return frame
 
     def load_rosters(self, seasons: Sequence[int]) -> pl.DataFrame:
         import nflreadpy as nfl
 
-        return nfl.load_rosters(seasons=list(seasons))
+        frame: pl.DataFrame = nfl.load_rosters(seasons=list(seasons))
+        return frame
 
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame:
         import nflreadpy as nfl
 
-        return nfl.load_schedules(seasons=list(seasons))
+        frame: pl.DataFrame = nfl.load_schedules(seasons=list(seasons))
+        return frame
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,8 +267,10 @@ def _opt_str(value: object) -> str | None:
 def _opt_int(value: object) -> int | None:
     if value is None:
         return None
+    if not isinstance(value, (int, float, str)):
+        return None
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(value)
     except (TypeError, ValueError):
         return None
 

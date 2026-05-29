@@ -28,7 +28,7 @@ from ff_pipeline.repository.models import (
     PlayerStatsRaw,
     SourceHealth,
 )
-from ff_pipeline.repository.upsert import upsert
+from ff_pipeline.repository.upsert import UpsertCounts, upsert
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -160,7 +160,7 @@ def run_nflverse(
 # ---------------------------------------------------------------------------
 
 
-def _upsert_players(session: Session, meta: list[NflversePlayerMeta]):
+def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertCounts:
     rows = [
         {
             "gsis_id": m.gsis_id,
@@ -212,7 +212,7 @@ def _upsert_player_stats(
     session: Session,
     stats: list[NflversePlayerStat],
     gsis_to_player_id: dict[str, int],
-):
+) -> UpsertCounts:
     now = datetime.now(tz=UTC)
     rows = []
     for s in stats:
