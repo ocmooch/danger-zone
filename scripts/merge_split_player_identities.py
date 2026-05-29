@@ -2,19 +2,26 @@
 
 Background
 ----------
-The NFL.com roster parser used to capture UI strings ("Season is Over -
-Add to Watch List") and flex slot labels ("R/W/T") as a player's
-``position``. A bogus position defeats the identity resolver's
-name+position fuzzy match, so the NFL.com-sourced player got a brand-new
-stub row instead of merging onto the existing nflverse row that carries
-the raw stats. Result: ~1080 ``players`` rows hold an
-``nfl_com_player_id`` but no ``player_stats_raw`` — and
-``verify --sweep`` (which matches gamecenter starters by
-``nfl_com_player_id`` and then reads stats off that row) reports
-``our_raw_stats_missing`` for almost everyone.
+Two ingest quirks split a player into a stats-bearing nflverse row and
+a statless NFL.com stub (``nfl_com_player_id`` set, zero
+``player_stats_raw``). ``verify --sweep`` matches gamecenter starters by
+``nfl_com_player_id`` and reads stats off that row, so a split shows up
+as ``our_raw_stats_missing``.
 
-The parser is now fixed (``_clean_position`` whitelist) so *new* ingests
-won't split. This script repairs the rows already in the DB.
+1. **Bogus position.** The NFL.com roster parser used to capture UI
+   strings ("Season is Over - Add to Watch List") and flex slot labels
+   ("R/W/T") as a player's ``position``, defeating the resolver's
+   name+position fuzzy match. The parser is now fixed (``_clean_position``
+   whitelist) so *new* ingests won't split this way.
+2. **Abbreviated names.** The gamecenter lineup pages render
+   ``"E. Pineiro"`` where nflverse has ``"Eddy Pineiro"``. The
+   abbreviated first name defeats both the exact and normalized
+   name match, so the history reconstruction (which scrapes gamecenter)
+   minted a fresh stub for ~600 players. Folding the stub stamps its
+   ``nfl_com_player_id`` onto the canonical row, so subsequent
+   reconstructions match by ID and won't re-split.
+
+This script repairs the rows already in the DB.
 
 Strategy
 --------
@@ -29,12 +36,18 @@ Matching is deliberately conservative:
 * **Exact ``name_full``** (case-insensitive) is tried before a
   normalized match, so "Frank Gore Jr." folds into the son, not his
   Hall-of-Fame father "Frank Gore".
+* Only if both name lookups miss *and* the stub name is abbreviated
+  ("X. Lastname") do we fall back to a **(first-initial, last-token)**
+  match against stats-bearing rows. This reaches the gamecenter
+  abbreviations but is funnelled through the same guards below, so a
+  common "D. Johnson" with several real RBs stays skipped.
 * When the stub still carries a *valid* position, candidates are
   filtered to it.
-* If several stats-bearing rows share the name, one is chosen only when
-  it **dominates** by raw-row count (>=10 rows and either the runner-up
-  has none or the leader has >=5x as many). Otherwise the stub is
-  skipped and reported — e.g. multiple real "Mike Williams" WRs.
+* If several stats-bearing rows share the name (or initial+last), one is
+  chosen only when it **dominates** by raw-row count (>=10 rows and
+  either the runner-up has none or the leader has >=5x as many).
+  Otherwise the stub is skipped and reported — e.g. multiple real "Mike
+  Williams" WRs.
 
 Team defenses ("Houston Texans") and players nflverse never recorded
 have no stats-bearing match and are left untouched.
@@ -121,14 +134,24 @@ def _load_players(conn) -> tuple[list[_Player], dict[int, _Player]]:
     return players, by_id
 
 
-def _pick_canonical(stub: _Player, candidates: list[_Player]) -> tuple[_Player | None, str]:
-    """Choose the stats-bearing row to fold ``stub`` into, or explain why not."""
-    # Drop candidates that already carry a *different* nfl_com_player_id.
-    candidates = [
-        c
-        for c in candidates
-        if not c.nfl_com_player_id or c.nfl_com_player_id == stub.nfl_com_player_id
-    ]
+def _pick_canonical(
+    stub: _Player, candidates: list[_Player], *, prune_id_conflicts: bool = True
+) -> tuple[_Player | None, str]:
+    """Choose the stats-bearing row to fold ``stub`` into, or explain why not.
+
+    ``prune_id_conflicts`` drops candidates that already carry a *different*
+    ``nfl_com_player_id`` before counting. That is right for the name-keyed
+    paths (a different id means a different player). For the abbreviated
+    initial+last path it must stay ``False``: dropping a same-initial-last
+    sibling there would turn a genuinely ambiguous "J. Nelson" (J.J. vs
+    Jordy) into a false "unique" and fold the stub into the wrong player.
+    """
+    if prune_id_conflicts:
+        candidates = [
+            c
+            for c in candidates
+            if not c.nfl_com_player_id or c.nfl_com_player_id == stub.nfl_com_player_id
+        ]
     if not candidates:
         return None, "no_stats_bearing_match"
 
@@ -173,7 +196,9 @@ def _apply_merge(conn, stub: _Player, canonical: _Player, fk_tables: list[str]) 
         )
     conn.execute(text("DELETE FROM players WHERE player_id = :pid"), {"pid": stub.player_id})
     # Stamp the freed external IDs onto the canonical row (NULL → value).
-    fills = {col: stub.ids[col] for col in _EXTERNAL_ID_COLS if stub.ids[col] and not canonical.ids[col]}
+    fills = {
+        col: stub.ids[col] for col in _EXTERNAL_ID_COLS if stub.ids[col] and not canonical.ids[col]
+    }
     if fills:
         assignments = ", ".join(f"{col} = :{col}" for col in fills)
         conn.execute(
@@ -213,19 +238,38 @@ def main(argv: list[str] | None = None) -> int:
             stats_bearing = [p for p in players if p.raw_rows > 0]
             by_exact: dict[str, list[_Player]] = defaultdict(list)
             by_norm: dict[str, list[_Player]] = defaultdict(list)
+            # (first-initial, last-token) → candidates, for abbreviated
+            # gamecenter names ("E. Pineiro") that the exact/normalized
+            # lookups can't reach. Position + dominance guards in
+            # _pick_canonical keep this conservative.
+            by_initial_last: dict[tuple[str, str], list[_Player]] = defaultdict(list)
             for p in stats_bearing:
                 by_exact[(p.name_full or "").lower()].append(p)
                 by_norm[_normalize(p.name_full)].append(p)
+                toks = _normalize(p.name_full).split()
+                if len(toks) >= 2:
+                    by_initial_last[(toks[0][0], toks[-1])].append(p)
 
             stubs = [p for p in players if p.nfl_com_player_id and p.raw_rows == 0]
             for stub in stubs:
+                via_initial = False
                 cands = by_exact.get((stub.name_full or "").lower())
                 if not cands:
                     cands = by_norm.get(_normalize(stub.name_full), [])
-                canonical, reason = _pick_canonical(stub, list(cands))
+                if not cands:
+                    # Abbreviated "X. Lastname" → match by initial+last.
+                    toks = _normalize(stub.name_full).split()
+                    if len(toks) >= 2 and len(toks[0]) == 1:
+                        cands = by_initial_last.get((toks[0][0], toks[-1]), [])
+                        via_initial = bool(cands)
+                canonical, reason = _pick_canonical(
+                    stub, list(cands), prune_id_conflicts=not via_initial
+                )
                 if canonical is None:
                     skips[reason].append(stub)
                     continue
+                if via_initial:
+                    reason = f"initial+{reason}"
                 planned.append((stub, canonical, reason))
 
             print(f"FK tables repointed per merge: {fk_tables}")
@@ -242,7 +286,9 @@ def main(argv: list[str] | None = None) -> int:
             if skips.get("ambiguous"):
                 print(f"\nAmbiguous skips (first {args.show}):")
                 for s in skips["ambiguous"][: args.show]:
-                    print(f"    {s.name_full!r} (pos={s.position!r}, nfl_com={s.nfl_com_player_id})")
+                    print(
+                        f"    {s.name_full!r} (pos={s.position!r}, nfl_com={s.nfl_com_player_id})"
+                    )
 
             if not args.apply:
                 print("\nDRY RUN — no changes written. Re-run with --apply to commit.")

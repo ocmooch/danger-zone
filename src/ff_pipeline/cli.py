@@ -471,6 +471,92 @@ def backfill_cmd(
         raise typer.Exit(code=1)
 
 
+@app.command("reconstruct")
+def reconstruct_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year - 1)."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Reconstruct only this season (sets --start and --end)."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run seasons already marked complete in pipeline_runs."
+    ),
+) -> None:
+    """Rebuild real historical league data from NFL.com /history pages.
+
+    Per season, in order: final standings (champion / finish order / team
+    names / regular-season-week boundary), every week's matchups, real
+    per-week lineups from teamgamecenter, then matchup-derived team
+    records. Resumable per season via ``pipeline_runs(mode='reconstruct')``.
+    Requires a valid NFL_COOKIE; exits 77 on auth failure so it can be
+    resumed after ``cookie set``.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.history import run_reconstruction
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        # Default end is last *completed* season (current year - 1), since
+        # an in-progress season has no final standings to reconstruct.
+        end_year = end if end is not None else datetime.now().year - 1
+
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
+    try:
+        with Session(engine) as ss:
+            try:
+                results = run_reconstruction(
+                    ss,
+                    league_id=settings.nfl_league_id,
+                    start_year=start_year,
+                    end_year=end_year,
+                    fetcher=client,
+                    force=force,
+                )
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure during reconstruction: {exc}. "
+                    "Refresh NFL_COOKIE via `cookie set`, then re-run to resume.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+    finally:
+        client.close()
+        engine.dispose()
+
+    for r in results:
+        typer.secho(
+            f"  {r.year}: champion_team={r.standings.champion_team_id}, "
+            f"weeks={len(r.matchups.weeks_scraped)} "
+            f"(playoff {len(r.matchups.playoff_weeks)}), "
+            f"roster_rows={r.lineups.rows_added + r.lineups.rows_updated}, "
+            f"lineup_failures={r.lineups.fetch_failures}",
+            fg="green",
+        )
+    typer.echo(f"Reconstruct: seasons processed={len(results)} (range {start_year}-{end_year}).")
+
+
 # ---------------------------------------------------------------------------
 # rescore
 # ---------------------------------------------------------------------------
