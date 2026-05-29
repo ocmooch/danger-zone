@@ -167,6 +167,37 @@ class ParsedAvailabilityPage:
     next_offset: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedStandingEntry:
+    """One team's final-standings row from /history/{year}/standings.
+
+    ``final_rank`` is the playoff-finish position (1 = champion). The
+    regular-season record + ``points_for`` are only rendered for the
+    medal places (top 3) in the server-side HTML; for everyone else they
+    are ``None`` and the runner derives them from the reconstructed
+    ``matchups`` instead.
+    """
+
+    final_rank: int
+    team_id: int
+    team_name: str | None
+    owner_name: str | None
+    reg_wins: int | None
+    reg_losses: int | None
+    reg_ties: int | None
+    points_for: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedStandings:
+    """Final standings for one season."""
+
+    entries: tuple[ParsedStandingEntry, ...]
+    champion_team_id: int | None
+    runner_up_team_id: int | None
+    last_place_team_id: int | None
+
+
 # ---------------------------------------------------------------------------
 # League home
 # ---------------------------------------------------------------------------
@@ -735,6 +766,95 @@ def _parse_float(text: str | None) -> float | None:
 
 
 # ---------------------------------------------------------------------------
+# Standings (league history)
+# ---------------------------------------------------------------------------
+
+
+_PLACE_FROM_CLASS = re.compile(r"\bplace-(\d+)\b")
+# "Reg. Season: 8-6-0, 1,765.40 Points For" — wins-losses-ties + points-for.
+# Points-for carries comma thousands separators; W/L/T do not.
+_REG_SEASON_RE = re.compile(
+    r"Reg\.\s*Season:\s*(\d+)-(\d+)-(\d+),\s*([\d,]+(?:\.\d+)?)\s*Points For",
+    re.IGNORECASE,
+)
+
+
+def parse_standings(html: str) -> ParsedStandings:
+    """Parse /league/{LID}/history/{year}/standings.
+
+    The final standings are a server-rendered ``<li class="place-N">``
+    list (1 = champion … 12 = last). Each row carries the team anchor
+    (``a.teamName.teamId-N``) and owner; only the medal places also
+    render the regular-season record + points-for. The ``.st-standings``
+    tab with full per-team records is populated client-side and is not
+    present in the static HTML, so per-team W/L/points for non-medal
+    teams is left to the matchups-derived rollup.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    items = soup.select('li[class*="place-"]')
+    if not items:
+        raise ParseError("standings: no li.place-N elements")
+
+    entries: list[ParsedStandingEntry] = []
+    for li in items:
+        classes = li.get("class") or []
+        rank: int | None = None
+        for cls in classes if isinstance(classes, list) else [classes]:
+            match = _PLACE_FROM_CLASS.search(cls)
+            if match:
+                rank = int(match.group(1))
+                break
+        if rank is None:
+            continue
+        anchor = li.select_one("a.teamName") or _first_anchor_with_href(li, "teamhome")
+        team_id = _id_from_anchor(anchor, _TEAM_ID_FROM_HREF)
+        if team_id is None:
+            continue
+        team_name = anchor.get_text(strip=True) if anchor else None
+
+        owner_name: str | None = None
+        wins = losses = ties = None
+        points_for: float | None = None
+        for em in li.find_all("em"):
+            text = em.get_text(" ", strip=True)
+            if not text:
+                continue
+            rec = _REG_SEASON_RE.search(text)
+            if rec:
+                wins = int(rec.group(1))
+                losses = int(rec.group(2))
+                ties = int(rec.group(3))
+                points_for = float(rec.group(4).replace(",", ""))
+            elif owner_name is None:
+                owner_name = text
+
+        entries.append(
+            ParsedStandingEntry(
+                final_rank=rank,
+                team_id=team_id,
+                team_name=team_name or None,
+                owner_name=owner_name,
+                reg_wins=wins,
+                reg_losses=losses,
+                reg_ties=ties,
+                points_for=points_for,
+            )
+        )
+
+    if not entries:
+        raise ParseError("standings: no parseable place rows")
+
+    by_rank = {e.final_rank: e.team_id for e in entries}
+    last_rank = max(e.final_rank for e in entries)
+    return ParsedStandings(
+        entries=tuple(sorted(entries, key=lambda e: e.final_rank)),
+        champion_team_id=by_rank.get(1),
+        runner_up_team_id=by_rank.get(2),
+        last_place_team_id=by_rank.get(last_rank),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Transactions
 # ---------------------------------------------------------------------------
 
@@ -1250,6 +1370,8 @@ __all__ = [
     "ParsedMatchup",
     "ParsedOwner",
     "ParsedRosterEntry",
+    "ParsedStandingEntry",
+    "ParsedStandings",
     "ParsedTeamRoster",
     "ParsedTransaction",
     "parse_availability_page",
@@ -1257,6 +1379,7 @@ __all__ = [
     "parse_league_home",
     "parse_owners",
     "parse_settings_scoring",
+    "parse_standings",
     "parse_team_roster",
     "parse_transactions",
     "parse_weekly_matchups",

@@ -20,6 +20,7 @@ from ff_pipeline.crawlers.nfl_com.parsers import (
     parse_gamecenter,
     parse_league_home,
     parse_owners,
+    parse_standings,
     parse_team_roster,
     parse_transactions,
     parse_weekly_matchups,
@@ -295,3 +296,51 @@ def test_position_rejects_ui_note_and_slot_label() -> None:
     ) == (None, None)
     # Unfilled flex slot leaks its slot label into the position <em>.
     assert _position_and_team_from_row(_row("<em>R/W/ T</em>")) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# parse_standings
+# ---------------------------------------------------------------------------
+
+
+def test_parse_standings_extracts_full_finish_order() -> None:
+    parsed = parse_standings(_read("standings_2024.html"))
+    assert len(parsed.entries) == 12
+    # Finish order is 1..12 with no gaps.
+    assert [e.final_rank for e in parsed.entries] == list(range(1, 13))
+    assert parsed.champion_team_id == 6
+    assert parsed.runner_up_team_id == 4
+    assert parsed.last_place_team_id == 11
+
+
+def test_parse_standings_medal_rows_carry_record_and_points() -> None:
+    parsed = parse_standings(_read("standings_2024.html"))
+    champ = parsed.entries[0]
+    assert champ.final_rank == 1
+    assert champ.team_id == 6
+    assert champ.owner_name == "Dave"
+    assert (champ.reg_wins, champ.reg_losses, champ.reg_ties) == (8, 6, 0)
+    assert champ.points_for == 1765.40
+    assert champ.team_name == "Putting the CAP in CHAMP"
+
+
+def test_parse_standings_non_medal_rows_have_no_record() -> None:
+    parsed = parse_standings(_read("standings_2024.html"))
+    # Places 4-12 only render rank + team in the static HTML.
+    non_medal = [e for e in parsed.entries if e.final_rank >= 4]
+    assert non_medal
+    assert all(e.reg_wins is None and e.points_for is None for e in non_medal)
+    assert all(e.team_id is not None for e in non_medal)
+
+
+def test_parse_standings_handles_a_second_season() -> None:
+    parsed = parse_standings(_read("standings_2018.html"))
+    assert parsed.champion_team_id == 11
+    assert parsed.runner_up_team_id == 3
+    assert parsed.last_place_team_id == 12
+    assert parsed.entries[0].points_for == 1858.34
+
+
+def test_parse_standings_empty_raises() -> None:
+    with pytest.raises(ParseError, match="place-N"):
+        parse_standings("<html><body><p>no standings here</p></body></html>")
