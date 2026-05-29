@@ -1,12 +1,13 @@
 [project]
 name = "ff-pipeline"
 version = "0.1.0"
-description = "Personal fantasy football data aggregation pipeline (Phase 1)"
+description = "Phase 1 data foundation for a personal NFL fantasy football league — ingests NFL.com / nflverse / Sleeper, normalizes player identity, scores against the league's rules, and exposes a read API."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    { name = "Personal Use" },
+    { name = "ocmooch", email = "cobs.direct0l@icloud.com" },
 ]
+keywords = ["nfl", "fantasy-football", "etl", "sqlite", "fastapi"]
 
 dependencies = [
     # HTTP + parsing
@@ -103,6 +104,17 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.ruff.lint.flake8-type-checking]
+# SQLAlchemy 2.0 reads typed annotations at runtime to infer column types
+# (Mapped[datetime] -> DateTime, etc.). Moving those imports into a
+# TYPE_CHECKING block would break model registration, so flag Base
+# subclasses as runtime-evaluated.
+runtime-evaluated-base-classes = [
+    "ff_pipeline.repository.database.Base",
+    "sqlalchemy.orm.DeclarativeBase",
+    "pydantic.BaseModel",
+]
 
 # ============================================================
 # MyPy (type checker)

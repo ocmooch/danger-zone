@@ -25,6 +25,7 @@ API_PORT=8000
 # OPTIONAL — logging
 LOG_LEVEL=INFO
 LOG_FORMAT=json   # 'json' for structured, 'console' for dev
+LOG_DIR=./data/logs
 
 # OPTIONAL — rate limiting
 NFL_COM_DELAY_SECONDS=2.0
@@ -32,20 +33,27 @@ SLEEPER_REQUESTS_PER_MIN=120
 
 # OPTIONAL — cache
 NFLVERSE_CACHE_DIR=./data/nflverse_cache
+
+# OPTIONAL — tuning
+SCORING_VERIFY_TOLERANCE=0.1   # points tolerance for `ff-pipeline verify`
+SAVE_RAW_HTML=false            # forensic debugging — saves NFL.com responses to data/raw_pages/
 ```
+
+See `.env.example` for the canonical, fully-commented template.
 
 ### Cookie refresh workflow
 
 When the cookie expires (auth failure detected during a run):
 
-1. Pipeline run fails with exit code 2 (auth failure)
-2. Log writes: `"NFL.com authentication failed — refresh cookie. Run: ff-pipeline cookie set"`
-3. User logs into NFL.com in browser, captures fresh cookie (per `prerequisites.md` step 2)
+1. Pipeline run exits with code **77** (`EX_NOPERM`) — auth failure
+2. Log writes: `"NFL.com authentication failed — refresh NFL_COOKIE via cookie set."`
+3. User logs into NFL.com in browser and captures a fresh cookie (open DevTools → Application → Cookies → copy the value of the session cookie for `fantasy.nfl.com`)
 4. User runs:
    ```bash
-   ff-pipeline cookie set
+   ff-pipeline cookie set                  # prompts (hidden input)
+   ff-pipeline cookie set --stdin < cookie.txt   # non-TTY / scripted use
    ```
-   This prompts for the cookie string (hidden input, like a password), validates it by making a single test request to NFL.com, and writes it to `.env` only if validation passes
+   This validates the cookie via a single test request to NFL.com and writes it to `.env` **only if validation passes**
 5. Re-run `ff-pipeline run`
 
 The cookie validation step prevents the easy mistake of pasting a broken cookie and having the next 47 cron runs fail silently.
@@ -76,39 +84,42 @@ ff-pipeline cookie set            # Refresh NFL.com cookie (interactive prompt)
 ff-pipeline cookie test           # Verify the current cookie works
 
 ff-pipeline verify --player NAME --season Y --week W   # Compare our score vs NFL.com
+ff-pipeline verify --sweep --season Y                  # Sweep weeks 1/8/15 for a season
+
+ff-pipeline scoring load --csv path/to/settings.csv    # Load scraped scoring rules
 
 ff-pipeline serve                 # Start the FastAPI server
 ff-pipeline serve --reload        # Dev mode with auto-reload
 
+ff-pipeline backup                # Snapshot data/fantasy.db -> data/backups/
+ff-pipeline backup --keep-days 60 # Override the 30-day pruning window
+
 ff-pipeline migrate up            # Run pending alembic migrations
-ff-pipeline migrate down --rev N  # Rollback to a revision
+ff-pipeline migrate down --rev N  # Rollback to a revision (stub for M11+)
 ff-pipeline migrate status        # Show current migration state
 
-ff-pipeline export --table NAME --format csv   # Dump a table for ad-hoc analysis
+ff-pipeline export --table NAME --format csv   # Dump a table for ad-hoc analysis (stub)
 ```
 
 ## Scheduling
 
-Phase 1 default: **cron on your local machine.** During the NFL regular season + playoffs (early September through early February):
+Phase 1 default: **cron on your local machine.** A ready-to-install crontab ships at `scripts/cron.example` — placeholders `<PROJECT_ROOT>` and `<FF_PIPELINE>` are the only edits required:
 
-```cron
-# /etc/cron.d/ff-pipeline OR `crontab -e`
-# Times are local time. Adjust to your zone.
+```bash
+# Find the binary path:
+which ff-pipeline                          # if installed via `uv tool install .`
+# or: ls $PWD/.venv/bin/ff-pipeline        # for a uv-managed venv
 
-# Sunday late evening sync — captures most game results
-30 23 * * 0  cd /Users/you/code/fantasy-football && /Users/you/.local/bin/ff-pipeline run >> data/logs/cron.log 2>&1
+sed -i 's|<PROJECT_ROOT>|/abs/path/to/checkout|g; s|<FF_PIPELINE>|/abs/path/to/ff-pipeline|g' \
+    scripts/cron.example
 
-# Monday late evening — after MNF
-30 23 * * 1  cd /Users/you/code/fantasy-football && /Users/you/.local/bin/ff-pipeline run >> data/logs/cron.log 2>&1
-
-# Tuesday morning — quick sync after MNF stat updates
-0 9 * * 2    cd /Users/you/code/fantasy-football && /Users/you/.local/bin/ff-pipeline run >> data/logs/cron.log 2>&1
-
-# Wednesday night — final sync after nflverse pushes corrections
-30 23 * * 3  cd /Users/you/code/fantasy-football && /Users/you/.local/bin/ff-pipeline run --verify >> data/logs/cron.log 2>&1
+crontab scripts/cron.example               # install (replaces existing crontab)
+crontab -l                                  # verify
 ```
 
-Off-season (February → early September): weekly Sunday run is fine.
+The shipped schedule covers four in-season runs (Sun 23:30, Mon 23:30, Tue 09:00, Wed 23:30 + `--verify`) plus a nightly 04:00 SQLite backup. Times are local. The pipeline is idempotent so over-running is safe.
+
+Off-season (February → early September): keep the same schedule or trim to a weekly Sunday run.
 
 ### Why not a daemon / scheduled task / launchd?
 
@@ -139,10 +150,9 @@ For a single-user system, cron is the lowest-overhead approach. If/when you go c
 
 ### Querying logs
 
-```bash
-# Errors from the most recent run
-ff-pipeline status --verbose | jq '.errors'
+`ff-pipeline status` (plain text) and `ff-pipeline status --verbose` (adds recent failures) are the fastest way to read state. The raw JSON log file lives at `data/logs/pipeline.log` and is rotated daily; older days have a `.YYYY-MM-DD` suffix.
 
+```bash
 # All NFL.com auth failures this season
 cat data/logs/pipeline.log* | jq 'select(.event == "nfl_com.auth_failure")'
 
@@ -157,20 +167,16 @@ The database is everything. Back it up.
 ### Manual backup
 
 ```bash
-sqlite3 data/fantasy.db ".backup data/backups/fantasy-$(date +%Y-%m-%d).db"
+ff-pipeline backup                  # writes data/backups/fantasy-YYYY-MM-DD.db, prunes > 30d
+ff-pipeline backup --keep-days 0    # keep all
+ff-pipeline backup --backup-dir /mnt/external/ff-backups
 ```
 
-This is safe to run while the pipeline isn't actively writing.
+Uses SQLite's online `.backup` API (safe while the DB is open). Logged + reported via `ff-pipeline status` (last backup is part of the standard output).
 
 ### Automated backup
 
-Add to cron:
-```cron
-# Backup database every day at 4 AM
-0 4 * * *  cd /Users/you/code/fantasy-football && sqlite3 data/fantasy.db ".backup data/backups/fantasy-$(date +\%Y-\%m-\%d).db" && find data/backups -name "fantasy-*.db" -mtime +30 -delete
-```
-
-Keeps 30 days of backups.
+`scripts/cron.example` already includes a nightly `ff-pipeline backup` at 04:00 with the default 30-day retention. No separate setup is needed once you've installed the example crontab.
 
 ### Cloud backup (optional)
 
@@ -188,9 +194,12 @@ rclone copy data/backups/ remote:fantasy-football-backups/
    ```sql
    SELECT * FROM player_stats_raw WHERE player_id = ? AND week = 5;
    ```
-2. Verify against NFL.com manually
-3. If raw is wrong: `ff-pipeline run --source nflverse --force-refetch --season 2025 --week 5`
-4. If raw is right but score is wrong: scoring rule bug — investigate
+2. Cross-check against NFL.com via the verifier:
+   ```bash
+   ff-pipeline verify --player "Lamar Jackson" --season 2025 --week 5
+   ```
+3. If raw is wrong: `ff-pipeline run --source nflverse --season 2025` (idempotent — upserts overwrite stale rows)
+4. If raw is right but score is wrong: scoring rule bug — re-run `ff-pipeline rescore --season 2025 --dry-run` to see the diff, then `ff-pipeline scoring load --csv ...` to re-load rules if they were wrong
 
 ### "The database file got corrupted"
 
@@ -237,23 +246,26 @@ If actual numbers diverge significantly: file a perf investigation issue.
 ```
 Pipeline run starts
   │
-  ├─ Cookie test fails ─────→ Exit 2, log "Refresh cookie"
+  ├─ Settings invalid ──────→ Exit 4,  log SettingsError detail
+  │
+  ├─ Cookie test fails ─────→ Exit 77, log "refresh NFL_COOKIE via cookie set"
   │
   ├─ A source fails ─────────→ Continue with others; status=partial_success
   │   └─ All sources fail ───→ Exit 1, log error summary
   │
-  ├─ Parse failure ──────────→ Save HTML, log structured error, skip row, continue
-  │
-  ├─ Database locked ────────→ Exit 3, log "Another run in progress"
+  ├─ Parse failure ──────────→ Log structured error, save HTML when SAVE_RAW_HTML=true, skip row, continue
   │
   ├─ Data quality issue ─────→ Insert into data_quality_issues, log warning, continue
   │
   └─ All sources succeed ────→ status=success, exit 0
 ```
 
-Exit codes:
+Exit codes (BSD `sysexits.h` values where applicable):
 - `0` — success
-- `1` — general failure
-- `2` — authentication failure (most common after cookie expiry)
-- `3` — concurrent run / locked database
-- `4` — invalid configuration
+- `1` — general failure (mid-backfill abort, verify mismatches, generic error)
+- `2` — Typer / argparse usage error (bad flag combination)
+- `4` — invalid configuration (`SettingsError`: missing `.env` value, bad value)
+- `64` — stub command not implemented yet (`EX_USAGE`)
+- `65` — bad input data (`EX_DATAERR`: scoring CSV parse failure, empty cookie input)
+- `69` — service unreachable (`EX_UNAVAILABLE`: NFL.com network error during `cookie test`/`set`)
+- `77` — authentication failure (`EX_NOPERM`: most common after cookie expiry; backfill remaps to this when the abort cause is `AuthFailureError`)

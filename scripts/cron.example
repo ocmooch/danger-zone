@@ -1,0 +1,37 @@
+# ff-pipeline — example crontab for Phase 1
+# -----------------------------------------------------------------
+# Install:
+#   crontab scripts/cron.example          # replaces your current crontab
+#     - or -
+#   crontab -l | cat - scripts/cron.example | crontab -   # appends
+#
+# Before installing, replace the placeholders:
+#   <PROJECT_ROOT>  absolute path to this checkout   (e.g. /home/you/code/fantasy-football)
+#   <FF_PIPELINE>   absolute path to the installed ff-pipeline entrypoint
+#                   (run `command -v ff-pipeline` after `uv tool install .`,
+#                   or use <PROJECT_ROOT>/.venv/bin/ff-pipeline for a uv-managed venv).
+#
+# Times are in your machine's local timezone. The schedule below
+# matches docs/08_OPERATIONS.md§Scheduling — in-season weekly cadence
+# plus a nightly backup that exercises the cron entry every day.
+# -----------------------------------------------------------------
+
+# Environment — give cron a sane PATH and route Python warnings to logs.
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+PYTHONUNBUFFERED=1
+
+# Sunday 23:30 — captures most game results after the Sunday slate
+30 23 * * 0  cd <PROJECT_ROOT> && <FF_PIPELINE> run             >> data/logs/cron.log 2>&1
+
+# Monday 23:30 — picks up MNF
+30 23 * * 1  cd <PROJECT_ROOT> && <FF_PIPELINE> run             >> data/logs/cron.log 2>&1
+
+# Tuesday 09:00 — short sync after the league's Monday-night settle
+0  9  * * 2  cd <PROJECT_ROOT> && <FF_PIPELINE> run             >> data/logs/cron.log 2>&1
+
+# Wednesday 23:30 — final sync + verify after nflverse corrections land
+30 23 * * 3  cd <PROJECT_ROOT> && <FF_PIPELINE> run --verify    >> data/logs/cron.log 2>&1
+
+# Nightly 04:00 — SQLite snapshot to data/backups/, prune > 30 days
+0  4  * * *  cd <PROJECT_ROOT> && <FF_PIPELINE> backup          >> data/logs/cron.log 2>&1

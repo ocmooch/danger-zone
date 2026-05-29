@@ -1,0 +1,50 @@
+[
+  {
+    "player_id": "4034",
+    "season": "2024",
+    "week": 1,
+    "season_type": "regular",
+    "stats": {
+      "pass_yd": 285.4,
+      "pass_td": 1.9,
+      "pass_int": 0.7,
+      "rush_yd": 14.2,
+      "rush_td": 0.2,
+      "fum_lost": 0.1
+    }
+  },
+  {
+    "player_id": "421",
+    "season": "2024",
+    "week": 1,
+    "season_type": "regular",
+    "stats": {
+      "rec": 6.4,
+      "rec_yd": 72.1,
+      "rec_td": 0.45,
+      "fum_lost": 0.05
+    }
+  },
+  {
+    "player_id": "7553",
+    "season": "2024",
+    "week": 1,
+    "season_type": "regular",
+    "stats": {
+      "rec": 7.8,
+      "rec_yd": 95.6,
+      "rec_td": 0.55,
+      "rush_yd": 2.1
+    }
+  },
+  {
+    "player_id": "99999",
+    "season": "2024",
+    "week": 1,
+    "season_type": "regular",
+    "stats": {
+      "rush_yd": 3.0,
+      "rec_yd": 1.0
+    }
+  }
+]
