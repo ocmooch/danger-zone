@@ -62,6 +62,31 @@ If `status` shows a failure, find the matching section below.
 
 ---
 
+## Reconstructing historical seasons
+
+**When**: you need *real* per-week history for past seasons — final standings (champion / finish order), every week's matchups, and true per-week starting lineups with NFL.com player points. This is distinct from `backfill` (which fetches nflverse stats + current-state NFL.com pages); `reconstruct` reads the year-scoped `/history/{year}/...` pages that the `/owners` and `/team/{id}` pages cannot provide.
+
+```bash
+ff-pipeline reconstruct --start 2010 --end 2025
+```
+
+**Behavior**:
+
+- Per season, in order: standings → matchups (all weeks) → per-week lineups (teamgamecenter) → matchup-derived team records. Standings sets the regular-season-week boundary that matchups uses to classify playoff weeks.
+- **Resumable**: each season that finished records a `pipeline_runs(mode='reconstruct')` success row; re-running skips completed years. Use `--force` to redo one (`reconstruct --season 2018 --force`).
+- A bad cookie aborts cleanly with exit **77** after committing prior seasons — refresh the cookie ([Cookie expired](#cookie-expired)) and re-run to resume.
+- A full 2010–2025 run is ~2 hours at the default `NFL_COM_DELAY_SECONDS` (~2s); it is safe to background (`nohup … &`) and re-run.
+
+**Defaults & gotchas**:
+
+- `--end` defaults to **current year − 1**: an in-progress season has no final standings to reconstruct. Pass `--end` explicitly to dodge the off-by-one and the nflverse 404 on the unplayed current year.
+- `made_playoffs` is left unset: NFL.com's static history HTML does not distinguish the championship bracket from the consolation bracket.
+- 2010–2015 are reconstructed (standings/matchups/lineups) but **not scored** — see the scoring-rules gap in `10_OPEN_QUESTIONS.md` §P1-V1.
+
+**Verify**: after a run, `ff-pipeline status` shows the latest reconstruct run `success`; spot-check with the API (`/seasons`, `/matchups`, lineups) or SQL (`seasons.status='completed'`, `team_rosters` has multiple weeks per season). Then `rescore` + `verify --sweep` the scored seasons (2016–2025) since real lineups now carry `nfl_com_player_id`.
+
+---
+
 ## Scoring or stats look wrong
 
 The pipeline stores **raw stats** and **scored points** separately. Diagnosing means deciding which layer is wrong.

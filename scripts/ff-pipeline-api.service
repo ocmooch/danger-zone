@@ -1,0 +1,45 @@
+# ff-pipeline — systemd *user* service for the read API (Phase 1)
+# -----------------------------------------------------------------
+# Keeps `ff-pipeline serve` (the FastAPI read API, criterion ②) running and
+# restarts it on crash or reboot. This is the durable alternative to a bare
+# `nohup ff-pipeline serve &`, which dies with its parent shell.
+#
+# Install (user service — no root needed):
+#   1. Edit the two placeholders below:
+#        <PROJECT_ROOT>  absolute path to this checkout
+#                        (e.g. /home/you/danger-zone)
+#        <FF_PIPELINE>   absolute path to the entrypoint
+#                        (`command -v ff-pipeline`, or
+#                         <PROJECT_ROOT>/.venv/bin/ff-pipeline for a uv venv)
+#   2. Copy into place and enable:
+#        mkdir -p ~/.config/systemd/user
+#        cp scripts/ff-pipeline-api.service ~/.config/systemd/user/
+#        systemctl --user daemon-reload
+#        systemctl --user enable --now ff-pipeline-api.service
+#   3. Survive logout / persist across reboots (WSL2 & headless boxes,
+#      where the user has no lingering login session):
+#        sudo loginctl enable-linger "$USER"
+#   4. Verify:
+#        systemctl --user status ff-pipeline-api.service
+#        curl -s http://127.0.0.1:8000/health
+#
+# Logs: `journalctl --user -u ff-pipeline-api.service -f`.
+# Host/port come from API_HOST / API_PORT in .env (defaults 127.0.0.1:8000).
+# -----------------------------------------------------------------
+
+[Unit]
+Description=ff-pipeline FastAPI read API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=<PROJECT_ROOT>
+ExecStart=<FF_PIPELINE> serve
+Restart=on-failure
+RestartSec=5
+# Load .env so API_HOST/API_PORT/DATABASE_URL/etc. are picked up.
+EnvironmentFile=<PROJECT_ROOT>/.env
+
+[Install]
+WantedBy=default.target

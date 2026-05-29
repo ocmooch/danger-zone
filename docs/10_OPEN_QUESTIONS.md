@@ -295,6 +295,86 @@ ahead of every scheduled sync and emits a desktop notification (or
 similar) on failure. Track observed TTLs in the project memory so the
 schedule can be tuned.
 
+### P1-V1. 2010–2015 scoring rules are unknown — those seasons stay unscored
+
+**Observed (Phase 1 completion, 2026-05-29)**: The league's current
+scoring ruleset (`.project-src/dz-rules.csv`, 51 rules) was loaded and
+propagated to seasons **2016–2025**, which `verify --sweep` confirms
+against NFL.com gamecenter totals. For **2010–2015** we have no evidence
+that the same ruleset was in force — NFL.com's history pages render
+final per-player *points* but do not expose the era's *rule table*, and
+league settings from that period were not captured.
+
+**Implication**: Reconstruction (`ff-pipeline reconstruct`) populates
+real standings, matchups, and per-week lineups for **all** seasons
+2010–2025, but `player_stats_scored` is intentionally left empty for
+2010–2015. nflverse `player_stats_raw` for those years remains available,
+so the seasons can be scored retroactively the moment a trustworthy
+ruleset is sourced. Phase 2 features that read scored points must treat
+2010–2015 as a known gap, not a bug.
+
+**Owner**: deferred until real 2010–2015 scoring rules can be sourced
+(e.g. from the user's archived league settings, NFL.com league-history
+settings pages if still reachable, or member recollection). Fix path:
+load the period-correct rules with `scoring load --season <YR>`, then
+`rescore --season <YR>` and `verify --sweep --season <YR>`. Decision and
+rationale tracked in `docs/PHASE1_COMPLETION_PLAN.md` §0.2 and §5.
+
+### P1-V2. Long-TD-length bonuses are unscored — the dominant `verify` real-delta class
+
+**Observed (Phase 1 completion, 2026-05-29)**: After the historical
+reconstruction and identity merge, the residual `verify --sweep`
+failures that are *not* DST units split into a steady ~12–18 per season
+of genuine point deltas, almost all of them a clean **−1.00, −4.00, or
+−8.00** (our score lower than NFL.com). These are the
+`*_yards_bonus_long_td_40` / `_50` bonuses: a TD of 40+ yards is +1 and a
+TD of 50+ yards is +3, and because the 50+ tier *stacks* on the 40+
+tier, a single 50+ yard TD is worth **+4**. The bonus rows exist in
+`scoring_rules` (loaded from `dz-rules.csv`), but the scoring engine never
+receives a value for them: nflverse's weekly `player_stats` aggregates
+carry season/week totals (`passing_yards`, `passing_tds`, …) with **no
+per-TD distance**, so "count of TDs of 40+/50+ yards" cannot be derived.
+This is documented as out-of-scope in
+`src/ff_pipeline/crawlers/nflverse/stat_keys.py` and
+`docs/05_SCORING_ENGINE.md` §threshold-bonuses. Example: 2016 W1 Drew
+Brees (−4) and Brandin Cooks (−4) — the *same* long TD pass credits both
+the passer and the receiver, which is why such deltas come in pairs.
+
+**Implication**: This is a data-source gap, not an engine or rule bug.
+Every starter who scored a 40+/50+ yard TD in a swept week shows a small
+fixed under-score; everyone else matches NFL.com exactly. It caps the
+achievable `verify` pass rate but is fully explained and bounded.
+
+**Owner**: Phase 2 (or an M7 follow-up). Fix path: ingest nflverse
+play-by-play (`load_pbp`, already a known dependency per
+`02_ARCHITECTURE.md`), derive per-week counts of each player's 40+/50+
+yard passing/rushing/receiving TDs into `player_stats_raw`, map them to
+the existing `*_bonus_long_td_*` stat keys, and `rescore`. The engine and
+rules already handle the keys — only the input values are missing.
+
+### P1-V3. Ambiguous abbreviated names can't be auto-merged to a single identity
+
+**Observed (Phase 1 completion, 2026-05-29)**: The gamecenter lineup
+pages render abbreviated names ("E. Pineiro"). `scripts/merge_split_player_identities.py`
+folds those stubs onto the stats-bearing nflverse row by
+(first-initial, last-token, position) — 539 merges applied. But when two
+real players share that key (e.g. "D. Johnson" = David vs Duke Johnson,
+both RB; J.J. vs Jordy Nelson, both WR), the merge **deliberately
+skips** (≈44 stubs) rather than guess. Those starters still resolve to a
+statless stub and surface as `our_raw_stats_missing` in `verify`.
+
+**Implication**: A small, bounded set of historical starters can't be
+scored/verified until their identity is pinned by hand. Conservative by
+design — a wrong fold would silently mis-attribute another player's
+stats (the merge logic was tightened specifically to stop an id-conflict
+shortcut from mis-folding "J. Nelson" into Jordy Nelson).
+
+**Owner**: optional manual cleanup. Fix path: add the correct
+`nfl_com_player_id` → canonical `player_id` pair to `player_id_overrides`
+(the resolver consults it first), or extend the merge script with a
+curated allowlist for known ambiguous names, then re-run reconstruction
+for the affected weeks.
+
 ## Questions to revisit at end of Phase 1
 
 These should be re-evaluated before starting Phase 2:

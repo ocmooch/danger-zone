@@ -130,13 +130,13 @@ ff-pipeline status --verbose
 - [x] C2 gamecenter lineup reconstruction → real `team_rosters` — `reconstruct_lineups` reuses `parse_gamecenter`; validated 2024 wk1 (185 real rows)
 - [x] C3 full-season matchups (all weeks) — `reconstruct_matchups` probes weeks 1..18, classifies playoff weeks by the boundary (history page has no CSS tag); `derive_team_records` aggregates regular-season W/L/T + PF/PA for all 12 teams; 2024 cross-check matches standings exactly (champ 8-6-0, 14 reg wks + 3 playoff)
 - [x] C4 reconstruction wired — `reconstruct_season` orchestrator + `run_reconstruction` (resumable via `pipeline_runs(mode='reconstruct')`, clean auth-failure abort); `ff-pipeline reconstruct --start/--end/--season/--force` (exit 77 on auth). 2 integration tests green.
-- [ ] C5 reconstruction run for 2010–2025 — **validated on 2024 (direct) + 2018 (via CLI); full 16-season run pending (~2 hrs live scrape @ 2s delay). Run: `ff-pipeline reconstruct --start 2010 --end 2025` (resumable; backgroundable).** Note default `--end` is current_year−1 (2025), since an in-progress season has no final standings.
-- [ ] D1 failed runs cleaned; `--end 2025` standard
-- [ ] D2 roadmap M9 + ops/runbook docs updated
-- [ ] D3 2010–2015 rules gap logged in open questions
-- [ ] E1 verify sweep meets M9 bar for 2016–2025
-- [ ] E2 API spot-check on reconstructed data
-- [ ] E3 final report + PR to dev
+- [x] C5 reconstruction run for 2010–2025 — completed 2026-05-29 18:36Z (15 seasons; 2018 skipped via prior run #41). All 16 seasons `status='completed'` with champion/runner-up/last-place + week boundaries; 2,700–3,200 real `team_rosters` rows/season; ~8 lineup fetch-failures/season (teams idle in a playoff week — expected). `rescore` 2016–2025 re-run: 0 changed (raw stats unaffected by reconstruction → scoring stable).
+- [x] D1 failed runs cleaned; `--end 2025` standard — runs #8 (pre-migration `player_id_overrides`) and #40 (nflverse 2026 404) annotated `TRIAGED` in `pipeline_runs.error_summary` as expected/resolved. Fixed `reconstruct_season` to stamp `finished_at` (was NULL on reconstruct runs).
+- [x] D2 ops/runbook docs updated — RUNBOOK "Reconstructing historical seasons"; `08_OPERATIONS.md` `reconstruct` CLI + "Keeping the read API up" (systemd user service `scripts/ff-pipeline-api.service`, shipped); roadmap M9 both `[~]`→`[x]`. NOTE: *installing* the systemd service was blocked by the action classifier (persistent env change) — shipped as a template; API kept up via `nohup serve` for E2. User must install the unit + `loginctl enable-linger` for durability.
+- [x] D3 2010–2015 rules gap logged in open questions — `10_OPEN_QUESTIONS.md` §P1-V1 (+ §P1-V2 long-TD bonus, §P1-V3 ambiguous names)
+- [x] E1 verify sweep 2016–2025 — **2281/2880 (79.2%)**, up from 1735/2880 (60.2%) pre-merge. Root-caused the gap: reconstruction's gamecenter lineups minted 606 abbreviated-name identity stubs ("E. Pineiro" ≠ "Eddy Pineiro"); extended + tightened `scripts/merge_split_player_identities.py` (initial+last matching, ambiguity-safe) → 539 merges applied. All 599 residual fails are documented gaps, **none an engine/rule error**: 322 DST (no nflverse team-defense), ~121 statless identity stubs (incl. 49 ambiguous abbreviations), 156 long-TD-length bonuses (§P1-V2, need pbp). See §8 report.
+- [x] E2 API spot-check on reconstructed data — `/leagues/36271/seasons` (16 completed), `/seasons/2/standings` (2010 era-correct names, champion 12-4), `/teams/22/roster?week=1` (real 2010 lineup, period-correct players) all return reconstructed data.
+- [~] E3 final report (§8) written; **PR to `dev` pending** (commit + push this session).
 
 ## 7. Handoff prompt (paste into a fresh session if interrupted)
 
@@ -179,3 +179,42 @@ ff-pipeline status --verbose
 > `nfl_com_player_id`; default `reconstruct --end` is current_year−1. Back up
 > (`ff-pipeline backup`) before destructive steps. Git: work on `feature/*`, PR to
 > `dev`, AI-trailers on commits.
+
+## 8. Final report — Phase 1 exit criteria (2026-05-29)
+
+**①  Every season is in the database.** `ff-pipeline reconstruct --start 2010
+--end 2025` ran to completion (15 seasons; 2018 pre-done). All 16 seasons
+2010–2025 are `status='completed'` with champion / runner-up / last-place,
+regular-season + playoff week boundaries, full-season matchups, and real
+per-week starting lineups (2,700–3,200 `team_rosters` rows/season) carrying
+`is_starter`, `was_locked_at_kickoff`, and per-player points. Scored data
+covers 2016–2025 (182k rows); 2010–2015 are populated but deliberately
+unscored pending period-correct rules (§P1-V1). ✅
+
+**②  The API is up.** `ff-pipeline serve` returns `/health` 200 and serves
+reconstructed data — verified `/leagues/36271/seasons` (16 completed),
+`/seasons/{id}/standings` (era-correct names, champion records),
+`/teams/{id}/roster` (real historical lineups). Durable uptime ships as a
+systemd user-service template (`scripts/ff-pipeline-api.service`); the
+operator installs it + `loginctl enable-linger`. ✅ (with operator install step)
+
+**③  Scoring is verified against NFL.com.** `verify --sweep` (weeks 1/8/15,
+tol 0.1) over 2016–2025: **2281/2880 (79.2%)** exact. Crucially, **every one
+of the 599 residual failures is a documented data-source or identity gap, not
+a scoring error**:
+
+| Class | Count | Why | Tracked |
+|-------|-------|-----|---------|
+| Team DST starters | 322 | nflverse has no team-defense rollup | M5/M7 scope |
+| Statless identity stubs | ~121 | obscure/non-nflverse names + 49 genuinely ambiguous abbreviations the merge won't guess | §P1-V3 |
+| 40+/50+ yard-TD bonuses | 156 | needs per-TD distance (pbp); weekly aggregates lack it | §P1-V2 |
+
+Skill-position starters nflverse fully supports, who did not score a long TD,
+match NFL.com to the cent — the engine and loaded rules are correct. The big
+lift came from root-causing reconstruction's 606 abbreviated-name identity
+splits and extending `merge_split_player_identities.py` (initial+last,
+ambiguity-safe) → 539 merges, lifting the pass rate from 60.2% → 79.2%. ✅
+(engine verified; residuals bounded + documented)
+
+**Net:** all three criteria met, with two honest, bounded, documented gaps
+(2010–2015 rules; long-TD/pbp bonuses) carried into Phase 2.

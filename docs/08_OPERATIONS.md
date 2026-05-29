@@ -73,6 +73,10 @@ ff-pipeline backfill              # Backfill historical seasons (resumable)
 ff-pipeline backfill --start 2018 # From a specific year
 ff-pipeline backfill --season 2020 # Single season only
 
+ff-pipeline reconstruct           # Rebuild real history from NFL.com /history pages (resumable)
+ff-pipeline reconstruct --start 2010 --end 2025  # Explicit range (--end defaults to current year-1)
+ff-pipeline reconstruct --season 2018 --force    # Redo one already-completed season
+
 ff-pipeline rescore               # Recompute scoring from raw stats
 ff-pipeline rescore --season 2024 # For one season
 ff-pipeline rescore --dry-run     # Report diffs, don't write
@@ -124,6 +128,24 @@ Off-season (February → early September): keep the same schedule or trim to a w
 ### Why not a daemon / scheduled task / launchd?
 
 For a single-user system, cron is the lowest-overhead approach. If/when you go cloud-hosted (a Phase 2 question), the same `ff-pipeline run` command works under any modern scheduler (systemd timers, GitHub Actions schedule, Fly.io scheduled tasks, etc.).
+
+### Keeping the read API up
+
+The data sync runs on cron, but the read API (`ff-pipeline serve`, criterion ②) is a long-lived process. A bare `nohup ff-pipeline serve &` works for an ad-hoc check but dies with its parent shell and does not come back after a reboot. The durable Phase-1 answer is a **systemd user service** — this box runs `systemd` as PID 1 and `systemctl --user` is available.
+
+A ready-to-install unit ships at `scripts/ff-pipeline-api.service` (same placeholder convention as `cron.example`):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp scripts/ff-pipeline-api.service ~/.config/systemd/user/
+# edit <PROJECT_ROOT> / <FF_PIPELINE> in the copied file first
+systemctl --user daemon-reload
+systemctl --user enable --now ff-pipeline-api.service
+sudo loginctl enable-linger "$USER"   # survive logout + reboot (WSL2/headless)
+curl -s http://127.0.0.1:8000/health
+```
+
+It restarts on crash (`Restart=on-failure`) and on reboot (`WantedBy=default.target` + linger). Logs go to `journalctl --user -u ff-pipeline-api.service`. Host/port come from `API_HOST`/`API_PORT` in `.env`.
 
 ## Logging
 
