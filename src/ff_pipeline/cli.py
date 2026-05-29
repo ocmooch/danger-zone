@@ -13,10 +13,18 @@ from __future__ import annotations
 # resolve option types, so Path must be imported eagerly — not inside
 # TYPE_CHECKING.
 from pathlib import Path  # noqa: TC003
+from typing import TYPE_CHECKING
 
 import typer
 
 from ff_pipeline import __version__
+
+if TYPE_CHECKING:
+    # Only referenced in the _run_* helper signatures, which typer never
+    # introspects (they aren't command callbacks), so deferring is safe.
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.settings import Settings
 
 # ---------------------------------------------------------------------------
 # Root app
@@ -138,7 +146,15 @@ def run_cmd(
     verify: bool = typer.Option(False, "--verify", help="Run data-quality checks at end."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would happen; don't write."),
 ) -> None:
-    """Full sync from all sources (or just one with --source)."""
+    """Full sync from all sources (or just one with --source).
+
+    With no ``--source``, every source runs in sequence: nflverse →
+    nfl_com → sleeper. nflverse goes first so players exist before
+    NFL.com rosters and Sleeper projections resolve against them. Each
+    source commits independently, so a failure mid-sequence (e.g. an
+    NFL.com auth failure exiting 77) preserves the work of sources that
+    already ran.
+    """
     _bootstrap_settings_and_logging()
     _ = (verify, dry_run)
     if snapshot_kind is not None and snapshot_kind not in {"pre_kickoff", "audit"}:
@@ -149,9 +165,7 @@ def run_cmd(
         )
         raise typer.Exit(code=2)
 
-    if source is None:
-        _stub("run (multi-source)", "M8")
-    if source not in {"nflverse", "nfl_com", "sleeper"}:
+    if source is not None and source not in {"nflverse", "nfl_com", "sleeper"}:
         _stub(f"run --source {source}", "unknown source")
 
     from datetime import datetime
@@ -163,102 +177,135 @@ def run_cmd(
 
     settings = get_settings()
     target_year = season or datetime.now().year
+    # No --source = the full sequence; nflverse first so player rows exist
+    # before nfl_com / sleeper try to resolve against them.
+    sources = [source] if source is not None else ["nflverse", "nfl_com", "sleeper"]
 
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as ss:
-            if source == "nflverse":
-                from ff_pipeline.crawlers.nflverse.runner import run_nflverse
-
-                nflverse_result = run_nflverse(ss, seasons=[target_year])
-                ss.commit()
-                typer.echo(
-                    f"nflverse: players +{nflverse_result.players_added} "
-                    f"~{nflverse_result.players_updated}, "
-                    f"stats +{nflverse_result.stats_added} "
-                    f"~{nflverse_result.stats_updated} "
-                    f"({nflverse_result.duration_ms} ms)"
-                )
-            elif source == "sleeper":
-                from ff_pipeline.crawlers.sleeper.runner import run_sleeper
-
-                target_week = week if week is not None else _resolve_current_week(target_year)
-                sleeper_result = run_sleeper(
-                    ss,
-                    league_id=settings.nfl_league_id,
-                    year=target_year,
-                    week=target_week,
-                )
-                ss.commit()
-                typer.echo(
-                    f"sleeper week={target_week}: "
-                    f"projections +{sleeper_result.projections_added}"
-                    f"~{sleeper_result.projections_updated}"
-                    f" (unresolved {sleeper_result.unresolved_projections}), "
-                    f"trending +{sleeper_result.trending_added}"
-                    f"~{sleeper_result.trending_updated}"
-                    f" (unresolved {sleeper_result.unresolved_trending}), "
-                    f"sleeper_ids stamped {sleeper_result.players_with_sleeper_id_updated} "
-                    f"({sleeper_result.duration_ms} ms)"
-                )
-                if not sleeper_result.scoring_rules_found:
-                    typer.secho(
-                        "warning: no scoring rules loaded for "
-                        f"league={settings.nfl_league_id} year={target_year}; "
-                        "projected_points left NULL. Run `ff-pipeline scoring load` first.",
-                        fg="yellow",
-                        err=True,
+            for src in sources:
+                if src == "nflverse":
+                    _run_nflverse(ss, target_year=target_year)
+                elif src == "nfl_com":
+                    _run_nfl_com(
+                        ss,
+                        settings=settings,
+                        target_year=target_year,
+                        week=week,
+                        snapshot_kind=snapshot_kind,
                     )
-            else:
-                # source == "nfl_com"
-                from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
-                from ff_pipeline.crawlers.nfl_com.league import (
-                    SnapshotKind,
-                    build_default_client,
-                    run_nfl_com,
-                )
-
-                target_week = week if week is not None else _resolve_current_week(target_year)
-                cookie_value = settings.nfl_cookie.get_secret_value()
-                try:
-                    with build_default_client(
-                        cookie_value, settings.nfl_com_delay_seconds
-                    ) as client:
-                        # mypy-friendly literal narrowing (we validated above).
-                        snapshot_arg: SnapshotKind | None = None
-                        if snapshot_kind == "pre_kickoff":
-                            snapshot_arg = "pre_kickoff"
-                        elif snapshot_kind == "audit":
-                            snapshot_arg = "audit"
-                        nfl_result = run_nfl_com(
-                            ss,
-                            league_id=settings.nfl_league_id,
-                            year=target_year,
-                            week=target_week,
-                            fetcher=client,
-                            snapshot_kind=snapshot_arg,
-                        )
-                    ss.commit()
-                except AuthFailureError as exc:
-                    typer.secho(str(exc), fg="red", err=True)
-                    raise typer.Exit(code=77) from exc  # EX_NOPERM
-                typer.echo(
-                    f"nfl_com [{nfl_result.snapshot_kind}] week={target_week}: "
-                    f"owners +{nfl_result.owners_added}~{nfl_result.owners_updated}, "
-                    f"teams +{nfl_result.teams_added}~{nfl_result.teams_updated}, "
-                    f"rosters +{nfl_result.rosters_added}~{nfl_result.rosters_updated}, "
-                    f"matchups +{nfl_result.matchups_added}~{nfl_result.matchups_updated}, "
-                    f"transactions +{nfl_result.transactions_added}"
-                    f"~{nfl_result.transactions_updated}, "
-                    f"availability +{nfl_result.availability_added}"
-                    f"~{nfl_result.availability_updated} "
-                    f"({nfl_result.duration_ms} ms)"
-                )
-                if nfl_result.warnings:
-                    for w in nfl_result.warnings:
-                        typer.secho(f"warning: {w}", fg="yellow", err=True)
+                else:  # sleeper
+                    _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
     finally:
         engine.dispose()
+
+
+def _run_nflverse(ss: Session, *, target_year: int) -> None:
+    """Sync players + raw weekly stats from nflverse, then commit."""
+    from ff_pipeline.crawlers.nflverse.runner import run_nflverse
+
+    result = run_nflverse(ss, seasons=[target_year])
+    ss.commit()
+    typer.echo(
+        f"nflverse: players +{result.players_added} "
+        f"~{result.players_updated}, "
+        f"stats +{result.stats_added} "
+        f"~{result.stats_updated} "
+        f"({result.duration_ms} ms)"
+    )
+
+
+def _run_nfl_com(
+    ss: Session,
+    *,
+    settings: Settings,
+    target_year: int,
+    week: int | None,
+    snapshot_kind: str | None,
+) -> None:
+    """Sync the NFL.com league snapshot (rosters/matchups/etc.), then commit.
+
+    Raises ``typer.Exit(77)`` on an expired/invalid cookie so cron and the
+    multi-source sequence surface the auth failure (EX_NOPERM).
+    """
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
+    from ff_pipeline.crawlers.nfl_com.league import (
+        SnapshotKind,
+        build_default_client,
+        run_nfl_com,
+    )
+
+    target_week = week if week is not None else _resolve_current_week(target_year)
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    try:
+        with build_default_client(cookie_value, settings.nfl_com_delay_seconds) as client:
+            # mypy-friendly literal narrowing (validated by the caller).
+            snapshot_arg: SnapshotKind | None = None
+            if snapshot_kind == "pre_kickoff":
+                snapshot_arg = "pre_kickoff"
+            elif snapshot_kind == "audit":
+                snapshot_arg = "audit"
+            result = run_nfl_com(
+                ss,
+                league_id=settings.nfl_league_id,
+                year=target_year,
+                week=target_week,
+                fetcher=client,
+                snapshot_kind=snapshot_arg,
+            )
+        ss.commit()
+    except AuthFailureError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=77) from exc  # EX_NOPERM
+    typer.echo(
+        f"nfl_com [{result.snapshot_kind}] week={target_week}: "
+        f"owners +{result.owners_added}~{result.owners_updated}, "
+        f"teams +{result.teams_added}~{result.teams_updated}, "
+        f"rosters +{result.rosters_added}~{result.rosters_updated}, "
+        f"matchups +{result.matchups_added}~{result.matchups_updated}, "
+        f"transactions +{result.transactions_added}"
+        f"~{result.transactions_updated}, "
+        f"availability +{result.availability_added}"
+        f"~{result.availability_updated} "
+        f"({result.duration_ms} ms)"
+    )
+    if result.warnings:
+        for w in result.warnings:
+            typer.secho(f"warning: {w}", fg="yellow", err=True)
+
+
+def _run_sleeper(ss: Session, *, settings: Settings, target_year: int, week: int | None) -> None:
+    """Sync Sleeper projections + trending adds, then commit."""
+    from ff_pipeline.crawlers.sleeper.runner import run_sleeper
+
+    target_week = week if week is not None else _resolve_current_week(target_year)
+    result = run_sleeper(
+        ss,
+        league_id=settings.nfl_league_id,
+        year=target_year,
+        week=target_week,
+    )
+    ss.commit()
+    typer.echo(
+        f"sleeper week={target_week}: "
+        f"projections +{result.projections_added}"
+        f"~{result.projections_updated}"
+        f" (unresolved {result.unresolved_projections}), "
+        f"trending +{result.trending_added}"
+        f"~{result.trending_updated}"
+        f" (unresolved {result.unresolved_trending}), "
+        f"sleeper_ids stamped {result.players_with_sleeper_id_updated} "
+        f"({result.duration_ms} ms)"
+    )
+    if not result.scoring_rules_found:
+        typer.secho(
+            "warning: no scoring rules loaded for "
+            f"league={settings.nfl_league_id} year={target_year}; "
+            "projected_points left NULL. Run `ff-pipeline scoring load` first.",
+            fg="yellow",
+            err=True,
+        )
 
 
 def _resolve_current_week(year: int) -> int:
