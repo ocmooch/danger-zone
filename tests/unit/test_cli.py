@@ -28,6 +28,7 @@ def test_help_exposes_top_level_commands() -> None:
         "verify",
         "serve",
         "export",
+        "backup",
         "cookie",
         "migrate",
     ):

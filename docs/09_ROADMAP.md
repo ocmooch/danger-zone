@@ -251,9 +251,9 @@ Also delivered in M9:
 - Test: simulate a cookie expiration, observe the recovery path
 
 **Done when**:
-- Cron is installed and `crontab -l` shows the schedule
-- A test backup file appears in `data/backups/`
-- `ff-pipeline status` output is readable and useful
+- [x] Cron is installed and `crontab -l` shows the schedule — `scripts/cron.example` ships a ready-to-install crontab with `<PROJECT_ROOT>` / `<FF_PIPELINE>` placeholders for `crontab scripts/cron.example`. Covers the four in-season runs from `docs/08_OPERATIONS.md` plus a nightly 04:00 backup. Per-user `crontab -l` install is the operator's last step and not enforced by tests.
+- [x] A test backup file appears in `data/backups/` — `ff-pipeline backup` uses SQLite's online `.backup` API to write `data/backups/fantasy-YYYY-MM-DD.db` and prune anything older than `--keep-days` (default 30); end-to-end run wrote `fantasy-2026-05-29.db` (≈22 MB) verified-readable by `sqlite3`.
+- [x] `ff-pipeline status` output is readable and useful — shows DB path + size, log + latest backup, last `pipeline_runs` row, per-source `source_health` (rows, parse failures, duration, last run), and key table counts. `--verbose` adds the last failures, with error summaries surfaced from the `pipeline_runs.error_summary` column. Logs already rotate daily via `TimedRotatingFileHandler` (`LOG_FILE_RETENTION_DAYS=14`). Cookie-expiration recovery path covered by `test_run_nfl_com_with_expired_cookie_exits_77` — CLI exits EX_NOPERM(77) so cron / `cookie set` wraps it cleanly.
 
 ---
 

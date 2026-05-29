@@ -368,7 +368,7 @@ def backfill_cmd(
         from typing import cast
 
         ordered: list[BackfillSource] = [
-            cast(BackfillSource, s) for s in ("nflverse", "nfl_com") if s in source
+            cast("BackfillSource", s) for s in ("nflverse", "nfl_com") if s in source
         ]
         chosen = tuple(ordered)
 
@@ -503,8 +503,28 @@ def status_cmd(
 ) -> None:
     """Show pipeline health, last run, per-source status."""
     _bootstrap_settings_and_logging()
-    _ = verbose
-    _stub("status", "M10")
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.observability import collect_status, render_status
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    backup_dir = (PROJECT_ROOT / "data" / "backups").resolve()
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            report = collect_status(
+                ss,
+                database_url=settings.database_url,
+                log_dir=settings.log_dir,
+                backup_dir=backup_dir,
+            )
+    finally:
+        engine.dispose()
+
+    typer.echo(render_status(report, verbose=verbose))
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +675,49 @@ def serve_cmd(
     from ff_pipeline.api.main import create_app
 
     uvicorn.run(create_app(), host=target_host, port=target_port)
+
+
+# ---------------------------------------------------------------------------
+# backup
+# ---------------------------------------------------------------------------
+
+
+@app.command("backup")
+def backup_cmd(
+    backup_dir: Path | None = typer.Option(  # noqa: B008  (typer-idiomatic)
+        None,
+        "--backup-dir",
+        help="Directory for backup files (default: <project>/data/backups).",
+    ),
+    keep_days: int = typer.Option(
+        30,
+        "--keep-days",
+        help="Delete backups older than this many days (0 = keep all).",
+        min=0,
+    ),
+) -> None:
+    """Snapshot the SQLite database to ``data/backups/fantasy-YYYY-MM-DD.db``."""
+    _bootstrap_settings_and_logging()
+
+    from ff_pipeline.observability import BackupError, perform_backup
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    target_dir = (backup_dir or PROJECT_ROOT / "data" / "backups").resolve()
+    try:
+        result = perform_backup(
+            database_url=settings.database_url,
+            backup_dir=target_dir,
+            keep_days=keep_days if keep_days > 0 else None,
+        )
+    except BackupError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Backup: wrote {result.backup_path} ({result.bytes_written} bytes); "
+        f"pruned {len(result.pruned_files)}."
+    )
 
 
 # ---------------------------------------------------------------------------
