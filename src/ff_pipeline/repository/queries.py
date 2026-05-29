@@ -285,6 +285,9 @@ def search_players(
     position: str | None = None,
     nfl_team: str | None = None,
     active: bool | None = None,
+    gsis_id: str | None = None,
+    sleeper_id: str | None = None,
+    nfl_com_player_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Player]:
@@ -298,6 +301,15 @@ def search_players(
         stmt = stmt.where(Player.nfl_team == nfl_team)
     if active is not None:
         stmt = stmt.where(Player.is_active.is_(active))
+    # External-ID filters are exact-match join keys, not fuzzy text — they
+    # let Phase 2/3 resolve a player by any platform's ID (the M7 goal:
+    # queryable by name, GSIS, Sleeper, or NFL.com ID).
+    if gsis_id is not None:
+        stmt = stmt.where(Player.gsis_id == gsis_id)
+    if sleeper_id is not None:
+        stmt = stmt.where(Player.sleeper_id == sleeper_id)
+    if nfl_com_player_id is not None:
+        stmt = stmt.where(Player.nfl_com_player_id == nfl_com_player_id)
     stmt = stmt.order_by(Player.name_full).offset(offset).limit(limit)
     return list(session.execute(stmt).scalars().all())
 

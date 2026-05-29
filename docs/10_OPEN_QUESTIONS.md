@@ -162,6 +162,15 @@ players are not captured anywhere yet.
 status coverage. Likely fix: have the runner sweep `playerStatus=owned`
 and `playerStatus=waivers` URL variants in addition to the default.
 
+**Phase 1 wrap-up decision (2026-05-29)**: Deferred to Phase 2. The
+sweep variants only earn their keep once waiver analytics consume them,
+and that's a Phase 2 concern. It is also the offseason — every player is
+currently unowned/available, so a live OWNED/ON_WAIVERS sweep would
+capture nothing right now; historical ownership is already covered by the
+gamecenter-backed `team_rosters` table (2010–2025 populated). Revisit
+when Phase 2 first needs free-agent-vs-waiver distinctions, scraping the
+`playerStatus=owned` / `playerStatus=waivers` variants at that time.
+
 ### M5-V2. Transactions page is paginated; runner only reads page 1
 
 **Observed**: The transactions log on the real league surfaced only 8
