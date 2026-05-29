@@ -24,6 +24,7 @@ the rest of the crawler layer.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import select
@@ -97,9 +98,7 @@ class LineupsOutcome:
 
 def _resolve_season(session: Session, league_id: str, year: int) -> Season | None:
     return (
-        session.execute(
-            select(Season).where(Season.league_id == league_id, Season.year == year)
-        )
+        session.execute(select(Season).where(Season.league_id == league_id, Season.year == year))
         .scalars()
         .first()
     )
@@ -279,9 +278,7 @@ def reconstruct_matchups(
             if weeks is None:
                 break
             continue
-        counts = upsert(
-            session, Matchup, rows, conflict_cols=("season_id", "week", "team_id")
-        )
+        counts = upsert(session, Matchup, rows, conflict_cols=("season_id", "week", "team_id"))
         added += counts.rows_added
         updated += counts.rows_updated
         scraped.append(week)
@@ -482,9 +479,7 @@ def derive_team_records(session: Session, *, league_id: str, year: int) -> int:
 
     agg: dict[int, dict[str, float]] = {}
     for team_id, ts, opp, is_win in rows:
-        a = agg.setdefault(
-            team_id, {"w": 0.0, "l": 0.0, "t": 0.0, "pf": 0.0, "pa": 0.0}
-        )
+        a = agg.setdefault(team_id, {"w": 0.0, "l": 0.0, "t": 0.0, "pf": 0.0, "pa": 0.0})
         if ts is not None:
             a["pf"] += ts
         if opp is not None:
@@ -566,9 +561,11 @@ def reconstruct_season(
     except Exception as exc:
         run.status = "failed"
         run.error_summary = f"{type(exc).__name__}: {exc}"
+        run.finished_at = datetime.now(tz=UTC)
         raise
 
     run.status = "success"
+    run.finished_at = datetime.now(tz=UTC)
     run.sources_summary = {
         "nfl_com_history": {
             "year": year,

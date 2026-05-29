@@ -474,10 +474,31 @@ _NON_STARTER_SLOTS = ("BN", "IR", "RES")
 _KNOWN_POSITIONS = frozenset(
     {
         # Offense + DST + kicking
-        "QB", "RB", "FB", "WR", "TE", "K", "PK", "P", "DEF", "DST",
+        "QB",
+        "RB",
+        "FB",
+        "WR",
+        "TE",
+        "K",
+        "PK",
+        "P",
+        "DEF",
+        "DST",
         # IDP / defensive (availability pages expose these)
-        "DL", "DE", "DT", "NT", "EDGE", "LB", "OLB", "ILB", "MLB",
-        "DB", "CB", "S", "SS", "FS",
+        "DL",
+        "DE",
+        "DT",
+        "NT",
+        "EDGE",
+        "LB",
+        "OLB",
+        "ILB",
+        "MLB",
+        "DB",
+        "CB",
+        "S",
+        "SS",
+        "FS",
     }
 )
 
@@ -797,7 +818,7 @@ def parse_standings(html: str) -> ParsedStandings:
 
     entries: list[ParsedStandingEntry] = []
     for li in items:
-        classes = li.get("class") or []
+        classes: str | list[str] = li.get("class") or []
         rank: int | None = None
         for cls in classes if isinstance(classes, list) else [classes]:
             match = _PLACE_FROM_CLASS.search(cls)

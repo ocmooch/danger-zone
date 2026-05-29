@@ -291,9 +291,10 @@ def test_position_parses_valid_em() -> None:
 
 def test_position_rejects_ui_note_and_slot_label() -> None:
     # Inactive players: NFL.com reuses the <em> for a watch-list note.
-    assert _position_and_team_from_row(
-        _row("<em>Season is Over - Add to Watch List</em>")
-    ) == (None, None)
+    assert _position_and_team_from_row(_row("<em>Season is Over - Add to Watch List</em>")) == (
+        None,
+        None,
+    )
     # Unfilled flex slot leaks its slot label into the position <em>.
     assert _position_and_team_from_row(_row("<em>R/W/ T</em>")) == (None, None)
 

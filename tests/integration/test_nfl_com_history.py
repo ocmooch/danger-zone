@@ -83,9 +83,7 @@ def _seed_league_and_teams(session: Session, *, year: int = 2024, n_teams: int =
 @pytest.mark.integration
 def test_reconstruct_standings_sets_finish_order_and_fixes_names(session: Session) -> None:
     season_id = _seed_league_and_teams(session)
-    outcome = reconstruct_standings(
-        session, league_id="36271", year=2024, fetcher=_StandingsStub()
-    )
+    outcome = reconstruct_standings(session, league_id="36271", year=2024, fetcher=_StandingsStub())
     session.commit()
 
     assert outcome.teams_ranked == 12
@@ -124,9 +122,7 @@ def test_derive_team_records_counts_regular_season_only(session: Session) -> Non
     season.regular_season_weeks = 2
     season.playoff_weeks = 1
     team_a, team_b = (
-        session.execute(select(Team).where(Team.season_id == season_id))
-        .scalars()
-        .all()
+        session.execute(select(Team).where(Team.season_id == season_id)).scalars().all()
     )
 
     # Two regular-season weeks: A wins both. One playoff week: B wins —
