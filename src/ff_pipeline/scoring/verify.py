@@ -79,6 +79,11 @@ class VerifyReport:
 
     comparisons: tuple[VerifyComparison, ...] = field(default_factory=tuple)
     tolerance: float = 0.1
+    #: Set when the sweep produced no comparisons for a structural reason
+    #: (season row absent, or no scoring rules loaded for it) rather than
+    #: because every row passed. Lets the CLI distinguish "nothing to check"
+    #: from "all good" instead of silently reporting total=0.
+    note: str | None = None
 
     @property
     def total(self) -> int:
@@ -219,11 +224,19 @@ def verify_season_sweep(
         return VerifyReport(
             comparisons=(),
             tolerance=tolerance,
+            note=f"season_not_found: league_id={league_id} year={season_year}",
         )
 
     rules = _load_rules(session, season.season_id)
     if not rules.rules:
-        return VerifyReport(comparisons=(), tolerance=tolerance)
+        return VerifyReport(
+            comparisons=(),
+            tolerance=tolerance,
+            note=(
+                f"scoring_rules_missing: season_id={season.season_id} year={season_year} "
+                "(load via `ff-pipeline scoring load`)"
+            ),
+        )
 
     teams = list(
         session.execute(select(Team).where(Team.season_id == season.season_id)).scalars().all()
