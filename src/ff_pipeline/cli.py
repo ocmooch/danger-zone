@@ -664,11 +664,16 @@ def verify_cmd(
             f"ours={ours:>7} nfl={theirs:>7} delta={delta:>7}  {status}{suffix}",
             fg=status_color,
         )
+    if report.note:
+        typer.secho(f"  {report.note}", fg="yellow", err=True)
     typer.echo(
         f"Verify: total={report.total} passed={report.passed} failed={report.failed} "
         f"(tolerance={tolerance})"
     )
-    if report.failed > 0:
+    # A sweep that compared nothing isn't a clean pass — the season or its
+    # scoring rules are missing (report.note explains which). Exit non-zero
+    # so this can't read as success in a script.
+    if report.failed > 0 or (sweep and report.total == 0):
         raise typer.Exit(code=1)
 
 
@@ -936,15 +941,30 @@ def scoring_load_cmd(
         "--fixtures-dir",
         help="Directory to copy the CSV into for the M9 verifier (default: tests/fixtures/scoring_rules).",
     ),
+    season: int | None = typer.Option(
+        None,
+        "--season",
+        help=(
+            "Season year to load these rules under, overriding the year inferred "
+            "from the CSV. Use to apply unchanged settings to a historical season "
+            "(e.g. --season 2024) so `verify --season 2024` has rules."
+        ),
+    ),
 ) -> None:
     """Parse a league settings export, upsert league/season/scoring_rules rows.
 
     Idempotent: re-running the same CSV updates ``points_per_unit`` etc.
     in place but never duplicates rules. The CSV is preserved in
     ``fixtures_dir`` so the M9 scoring verifier has a canonical copy.
+
+    By default the season year comes from the CSV (its trade-deadline
+    date); ``--season`` overrides it to load the same rules under another
+    year.
     """
 
     _bootstrap_settings_and_logging()
+
+    from dataclasses import replace
 
     from sqlalchemy.orm import Session
 
@@ -963,6 +983,13 @@ def scoring_load_cmd(
         typer.secho(f"Failed to parse {csv}: {exc}", fg="red", err=True)
         raise typer.Exit(code=65) from exc  # EX_DATAERR
 
+    if season is not None and season != parsed.season_year:
+        typer.secho(
+            f"Overriding CSV-inferred season {parsed.season_year} → {season}.",
+            fg="yellow",
+        )
+        parsed = replace(parsed, season_year=season)
+
     if parsed.league_id != settings.nfl_league_id:
         typer.secho(
             f"League ID in CSV ({parsed.league_id}) != .env NFL_LEAGUE_ID "
@@ -972,7 +999,15 @@ def scoring_load_cmd(
         )
         raise typer.Exit(code=65)
 
-    target_fixtures = fixtures_dir or (PROJECT_ROOT / "tests" / "fixtures" / "scoring_rules")
+    # Preserve a canonical fixture only for the season the CSV actually
+    # represents. When --season overrides the year we're re-applying the
+    # same settings to a different season, so a fixture copy named for that
+    # year would falsely imply we captured its real export.
+    target_fixtures: Path | None
+    if season is not None:
+        target_fixtures = None
+    else:
+        target_fixtures = fixtures_dir or (PROJECT_ROOT / "tests" / "fixtures" / "scoring_rules")
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as session:

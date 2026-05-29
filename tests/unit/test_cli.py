@@ -79,6 +79,13 @@ def test_rescore_command_help_lists_dry_run() -> None:
     assert "--dry-run" in result.stdout
 
 
+def test_scoring_load_help_lists_season_override() -> None:
+    result = runner.invoke(app, ["scoring", "load", "--help"])
+    assert result.exit_code == 0
+    for flag in ("--csv", "--season", "--fixtures-dir"):
+        assert flag in result.stdout, f"missing flag in scoring load --help: {flag}"
+
+
 @contextlib.contextmanager
 def _patch_run_machinery():
     """Patch out everything `run` touches except the source dispatch.
