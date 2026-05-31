@@ -17,6 +17,8 @@ from ff_pipeline.crawlers.nfl_com.parsers import (
     ParseError,
     _position_and_team_from_row,
     parse_availability_page,
+    parse_draft_picks,
+    parse_draft_round_numbers,
     parse_gamecenter,
     parse_league_home,
     parse_owners,
@@ -345,3 +347,47 @@ def test_parse_standings_handles_a_second_season() -> None:
 def test_parse_standings_empty_raises() -> None:
     with pytest.raises(ParseError, match="place-N"):
         parse_standings("<html><body><p>no standings here</p></body></html>")
+
+
+# ---------------------------------------------------------------------------
+# Draft results
+# ---------------------------------------------------------------------------
+
+
+def test_parse_draft_round_numbers_lists_every_round() -> None:
+    rounds = parse_draft_round_numbers(_read("draftresults_2024_round1.html"))
+    assert rounds == tuple(range(1, 16))
+
+
+def test_parse_draft_round_numbers_empty_when_no_nav() -> None:
+    assert parse_draft_round_numbers("<html><body>no draft</body></html>") == ()
+
+
+def test_parse_draft_picks_round_one_overall_numbering() -> None:
+    picks = parse_draft_picks(_read("draftresults_2024_round1.html"))
+    assert len(picks) == 12
+    first = picks[0]
+    assert first.overall_pick == 1
+    assert first.draft_round == 1
+    assert first.player_name == "Christian McCaffrey"
+    assert first.player_id == "2557997"
+    assert first.position == "RB"
+    assert first.nfl_team == "SF"
+    assert first.team_id == 3
+    # The .count cell is the global pick number, so round 1 is 1..12.
+    assert [p.overall_pick for p in picks] == list(range(1, 13))
+
+
+def test_parse_draft_picks_round_two_continues_overall_count() -> None:
+    picks = parse_draft_picks(_read("draftresults_2024_round2.html"))
+    assert len(picks) == 12
+    # Round 2 of a 12-team draft carries overall picks 13..24 and reverses
+    # the round-1 team order (snake) — pick 13 is the team that picked last.
+    assert all(p.draft_round == 2 for p in picks)
+    assert [p.overall_pick for p in picks] == list(range(13, 25))
+    assert picks[0].player_name == "Jahmyr Gibbs"
+    assert picks[0].team_id == 9
+
+
+def test_parse_draft_picks_empty_page_returns_empty() -> None:
+    assert parse_draft_picks("<html><body><p>no draft module</p></body></html>") == []

@@ -591,6 +591,103 @@ def reconstruct_cmd(
 
 
 # ---------------------------------------------------------------------------
+# draft
+# ---------------------------------------------------------------------------
+
+
+@app.command("draft")
+def draft_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year - 1)."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Capture only this season (sets --start and --end)."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run seasons already captured in pipeline_runs."
+    ),
+) -> None:
+    """Capture historical draft results from NFL.com /history pages.
+
+    Per season, reads ``/history/{year}/draftresults`` round by round and
+    writes one ``transactions`` row per pick (``transaction_type='draft'``,
+    ``effective_week=0``, ``executed_at`` ordered by overall pick), mirrored
+    onto ``team_rosters`` at week 0. Seasons whose draft NFL.com never
+    recorded are left empty (an honest gap). Resumable per season via
+    ``pipeline_runs(mode='draft')``; exits 77 on auth failure so it can be
+    resumed after ``cookie set``.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.history import run_draft_capture
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        end_year = end if end is not None else datetime.now().year - 1
+
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
+    try:
+        with Session(engine) as ss:
+            try:
+                results = run_draft_capture(
+                    ss,
+                    league_id=settings.nfl_league_id,
+                    start_year=start_year,
+                    end_year=end_year,
+                    fetcher=client,
+                    force=force,
+                )
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure during draft capture: {exc}. "
+                    "Refresh NFL_COOKIE via `cookie set`, then re-run to resume.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+    finally:
+        client.close()
+        engine.dispose()
+
+    captured = 0
+    for r in results:
+        if r.available:
+            captured += 1
+            typer.secho(
+                f"  {r.year}: picks={r.picks_parsed}, txns_added={r.txns_added} "
+                f"(skipped {r.txns_skipped}), roster_rows="
+                f"{r.roster_rows_added + r.roster_rows_updated}"
+                + (f", unknown_team={r.unknown_team_picks}" if r.unknown_team_picks else ""),
+                fg="green",
+            )
+        else:
+            typer.secho(f"  {r.year}: no obtainable draft — recorded nothing.", fg="yellow")
+    typer.echo(
+        f"Draft: seasons processed={len(results)} "
+        f"(captured {captured}, range {start_year}-{end_year})."
+    )
+
+
+# ---------------------------------------------------------------------------
 # rescore
 # ---------------------------------------------------------------------------
 
