@@ -78,10 +78,16 @@ def run_nflverse(
     universe back to 1999, but a player whose career ended before the
     league existed — or who plays a position this league can't roster —
     is pure clutter. When either is ``None`` no filtering is applied
-    (preserving the historical "ingest everything" behaviour). Note this
-    only gates the ``load_players`` metadata pass; players who actually
-    recorded a stat in a league season are still stubbed from the stat
-    rows themselves, so nothing rosterable is ever dropped.
+    (preserving the historical "ingest everything" behaviour).
+
+    ``relevant_positions`` additionally gates the *stub* path: nflverse's
+    weekly stats file carries a line for every IDP and lineman, and each
+    unknown gsis_id would otherwise be stubbed into ``players`` (and its
+    stat row ingested). We skip stub creation for positively-irrelevant
+    positions so the IDP universe never regrows after a prune. A player
+    already known to the DB (e.g. one nfl_com rostered) keeps all its stat
+    rows regardless of the stat line's position label, so nothing
+    rosterable is dropped.
     """
 
     run = PipelineRun(status="running", mode=mode)
@@ -106,7 +112,14 @@ def run_nflverse(
         gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
         # Auto-create stub players for any gsis_id that showed up in stats but
         # not in load_players() (rare but possible — preseason call-ups, etc.).
-        stub_counts = _create_stub_players(session, player_stats, gsis_to_player_id)
+        # Gated by relevant_positions so the IDP/lineman universe isn't
+        # re-stubbed straight back in after a prune.
+        stub_counts = _create_stub_players(
+            session,
+            player_stats,
+            gsis_to_player_id,
+            relevant_positions=relevant_positions,
+        )
         if stub_counts > 0:
             session.flush()
             gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
@@ -261,8 +274,26 @@ def _create_stub_players(
     session: Session,
     stats: list[NflversePlayerStat],
     gsis_to_player_id: dict[str, int],
+    *,
+    relevant_positions: frozenset[str] | None = None,
 ) -> int:
+    """Stub players for stat rows whose gsis_id isn't already known.
+
+    When ``relevant_positions`` is given, a stat row with a positively
+    irrelevant position (known, non-blank, outside the set) is *not* stubbed;
+    its stat row then resolves to no ``player_id`` and is skipped downstream.
+    A ``None``/blank position is unknown, so we still stub it. Passing
+    ``None`` stubs everything (historical behaviour).
+    """
     missing = [s for s in stats if s.gsis_id not in gsis_to_player_id]
+    if relevant_positions is not None:
+        missing = [
+            s
+            for s in missing
+            if s.position is None
+            or not s.position.strip()
+            or s.position.upper() in relevant_positions
+        ]
     if not missing:
         return 0
     rows = [
@@ -286,11 +317,15 @@ def _upsert_player_stats(
 ) -> UpsertCounts:
     now = datetime.now(tz=UTC)
     rows = []
+    skipped = 0
     for s in stats:
         pid = gsis_to_player_id.get(s.gsis_id)
         if pid is None:
-            # Shouldn't happen post-stub-creation, but skip rather than crash.
-            log.warning("Skipping nflverse stat row with no player_id", gsis_id=s.gsis_id)
+            # No player_id resolves for this stat row. Expected for stat lines
+            # whose player was intentionally not stubbed (irrelevant position);
+            # count and summarise rather than warn per row (~hundreds of
+            # thousands on a full IDP-laden backfill).
+            skipped += 1
             continue
         rows.append(
             {
@@ -307,6 +342,13 @@ def _upsert_player_stats(
                 "is_primary": True,
                 "ingested_at": now,
             }
+        )
+    if skipped:
+        log.info(
+            "Skipped nflverse stat rows with no resolved player_id "
+            "(unstubbed irrelevant-position players)",
+            skipped=skipped,
+            ingested=len(rows),
         )
     return upsert(
         session,

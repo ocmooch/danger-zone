@@ -196,13 +196,20 @@ v1.0.0 closes Phase 1, so re-evaluate these before Phase 2 design:
 Stated so they aren't reopened in later sessions:
 
 - **No IDP.** The league rosters `QB/RB/WR/TE/K` + team DEF only. nflverse's
-  full player universe is filtered to `RELEVANT_POSITIONS` at ingestion and
-  fully-orphaned legacy rows were removed via `prune-players` (players
-  25,355 → 8,587 on 2026-06-01). Do **not** re-widen position scope or
-  re-ingest pre-`LEAGUE_START_YEAR` retirees on the assumption IDP might be
-  wanted later — it won't be. Referenced-but-irrelevant rows (IDP players who
-  happen to have nflverse stats) were intentionally **kept**: prune scope is
-  fully-orphan-only, so no stat/roster/transaction data was discarded.
+  full player universe is filtered to `RELEVANT_POSITIONS` at ingestion (both
+  the `load_players` metadata pass and the stat-stub path) and legacy rows
+  were removed via `prune-players` in two passes: fully-orphaned rows
+  (25,355 → 8,587 on 2026-06-01) and then referenced-but-irrelevant
+  IDP/OL players (8,587 → 3,093 on 2026-06-01, cascading ~305k incidental
+  stat/projection rows). Do **not** re-widen position scope or re-ingest
+  pre-`LEAGUE_START_YEAR` retirees on the assumption IDP might be wanted
+  later — it won't be. The prune **protects** any player referenced by
+  `team_rosters` / `transactions` / `player_availability` /
+  `player_id_overrides` regardless of position label, because those rows are
+  ground truth and position strings are not (NFL.com scrape artifacts on team
+  defenses, rostered fullbacks, two-way players). So no roster/transaction
+  data was discarded — only incidental nflverse/Sleeper rows for players this
+  league can never field.
 - **Python**, not Go/TypeScript — the NFL/fantasy data ecosystem is Python.
 - **nflreadpy**, not `nfl_data_py` (archived as of 2025).
 - **Static HTTP + BeautifulSoup**, not Playwright — NFL.com renders server-side.

@@ -17,12 +17,29 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ff_pipeline.crawlers.nflverse.client import NflversePlayerMeta
-from ff_pipeline.crawlers.nflverse.runner import _filter_relevant_players
+from ff_pipeline.crawlers.nflverse.client import NflversePlayerMeta, NflversePlayerStat
+from ff_pipeline.crawlers.nflverse.runner import (
+    _create_stub_players,
+    _filter_relevant_players,
+)
 from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
-from ff_pipeline.repository.models import Player, PlayerStatsRaw
-from ff_pipeline.repository.prune import prune_orphan_players
+from ff_pipeline.repository.models import (
+    League,
+    Owner,
+    Player,
+    PlayerStatsRaw,
+    PlayerStatsScored,
+    Projection,
+    Season,
+    Team,
+    TeamRoster,
+)
+from ff_pipeline.repository.prune import (
+    find_irrelevant_position_players,
+    prune_irrelevant_position_players,
+    prune_orphan_players,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -175,3 +192,175 @@ def test_prune_reports_nothing_when_clean(session: Session) -> None:
     result = prune_orphan_players(session, dry_run=False)
     assert result.orphans_found == 0
     assert result.deleted == 0
+
+
+# ---------------------------------------------------------------------------
+# Stub-creation position gate (prevents IDP regrowth)
+# ---------------------------------------------------------------------------
+
+
+def _stat(gsis: str, *, position: str | None) -> NflversePlayerStat:
+    return NflversePlayerStat(
+        gsis_id=gsis,
+        player_display_name=f"Player {gsis}",
+        position=position,
+        nfl_team="KC",
+        season_year=2024,
+        week=1,
+        season_type="REG",
+        nfl_opponent="DEN",
+        stats={"passing_yards": 1.0},
+    )
+
+
+def test_stub_skips_irrelevant_position(session: Session) -> None:
+    stats = [
+        _stat("skill", position="WR"),
+        _stat("idp", position="LB"),
+        _stat("unknown", position=None),
+    ]
+    added = _create_stub_players(session, stats, {}, relevant_positions=RELEVANT)
+    session.flush()
+    positions = {p.gsis_id: p.position for p in session.execute(select(Player)).scalars().all()}
+    # WR stubbed, NULL-position stubbed (unknown -> keep), LB skipped.
+    assert added == 2
+    assert positions == {"skill": "WR", "unknown": None}
+
+
+def test_stub_stubs_everything_when_unscoped(session: Session) -> None:
+    stats = [_stat("idp", position="LB")]
+    added = _create_stub_players(session, stats, {}, relevant_positions=None)
+    session.flush()
+    assert added == 1
+
+
+# ---------------------------------------------------------------------------
+# Irrelevant-position prune (cascade + protective tables)
+# ---------------------------------------------------------------------------
+
+
+def _scaffold(session: Session) -> tuple[int, int]:
+    """Create League/Season/Owner/Team scaffolding; return ``(season_id, team_id)``."""
+    session.add(League(league_id="L1", name="Test"))
+    season = Season(league_id="L1", year=2024)
+    owner = Owner(league_id="L1", display_name="Me")
+    session.add_all([season, owner])
+    session.flush()
+    team = Team(season_id=season.season_id, owner_id=owner.owner_id, team_name="T1")
+    session.add(team)
+    session.flush()
+    return season.season_id, team.team_id
+
+
+def _rostered(session: Session, player_id: int) -> None:
+    """Anchor ``player_id`` to a real roster row via minimal scaffolding."""
+    _season_id, team_id = _scaffold(session)
+    session.add(TeamRoster(team_id=team_id, player_id=player_id, season_year=2024, week=1))
+    session.flush()
+
+
+def test_irrelevant_position_prune_cascades(session: Session) -> None:
+    season_id, _team_id = _scaffold(session)
+    idp = Player(name_full="A.J. Lineman", position="OT")
+    skill = Player(name_full="Active WR", position="WR")
+    session.add_all([idp, skill])
+    session.flush()
+
+    # Incidental references on the IDP — these must cascade-delete with it.
+    # A scored row chained to the raw row (FK on stat_id) guards the deletion
+    # ordering: scored must be deleted before its raw parent.
+    raw = PlayerStatsRaw(
+        player_id=idp.player_id,
+        season_year=2024,
+        week=1,
+        source="nflverse",
+        stats={"x": 0},
+        is_primary=True,
+        ingested_at=datetime.now(tz=UTC),
+    )
+    session.add(raw)
+    session.flush()
+    session.add(
+        PlayerStatsScored(
+            stat_id=raw.stat_id,
+            season_id=season_id,
+            player_id=idp.player_id,
+            week=1,
+            total_points=0.0,
+        )
+    )
+    session.add(
+        Projection(
+            player_id=idp.player_id,
+            season_year=2024,
+            week=1,
+            source="sleeper",
+            projected_points=0.0,
+            fetched_at=datetime.now(tz=UTC),
+        )
+    )
+    # A skill player with a stat row is untouched.
+    session.add(
+        PlayerStatsRaw(
+            player_id=skill.player_id,
+            season_year=2024,
+            week=1,
+            source="nflverse",
+            stats={"receiving_yards": 50},
+            is_primary=True,
+            ingested_at=datetime.now(tz=UTC),
+        )
+    )
+    session.flush()
+
+    preview = prune_irrelevant_position_players(session, relevant_positions=RELEVANT, dry_run=True)
+    assert preview.players_found == 1
+    assert preview.by_position == {"OT": 1}
+    assert preview.cascade_deleted == {
+        "player_stats_raw": 1,
+        "player_stats_scored": 1,
+        "projections": 1,
+        "trending_players": 0,
+    }
+    # Dry run mutated nothing.
+    assert len(session.execute(select(Player)).all()) == 2
+
+    result = prune_irrelevant_position_players(session, relevant_positions=RELEVANT, dry_run=False)
+    session.flush()
+    assert result.players_deleted == 1
+    assert result.cascade_deleted["player_stats_raw"] == 1
+    assert result.cascade_deleted["player_stats_scored"] == 1
+    assert result.cascade_deleted["projections"] == 1
+
+    remaining = session.execute(select(Player.player_id)).scalars().all()
+    assert remaining == [skill.player_id]
+    # The IDP's incidental rows are gone; the skill player's stat row stayed.
+    assert len(session.execute(select(PlayerStatsRaw)).all()) == 1
+    assert session.execute(select(PlayerStatsScored)).all() == []
+    assert session.execute(select(Projection)).all() == []
+
+
+def test_irrelevant_position_prune_protects_rostered(session: Session) -> None:
+    # An "IDP-positioned" player that was actually rostered (mislabeled
+    # position, fullback, two-way player...) must survive.
+    rostered = Player(name_full="Kyle Juszczyk", position="FB")
+    session.add(rostered)
+    session.flush()
+    _rostered(session, rostered.player_id)
+
+    found = find_irrelevant_position_players(session, RELEVANT)
+    assert found == []
+
+    result = prune_irrelevant_position_players(session, relevant_positions=RELEVANT, dry_run=False)
+    assert result.players_deleted == 0
+    assert session.execute(select(Player.player_id)).scalars().all() == [rostered.player_id]
+
+
+def test_irrelevant_position_prune_keeps_unknown_position(session: Session) -> None:
+    blank = Player(name_full="No Position", position=None)
+    empty = Player(name_full="Empty Position", position="  ")
+    session.add_all([blank, empty])
+    session.flush()
+
+    found = find_irrelevant_position_players(session, RELEVANT)
+    assert found == []

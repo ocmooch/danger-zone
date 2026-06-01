@@ -147,7 +147,14 @@ UNIQUE(`season_id`, `category`, `stat_key`, `threshold_min`)
 ### `players`
 One row per NFL player relevant to this league.
 
-**Scope.** nflverse's `load_players` returns the entire NFL player universe back to 1999 (and older) — every IDP, lineman, and long-snapper, plus everyone who retired before the league existed. We don't keep all of it: ingestion filters `load_players` metadata to (a) positions the league can roster (`RELEVANT_POSITIONS`, default `QB,RB,WR,TE,K`; team DEF is synthesized) and (b) players whose career overlaps the league era (`last_season >= LEAGUE_START_YEAR`). Players who genuinely recorded a stat in a league season are still stubbed from the stat rows themselves, so nothing rosterable is ever dropped. The `ff-pipeline prune-players` command removes **fully-orphaned** rows — players referenced by no other table — that predate this filter.
+**Scope.** nflverse's `load_players` returns the entire NFL player universe back to 1999 (and older) — every IDP, lineman, and long-snapper, plus everyone who retired before the league existed. We don't keep all of it. Ingestion filters `load_players` metadata to (a) positions the league can roster (`RELEVANT_POSITIONS`, default `QB,RB,WR,TE,K`; team DEF is synthesized) and (b) players whose career overlaps the league era (`last_season >= LEAGUE_START_YEAR`). The same `RELEVANT_POSITIONS` gate applies to the *stub* path: nflverse's weekly stats file carries a line for every IDP and lineman, so an unknown gsis_id with an irrelevant position is no longer stubbed in (its stat row then resolves to no player and is skipped). A player already known to the DB (e.g. one NFL.com rostered) keeps all of its stat rows regardless of any single stat line's position label, so nothing rosterable is ever dropped.
+
+The `ff-pipeline prune-players` command cleans rows that predate these filters, in two passes:
+
+- **Irrelevant position** — players whose `position` is outside `RELEVANT_POSITIONS` *and* that no real-league table references (`team_rosters`, `transactions`, `player_availability`, `player_id_overrides`). Their incidental rows (`player_stats_raw`, `player_stats_scored`, `projections`, `trending_players`) are cascade-deleted. Position labels are unreliable — NFL.com tags team defenses with a scrape artifact, fullbacks get rostered at flex, two-way players carry a defensive label — so a roster/transaction/availability/override row is treated as ground truth and **protects** the player from this pass no matter what its position string says.
+- **Fully orphaned** — players referenced by no other table at all (e.g. pre-league-era skill players).
+
+Both passes preview first (`--dry-run` shows the position breakdown and the cascade blast radius) and take a timestamped backup before any delete.
 
 | Column | Type | Notes |
 |--------|------|-------|
