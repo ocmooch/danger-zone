@@ -63,6 +63,8 @@ def run_nflverse(
     seasons: Sequence[int],
     source: NflverseSource | None = None,
     mode: str = "full_sync",
+    league_start_year: int | None = None,
+    relevant_positions: frozenset[str] | None = None,
 ) -> NflverseRunResult:
     """Pull nflverse data for ``seasons`` and write it into the DB.
 
@@ -70,6 +72,16 @@ def run_nflverse(
     Caller's responsibility to commit. On failure, the run row is marked
     ``failed`` with the exception message and the exception re-raised so
     the CLI returns a non-zero exit code.
+
+    ``league_start_year`` and ``relevant_positions`` scope which player
+    *metadata* rows get upserted: nflverse returns the entire NFL player
+    universe back to 1999, but a player whose career ended before the
+    league existed — or who plays a position this league can't roster —
+    is pure clutter. When either is ``None`` no filtering is applied
+    (preserving the historical "ingest everything" behaviour). Note this
+    only gates the ``load_players`` metadata pass; players who actually
+    recorded a stat in a league season are still stubbed from the stat
+    rows themselves, so nothing rosterable is ever dropped.
     """
 
     run = PipelineRun(status="running", mode=mode)
@@ -82,7 +94,12 @@ def run_nflverse(
         player_meta = client.players()
         player_stats = client.player_stats(seasons)
 
-        player_counts = _upsert_players(session, player_meta)
+        kept_meta = _filter_relevant_players(
+            player_meta,
+            league_start_year=league_start_year,
+            relevant_positions=relevant_positions,
+        )
+        player_counts = _upsert_players(session, kept_meta)
         # gsis_id -> player_id resolution depends on the players upsert above
         # having been flushed; do it now so the stat rows can reference IDs.
         session.flush()
@@ -160,6 +177,59 @@ def run_nflverse(
 # ---------------------------------------------------------------------------
 
 
+def _filter_relevant_players(
+    meta: list[NflversePlayerMeta],
+    *,
+    league_start_year: int | None,
+    relevant_positions: frozenset[str] | None,
+) -> list[NflversePlayerMeta]:
+    """Drop metadata rows that can never matter to this league.
+
+    A player is kept unless it fails one of the active filters:
+
+    * **Era** — ``last_season`` is known and predates ``league_start_year``;
+      the player retired before the league's first season.
+    * **Position** — ``position`` is not in ``relevant_positions``; the
+      league can't roster it (every IDP/lineman/specialist).
+
+    A ``None`` ``last_season`` or ``position`` is treated as *unknown, so
+    keep* — we only drop on positive evidence of irrelevance. Both filters
+    are skipped entirely when their parameter is ``None``.
+    """
+    if league_start_year is None and relevant_positions is None:
+        return meta
+
+    kept: list[NflversePlayerMeta] = []
+    dropped_era = 0
+    dropped_position = 0
+    for m in meta:
+        if (
+            league_start_year is not None
+            and m.last_season is not None
+            and m.last_season < league_start_year
+        ):
+            dropped_era += 1
+            continue
+        if (
+            relevant_positions is not None
+            and m.position is not None
+            and m.position.upper() not in relevant_positions
+        ):
+            dropped_position += 1
+            continue
+        kept.append(m)
+
+    if dropped_era or dropped_position:
+        log.info(
+            "Filtered nflverse player metadata to league scope",
+            kept=len(kept),
+            dropped_pre_league_era=dropped_era,
+            dropped_irrelevant_position=dropped_position,
+            league_start_year=league_start_year,
+        )
+    return kept
+
+
 def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertCounts:
     rows = [
         {
@@ -171,6 +241,7 @@ def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertC
             "nfl_team": m.nfl_team,
             "birth_date": m.birth_date,
             "rookie_year": m.rookie_year,
+            "last_season": m.last_season,
             "espn_id": m.espn_id,
             "is_active": (m.status or "").upper() == "ACT" or m.status is None,
         }

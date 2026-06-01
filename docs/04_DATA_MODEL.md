@@ -145,7 +145,9 @@ One row per (season, rule). Scraped from the league settings page each season.
 UNIQUE(`season_id`, `category`, `stat_key`, `threshold_min`)
 
 ### `players`
-One row per NFL player who has ever appeared in any roster in this league.
+One row per NFL player relevant to this league.
+
+**Scope.** nflverse's `load_players` returns the entire NFL player universe back to 1999 (and older) — every IDP, lineman, and long-snapper, plus everyone who retired before the league existed. We don't keep all of it: ingestion filters `load_players` metadata to (a) positions the league can roster (`RELEVANT_POSITIONS`, default `QB,RB,WR,TE,K`; team DEF is synthesized) and (b) players whose career overlaps the league era (`last_season >= LEAGUE_START_YEAR`). Players who genuinely recorded a stat in a league season are still stubbed from the stat rows themselves, so nothing rosterable is ever dropped. The `ff-pipeline prune-players` command removes **fully-orphaned** rows — players referenced by no other table — that predate this filter.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -157,6 +159,7 @@ One row per NFL player who has ever appeared in any roster in this league.
 | `nfl_team` | TEXT | 3-letter abbrev; `'FA'` if free agent |
 | `birth_date` | DATE | When available |
 | `rookie_year` | INTEGER | |
+| `last_season` | INTEGER | Last NFL season the player appeared in (nflverse `last_season`); used to scope ingestion to the league era |
 | `is_active` | BOOLEAN | Currently rostered or available |
 | `nfl_com_player_id` | TEXT | ID used in NFL.com URLs |
 | `gsis_id` | TEXT | Canonical NFL ID, used by nflverse |

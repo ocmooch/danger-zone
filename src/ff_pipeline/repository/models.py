@@ -231,6 +231,10 @@ class Player(Base):
     nfl_team: Mapped[str | None] = mapped_column(String(8))
     birth_date: Mapped[date | None] = mapped_column(Date)
     rookie_year: Mapped[int | None] = mapped_column(Integer)
+    # Last NFL season the player appeared in, per nflverse ``load_players``.
+    # Used to scope ingestion to the league era: a player whose career ended
+    # before ``LEAGUE_START_YEAR`` can never matter to this league.
+    last_season: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     nfl_com_player_id: Mapped[str | None] = mapped_column(String)
     gsis_id: Mapped[str | None] = mapped_column(String)

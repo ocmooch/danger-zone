@@ -66,6 +66,7 @@ class NflversePlayerMeta:
     nfl_team: str | None
     birth_date: date | None
     rookie_year: int | None
+    last_season: int | None
     espn_id: str | None
     status: str | None
 
@@ -228,6 +229,7 @@ class NflverseClient:
                     nfl_team=_opt_str(row.get("latest_team")),
                     birth_date=_parse_date(row.get("birth_date")),
                     rookie_year=_opt_int(row.get("rookie_season")),
+                    last_season=_opt_int(row.get("last_season")),
                     espn_id=_opt_str(row.get("espn_id")),
                     status=_opt_str(row.get("status")),
                 )

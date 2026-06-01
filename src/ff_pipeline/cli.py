@@ -186,7 +186,7 @@ def run_cmd(
         with Session(engine) as ss:
             for src in sources:
                 if src == "nflverse":
-                    _run_nflverse(ss, target_year=target_year)
+                    _run_nflverse(ss, settings=settings, target_year=target_year)
                 elif src == "nfl_com":
                     _run_nfl_com(
                         ss,
@@ -201,11 +201,16 @@ def run_cmd(
         engine.dispose()
 
 
-def _run_nflverse(ss: Session, *, target_year: int) -> None:
+def _run_nflverse(ss: Session, *, settings: Settings, target_year: int) -> None:
     """Sync players + raw weekly stats from nflverse, then commit."""
     from ff_pipeline.crawlers.nflverse.runner import run_nflverse
 
-    result = run_nflverse(ss, seasons=[target_year])
+    result = run_nflverse(
+        ss,
+        seasons=[target_year],
+        league_start_year=settings.league_start_year,
+        relevant_positions=settings.relevant_positions_set,
+    )
     ss.commit()
     typer.echo(
         f"nflverse: players +{result.players_added} "
@@ -430,6 +435,8 @@ def backfill_cmd(
                 sources=chosen,
                 week=week,
                 force=force,
+                league_start_year=settings.league_start_year,
+                relevant_positions=settings.relevant_positions_set,
             )
     finally:
         engine.dispose()
@@ -848,6 +855,91 @@ def backup_cmd(
         f"Backup: wrote {result.backup_path} ({result.bytes_written} bytes); "
         f"pruned {len(result.pruned_files)}."
     )
+
+
+# ---------------------------------------------------------------------------
+# prune-players
+# ---------------------------------------------------------------------------
+
+
+@app.command("prune-players")
+def prune_players_cmd(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be deleted; touch nothing."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt (for non-interactive use)."
+    ),
+    no_backup: bool = typer.Option(
+        False, "--no-backup", help="Skip the automatic pre-delete backup (not recommended)."
+    ),
+) -> None:
+    """Delete fully-orphaned players — rows no other table references.
+
+    nflverse ships the entire NFL player universe; this removes the
+    pre-league-era and unrosterable players that never connect to any
+    league fact. Always dry-runs first in spirit: run with ``--dry-run``
+    to preview the position breakdown, then re-run to delete. A timestamped
+    backup is taken before any delete unless ``--no-backup`` is given.
+    """
+    _bootstrap_settings_and_logging()
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.observability import BackupError, perform_backup
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.prune import prune_orphan_players
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            # Preview first so the operator sees the breakdown before any
+            # destructive choice — even in delete mode.
+            preview = prune_orphan_players(ss, dry_run=True)
+
+            if preview.orphans_found:
+                typer.echo(f"Fully-orphaned players: {preview.orphans_found}")
+                for pos, n in sorted(
+                    preview.by_position.items(), key=lambda kv: kv[1], reverse=True
+                ):
+                    typer.echo(f"  {pos:<8} {n}")
+            else:
+                typer.echo("No fully-orphaned players found.")
+
+            if dry_run or not preview.orphans_found:
+                return
+
+            if not yes:
+                confirmed = typer.confirm(
+                    f"Delete {preview.orphans_found} orphaned players?", default=False
+                )
+                if not confirmed:
+                    typer.echo("Aborted; nothing deleted.")
+                    return
+
+            if not no_backup:
+                backup_dir = (PROJECT_ROOT / "data" / "backups").resolve()
+                try:
+                    result = perform_backup(
+                        database_url=settings.database_url, backup_dir=backup_dir
+                    )
+                    typer.echo(f"Backup written to {result.backup_path} before pruning.")
+                except BackupError as exc:
+                    typer.secho(
+                        f"Pre-prune backup failed ({exc}); aborting. "
+                        "Re-run with --no-backup to override.",
+                        fg="red",
+                        err=True,
+                    )
+                    raise typer.Exit(code=1) from exc
+
+            outcome = prune_orphan_players(ss, dry_run=False)
+            ss.commit()
+            typer.secho(f"Deleted {outcome.deleted} orphaned players.", fg="green")
+    finally:
+        engine.dispose()
 
 
 # ---------------------------------------------------------------------------
