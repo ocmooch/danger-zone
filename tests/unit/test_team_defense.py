@@ -90,9 +90,10 @@ def _team_row(team: str, *, week: int = 3, **stats: float) -> dict[str, object]:
         "season_type": "REG",
         "passing_yards": 0,
         "rushing_yards": 0,
+        "sack_yards_lost": 0,
         "def_sacks": 0,
         "def_interceptions": 0,
-        "def_fumbles_recovered": 0,
+        "fumble_recovery_opp": 0,
         "def_safeties": 0,
         "def_tds": 0,
         "special_teams_tds": 0,
@@ -114,7 +115,7 @@ def test_rollup_builds_expected_stat_dict() -> None:
             rushing_yards=120,
             def_sacks=4,
             def_interceptions=2,
-            def_fumbles_recovered=1,
+            fumble_recovery_opp=1,
             def_tds=1,
         ),
         _team_row("DAL", passing_yards=180, rushing_yards=70),
@@ -154,7 +155,7 @@ def test_rollup_scores_to_hand_computed_total() -> None:
             rushing_yards=120,
             def_sacks=4,
             def_interceptions=2,
-            def_fumbles_recovered=1,
+            fumble_recovery_opp=1,
             def_tds=1,
         ),
         _team_row("DAL", passing_yards=180, rushing_yards=70),
@@ -178,6 +179,33 @@ def test_rollup_scores_to_hand_computed_total() -> None:
     result = apply_rules(sf.stats, _defense_rules())
     # 4 sacks(4) + 2 INT(4) + 1 fum(2) + 1 def TD(6) + shutout(10) + 250 yds bracket(4) = 30
     assert result.total_points == 30.0
+
+
+def test_total_yards_allowed_is_net_of_sacks() -> None:
+    """The opponent's yards allowed are *net*: sack yardage is subtracted
+    from passing, matching the official NFL total."""
+    team_rows = [
+        _team_row("SF", passing_yards=0, rushing_yards=0),
+        # DAL gained 320 gross but lost 30 to sacks -> 290 net.
+        _team_row("DAL", passing_yards=250, rushing_yards=70, sack_yards_lost=30),
+    ]
+    schedule_rows = [
+        {
+            "season": 2024,
+            "week": 3,
+            "game_type": "REG",
+            "home_team": "SF",
+            "away_team": "DAL",
+            "home_score": 17,
+            "away_score": 10,
+        }
+    ]
+    sf = next(
+        t
+        for t in build_team_defense_stats(team_rows=team_rows, schedule_rows=schedule_rows)
+        if t.nfl_team == "SF"
+    )
+    assert sf.stats["total_yards_allowed"] == 290.0
 
 
 def test_missing_schedule_omits_bracket_keys() -> None:

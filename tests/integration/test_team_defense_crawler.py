@@ -63,7 +63,7 @@ class _StubSource:
                 "rushing_yards": [120, 70],
                 "def_sacks": [4, 1],
                 "def_interceptions": [2, 0],
-                "def_fumbles_recovered": [1, 0],
+                "fumble_recovery_opp": [1, 0],
                 "def_safeties": [0, 0],
                 "def_tds": [1, 0],
                 "special_teams_tds": [0, 0],

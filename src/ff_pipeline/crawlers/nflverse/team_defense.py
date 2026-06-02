@@ -54,27 +54,21 @@ log = get_logger(__name__)
 _DEFENSE_COUNTING_MAP: dict[str, tuple[str, ...]] = {
     "sacks": ("def_sacks",),
     "interceptions": ("def_interceptions",),
-    "fumbles_recovered": ("def_fumbles_recovered", "def_fumble_recovery_opp"),
-    "safeties": ("def_safeties", "def_safety"),
+    # DST "fumbles recovered" = takeaways: opponent fumbles this team
+    # recovered (defense or special teams), nflverse ``fumble_recovery_opp``.
+    "fumbles_recovered": ("fumble_recovery_opp",),
+    "safeties": ("def_safeties",),
     "defensive_tds": ("def_tds",),
-    "special_teams_tds": ("special_teams_tds", "st_tds"),
+    "special_teams_tds": ("special_teams_tds",),
 }
 
-# Columns summed to a team's offensive total net yards, reused as the
-# opponent's ``total_yards_allowed``. NFL "total net yards" = net passing
-# yards + rushing yards.
-_OFFENSE_YARDS_COLUMNS: tuple[str, ...] = ("passing_yards", "rushing_yards")
-
-# nflverse schedule columns we read.
-_SCHEDULE_COLUMNS: tuple[str, ...] = (
-    "season",
-    "week",
-    "game_type",
-    "home_team",
-    "away_team",
-    "home_score",
-    "away_score",
-)
+# A team's offensive total **net** yards — reused as the opponent's
+# ``total_yards_allowed``. The official NFL total subtracts sack yardage
+# from passing, so net = passing_yards + rushing_yards - sack_yards_lost
+# (nflverse ``passing_yards`` is gross of sacks; ``sack_yards_lost`` is the
+# yardage this offense lost to sacks).
+_OFFENSE_YARDS_ADD: tuple[str, ...] = ("passing_yards", "rushing_yards")
+_OFFENSE_YARDS_SUBTRACT: tuple[str, ...] = ("sack_yards_lost",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +96,7 @@ def expected_team_columns() -> frozenset[str]:
     drops a column the projection depends on.
     """
 
-    cols: set[str] = set(_OFFENSE_YARDS_COLUMNS)
+    cols: set[str] = set(_OFFENSE_YARDS_ADD) | set(_OFFENSE_YARDS_SUBTRACT)
     for candidates in _DEFENSE_COUNTING_MAP.values():
         cols.update(candidates)
     return frozenset(cols)
@@ -123,10 +117,12 @@ def project_team_counting_stats(row: Mapping[str, object]) -> dict[str, float]:
 
 
 def team_offense_yards(row: Mapping[str, object]) -> float:
-    """Total net offensive yards for a team-stats row (yards the *defense*
-    on the other side allowed)."""
+    """Total **net** offensive yards for a team-stats row (the yards the
+    *defense* on the other side allowed): passing + rushing - sack yards."""
 
-    return sum(_as_float(row.get(c)) for c in _OFFENSE_YARDS_COLUMNS)
+    gained = sum(_as_float(row.get(c)) for c in _OFFENSE_YARDS_ADD)
+    lost = sum(_as_float(row.get(c)) for c in _OFFENSE_YARDS_SUBTRACT)
+    return gained - lost
 
 
 def build_team_defense_stats(
