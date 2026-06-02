@@ -27,11 +27,14 @@ from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
 from ff_pipeline.repository.models import (
     League,
+    Owner,
     Player,
     PlayerStatsRaw,
     PlayerStatsScored,
     ScoringRule,
     Season,
+    Team,
+    TeamRoster,
 )
 from ff_pipeline.scoring.rescore import rescore_seasons
 
@@ -189,6 +192,82 @@ def test_team_defense_ingest_and_rescore(session: Session) -> None:
     ).scalar_one()
     # 4 sacks + 2 INT*2 + 1 fum*2 + 1 TD*6 + shutout 10 + 250yds bracket 4 = 30
     assert scored.total_points == 30.0
+
+
+@pytest.mark.integration
+def test_matches_def_by_roster_slot_when_position_mislabeled(session: Session) -> None:
+    """A team defense NFL.com tagged with a scrape-artifact position and a
+    NULL nfl_team is still matched — identified by its DEF roster slot and
+    resolved from its full team name."""
+    session.add(League(league_id="36271", name="The Danger Zone", platform="nfl_com"))
+    season = Season(league_id="36271", year=2024, status="completed")
+    session.add(season)
+    owner = Owner(league_id="36271", nfl_user_id="u1", display_name="Owner One")
+    session.add(owner)
+    session.flush()
+    team = Team(season_id=season.season_id, owner_id=owner.owner_id, team_name="Team One")
+    # Mislabeled position, NULL nfl_team — exactly how ~half the DEFs land.
+    browns = Player(
+        name_full="Cleveland Browns",
+        position="Season is Over Add to Watch List",
+        nfl_team=None,
+    )
+    session.add_all([team, browns])
+    session.flush()
+    session.add(
+        TeamRoster(
+            team_id=team.team_id,
+            player_id=browns.player_id,
+            season_year=2024,
+            week=3,
+            roster_slot="DEF",
+            is_starter=True,
+        )
+    )
+    session.flush()
+
+    class _CleSource:
+        def load_team_stats(self, seasons):  # type: ignore[no-untyped-def]  # noqa: ARG002
+            return pl.DataFrame(
+                {
+                    "season": [2024],
+                    "week": [3],
+                    "team": ["CLE"],
+                    "season_type": ["REG"],
+                    "passing_yards": [100],
+                    "rushing_yards": [50],
+                    "sack_yards_lost": [0],
+                    "def_sacks": [2],
+                    "def_interceptions": [1],
+                    "fumble_recovery_opp": [0],
+                    "def_safeties": [0],
+                    "def_tds": [0],
+                    "special_teams_tds": [0],
+                }
+            )
+
+        def load_schedules(self, seasons):  # type: ignore[no-untyped-def]  # noqa: ARG002
+            return pl.DataFrame(
+                {
+                    "season": [2024],
+                    "week": [3],
+                    "game_type": ["REG"],
+                    "home_team": ["CLE"],
+                    "away_team": ["PIT"],
+                    "home_score": [20],
+                    "away_score": [10],
+                }
+            )
+
+    result = run_team_defense(session, seasons=[2024], source=_CleSource())
+    session.commit()
+
+    assert result.teams_matched == 1
+    raw = session.execute(
+        select(PlayerStatsRaw).where(PlayerStatsRaw.player_id == browns.player_id)
+    ).scalar_one()
+    assert raw.stats["sacks"] == 2.0
+    assert raw.stats["points_allowed"] == 10.0  # PIT scored 10
 
 
 @pytest.mark.integration

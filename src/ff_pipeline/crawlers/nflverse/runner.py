@@ -28,6 +28,7 @@ from ff_pipeline.repository.models import (
     Player,
     PlayerStatsRaw,
     SourceHealth,
+    TeamRoster,
 )
 from ff_pipeline.repository.upsert import UpsertCounts, upsert
 
@@ -505,20 +506,43 @@ def run_team_defense(
     )
 
 
+#: Roster-slot labels NFL.com uses for the single team-defense lineup spot.
+_DEF_ROSTER_SLOTS: tuple[str, ...] = ("DEF", "DST", "D/ST")
+
+
 def _def_player_index(
     session: Session,
     seasons: Sequence[int],
 ) -> dict[tuple[int, str], int]:
     """``(season_year, nflverse_abbrev) -> player_id`` for rostered DEFs.
 
-    Each ``position='DEF'`` player is resolved to its season-correct
-    abbreviation for every season in scope (handling blank ``nfl_team`` and
-    relocations). A franchise that resolves twice in one season (shouldn't
-    happen, but two DB rows could collapse to one abbrev) keeps the
-    lowest ``player_id`` deterministically and logs the collision.
+    A team-defense player is identified by **ever having been rostered in a
+    DEF lineup slot** (``team_rosters.roster_slot``), not by
+    ``players.position`` — NFL.com tags many team defenses with a scrape
+    artifact (e.g. ``"Season is Over Add to Watch List"``) and a NULL
+    ``nfl_team``, so the position column misses ~half of them. The roster
+    slot is ground truth. ``position='DEF'`` is unioned in as a belt-and-
+    braces fallback. Each is resolved to its season-correct abbreviation
+    (the resolver recovers the franchise from the full team name when
+    ``nfl_team`` is blank, and applies relocations). A franchise that
+    resolves twice in one season keeps the lowest ``player_id``
+    deterministically and logs the collision.
     """
+    def_player_ids = set(
+        session.execute(
+            select(TeamRoster.player_id)
+            .where(TeamRoster.roster_slot.in_(_DEF_ROSTER_SLOTS))
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
     def_players = list(
-        session.execute(select(Player).where(Player.position == "DEF").order_by(Player.player_id))
+        session.execute(
+            select(Player)
+            .where((Player.position == "DEF") | (Player.player_id.in_(def_player_ids)))
+            .order_by(Player.player_id)
+        )
         .scalars()
         .all()
     )
