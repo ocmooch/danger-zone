@@ -74,11 +74,13 @@ ff-pipeline run --source nfl_com --snapshot-kind pre_kickoff  # Game-day snapsho
 ff-pipeline backfill              # Pull historical seasons (resumable, idempotent)
 ff-pipeline backfill --season 2020   # Single season
 ff-pipeline rescore               # Recompute league points from raw stats
+ff-pipeline team-defense [--season Y]  # Ingest team-defense (DST) raw stats from nflverse
 ff-pipeline status [--verbose]    # Show pipeline health (last run, source health, backups)
 ff-pipeline cookie set            # Update NFL.com session cookie (validates before saving)
 ff-pipeline cookie test           # Verify cookie validity
 ff-pipeline verify --player NAME --season Y --week W  # Cross-check scoring against NFL.com
 ff-pipeline verify --sweep --season Y                  # Sweep weeks 1/8/15
+ff-pipeline verify --reconcile --season Y              # Offline: flag team-total drift (incl. DST)
 ff-pipeline scoring load --csv FILE  # Load scraped league scoring rules
 ff-pipeline prune-players [--dry-run]  # Remove unrosterable IDP/OL players + fully-orphaned rows
 ff-pipeline backup [--keep-days N]   # Snapshot SQLite DB to data/backups/

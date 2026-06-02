@@ -21,12 +21,14 @@ from ff_pipeline.crawlers.nflverse.client import (
     NflversePlayerMeta,
     NflversePlayerStat,
 )
+from ff_pipeline.crawlers.nflverse.franchises import resolve_def_team_abbrev
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
     PlayerStatsRaw,
     SourceHealth,
+    TeamRoster,
 )
 from ff_pipeline.repository.upsert import UpsertCounts, upsert
 
@@ -40,6 +42,11 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 SOURCE_NAME = "nflverse"
+# Team-defense raw rows are tagged with the same source as the offensive
+# nflverse rows so ``rescore`` (which scores only ``nflverse`` rows) picks
+# them up automatically. The distinct *health/summary* label below keeps
+# the team-defense step's observability separable from the player-stats run.
+TEAM_DEFENSE_LABEL = "nflverse_team_defense"
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,4 +365,210 @@ def _upsert_player_stats(
     )
 
 
-__all__ = ["NflverseRunResult", "run_nflverse"]
+# ---------------------------------------------------------------------------
+# Team defense (DST)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TeamDefenseRunResult:
+    """Outcome of one team-defense ingest run.
+
+    ``teams_matched`` / ``teams_unmatched`` count DEF stat rows that did /
+    did not resolve to a rostered DEF ``players`` row (an unmatched team is
+    a franchise this league never rostered that season — expected, not an
+    error).
+    """
+
+    stats_added: int
+    stats_updated: int
+    teams_matched: int
+    teams_unmatched: int
+    duration_ms: int
+
+
+def run_team_defense(
+    session: Session,
+    *,
+    seasons: Sequence[int],
+    source: NflverseSource | None = None,
+    mode: str = "full_sync",
+) -> TeamDefenseRunResult:
+    """Ingest team-defense (DST) raw stats for ``seasons``.
+
+    Builds per-team weekly DST stat dicts from nflverse team stats +
+    schedules, matches each to a rostered ``position='DEF'`` player via the
+    season-aware franchise resolver, and upserts them into
+    ``player_stats_raw`` with ``source='nflverse'``. The existing
+    ``rescore`` step then scores them with the season's ``defense`` rules.
+
+    Must run *after* the league's DEF players exist (i.e. after the NFL.com
+    roster sync) — a DEF stat row with no matching rostered franchise is
+    counted and skipped, not stubbed. Caller commits.
+    """
+
+    run = PipelineRun(status="running", mode=mode)
+    session.add(run)
+    session.flush()
+    start = time.perf_counter()
+
+    try:
+        client = NflverseClient(source=source or LiveNflverseSource())
+        team_stats = client.team_defense_stats(seasons)
+        # (season_year, abbrev) -> player_id, built from rostered DEF rows.
+        abbrev_to_player = _def_player_index(session, seasons)
+
+        now = datetime.now(tz=UTC)
+        rows: list[dict[str, object]] = []
+        matched = 0
+        unmatched = 0
+        for ts in team_stats:
+            pid = abbrev_to_player.get((ts.season_year, ts.nfl_team))
+            if pid is None:
+                unmatched += 1
+                continue
+            matched += 1
+            rows.append(
+                {
+                    "player_id": pid,
+                    "season_year": ts.season_year,
+                    "week": ts.week,
+                    "season_type": ts.season_type,
+                    "nfl_opponent": ts.nfl_opponent,
+                    "source": SOURCE_NAME,
+                    "stats": ts.stats,
+                    "is_primary": True,
+                    "ingested_at": now,
+                }
+            )
+        counts = upsert(
+            session,
+            PlayerStatsRaw,
+            rows,
+            conflict_cols=("player_id", "season_year", "week", "source"),
+        )
+
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        run.status = "failed"
+        run.finished_at = datetime.now(tz=UTC)
+        run.error_summary = f"{type(exc).__name__}: {exc}"
+        session.add(
+            SourceHealth(
+                run_id=run.run_id,
+                source=TEAM_DEFENSE_LABEL,
+                status="failed",
+                error_message=str(exc),
+                duration_ms=duration_ms,
+            )
+        )
+        raise
+
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    run.status = "success"
+    run.finished_at = datetime.now(tz=UTC)
+    run.sources_summary = {
+        TEAM_DEFENSE_LABEL: {
+            "stats_added": counts.rows_added,
+            "stats_updated": counts.rows_updated,
+            "teams_matched": matched,
+            "teams_unmatched": unmatched,
+            "seasons": list(seasons),
+        }
+    }
+    session.add(
+        SourceHealth(
+            run_id=run.run_id,
+            source=TEAM_DEFENSE_LABEL,
+            status="success",
+            rows_added=counts.rows_added,
+            rows_updated=counts.rows_updated,
+            duration_ms=duration_ms,
+        )
+    )
+
+    log.info(
+        "team-defense run complete",
+        seasons=list(seasons),
+        stats_added=counts.rows_added,
+        stats_updated=counts.rows_updated,
+        teams_matched=matched,
+        teams_unmatched=unmatched,
+        duration_ms=duration_ms,
+    )
+
+    return TeamDefenseRunResult(
+        stats_added=counts.rows_added,
+        stats_updated=counts.rows_updated,
+        teams_matched=matched,
+        teams_unmatched=unmatched,
+        duration_ms=duration_ms,
+    )
+
+
+#: Roster-slot labels NFL.com uses for the single team-defense lineup spot.
+_DEF_ROSTER_SLOTS: tuple[str, ...] = ("DEF", "DST", "D/ST")
+
+
+def _def_player_index(
+    session: Session,
+    seasons: Sequence[int],
+) -> dict[tuple[int, str], int]:
+    """``(season_year, nflverse_abbrev) -> player_id`` for rostered DEFs.
+
+    A team-defense player is identified by **ever having been rostered in a
+    DEF lineup slot** (``team_rosters.roster_slot``), not by
+    ``players.position`` — NFL.com tags many team defenses with a scrape
+    artifact (e.g. ``"Season is Over Add to Watch List"``) and a NULL
+    ``nfl_team``, so the position column misses ~half of them. The roster
+    slot is ground truth. ``position='DEF'`` is unioned in as a belt-and-
+    braces fallback. Each is resolved to its season-correct abbreviation
+    (the resolver recovers the franchise from the full team name when
+    ``nfl_team`` is blank, and applies relocations). A franchise that
+    resolves twice in one season keeps the lowest ``player_id``
+    deterministically and logs the collision.
+    """
+    def_player_ids = set(
+        session.execute(
+            select(TeamRoster.player_id)
+            .where(TeamRoster.roster_slot.in_(_DEF_ROSTER_SLOTS))
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
+    def_players = list(
+        session.execute(
+            select(Player)
+            .where((Player.position == "DEF") | (Player.player_id.in_(def_player_ids)))
+            .order_by(Player.player_id)
+        )
+        .scalars()
+        .all()
+    )
+    index: dict[tuple[int, str], int] = {}
+    for player in def_players:
+        for year in seasons:
+            abbrev = resolve_def_team_abbrev(player, year)
+            if abbrev is None:
+                continue
+            key = (year, abbrev)
+            if key in index and index[key] != player.player_id:
+                log.warning(
+                    "Multiple DEF players resolve to one franchise-season; keeping first",
+                    season_year=year,
+                    abbrev=abbrev,
+                    kept_player_id=index[key],
+                    dropped_player_id=player.player_id,
+                )
+                continue
+            index[key] = player.player_id
+    return index
+
+
+__all__ = [
+    "NflverseRunResult",
+    "TeamDefenseRunResult",
+    "run_nflverse",
+    "run_team_defense",
+]

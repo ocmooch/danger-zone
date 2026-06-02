@@ -16,6 +16,7 @@ from ff_pipeline.crawlers.nflverse.client import (
     NflversePlayerMeta,
     NflversePlayerStat,
     NflverseSource,
+    TeamDefenseStat,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "NflversePlayerMeta",
     "NflversePlayerStat",
     "NflverseSource",
+    "TeamDefenseStat",
 ]

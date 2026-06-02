@@ -165,7 +165,7 @@ def run_cmd(
         )
         raise typer.Exit(code=2)
 
-    if source is not None and source not in {"nflverse", "nfl_com", "sleeper"}:
+    if source is not None and source not in {"nflverse", "nfl_com", "sleeper", "team_defense"}:
         _stub(f"run --source {source}", "unknown source")
 
     from datetime import datetime
@@ -178,8 +178,10 @@ def run_cmd(
     settings = get_settings()
     target_year = season or datetime.now().year
     # No --source = the full sequence; nflverse first so player rows exist
-    # before nfl_com / sleeper try to resolve against them.
-    sources = [source] if source is not None else ["nflverse", "nfl_com", "sleeper"]
+    # before nfl_com / sleeper try to resolve against them. team_defense
+    # runs last because it matches against the DEF players that the NFL.com
+    # roster sync creates.
+    sources = [source] if source is not None else ["nflverse", "nfl_com", "sleeper", "team_defense"]
 
     engine = create_app_engine(settings.database_url)
     try:
@@ -195,6 +197,8 @@ def run_cmd(
                         week=week,
                         snapshot_kind=snapshot_kind,
                     )
+                elif src == "team_defense":
+                    _run_team_defense(ss, seasons=[target_year])
                 else:  # sleeper
                     _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
     finally:
@@ -219,6 +223,28 @@ def _run_nflverse(ss: Session, *, settings: Settings, target_year: int) -> None:
         f"~{result.stats_updated} "
         f"({result.duration_ms} ms)"
     )
+
+
+def _run_team_defense(ss: Session, *, seasons: list[int]) -> None:
+    """Ingest team-defense (DST) raw stats, then commit.
+
+    Runs after the league sync so DEF players exist to match against. The
+    scored points land on the next ``ff-pipeline rescore``.
+    """
+    from ff_pipeline.crawlers.nflverse.runner import run_team_defense
+
+    result = run_team_defense(ss, seasons=seasons)
+    ss.commit()
+    typer.echo(
+        f"team_defense: stats +{result.stats_added} ~{result.stats_updated}, "
+        f"teams matched {result.teams_matched} / unmatched {result.teams_unmatched} "
+        f"({result.duration_ms} ms)"
+    )
+    if result.stats_added or result.stats_updated:
+        typer.secho(
+            "  run `ff-pipeline rescore` to score the new DST rows.",
+            fg="cyan",
+        )
 
 
 def _run_nfl_com(
@@ -626,6 +652,70 @@ def rescore_cmd(
                 )
 
 
+@app.command("team-defense")
+def team_defense_cmd(
+    season: int | None = typer.Option(
+        None,
+        "--season",
+        help="Ingest only this season (default: every season with DEF players).",
+    ),
+    start_year: int | None = typer.Option(
+        None,
+        "--start-year",
+        help="First season for a range backfill (defaults to LEAGUE_START_YEAR).",
+    ),
+    end_year: int | None = typer.Option(
+        None,
+        "--end-year",
+        help="Last season for a range backfill (defaults to the current year).",
+    ),
+) -> None:
+    """Ingest team-defense (DST) raw stats from nflverse for past seasons.
+
+    DST stats are derived from nflverse team stats + schedules and matched
+    to rostered DEF players. Run after the league data is backfilled (DEF
+    players must exist), then run ``ff-pipeline rescore`` to score them.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nflverse.runner import run_team_defense
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        seasons = [season]
+    else:
+        first = start_year if start_year is not None else settings.league_start_year
+        last = end_year if end_year is not None else datetime.now().year
+        if first > last:
+            typer.secho(
+                f"--start-year ({first}) must be <= --end-year ({last}).", fg="red", err=True
+            )
+            raise typer.Exit(code=2)
+        seasons = list(range(first, last + 1))
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = run_team_defense(ss, seasons=seasons)
+            ss.commit()
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"team-defense: seasons={len(seasons)} stats +{result.stats_added} "
+        f"~{result.stats_updated}, teams matched {result.teams_matched} / "
+        f"unmatched {result.teams_unmatched}"
+    )
+    if result.stats_added or result.stats_updated:
+        typer.secho("Run `ff-pipeline rescore` to score the new DST rows.", fg="cyan")
+
+
 # ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------
@@ -682,6 +772,14 @@ def verify_cmd(
         "--sweep",
         help="Sweep mode: verify every starter on 3 named weeks for --season.",
     ),
+    reconcile: bool = typer.Option(
+        False,
+        "--reconcile",
+        help=(
+            "Reconcile each team's summed scored starters (incl. DST) against the "
+            "authoritative NFL.com team total. Offline; flags drift beyond tolerance."
+        ),
+    ),
 ) -> None:
     """Cross-check our scoring vs. NFL.com's stored point total."""
     _bootstrap_settings_and_logging()
@@ -697,6 +795,17 @@ def verify_cmd(
         verify_season_sweep,
     )
     from ff_pipeline.settings import get_settings
+
+    # Reconcile mode is offline (uses DB-stored team totals) and is mutually
+    # exclusive with the NFL.com-fetching player/sweep modes.
+    if reconcile:
+        if player is not None or sweep:
+            typer.secho(
+                "--reconcile cannot be combined with --player or --sweep.", fg="red", err=True
+            )
+            raise typer.Exit(code=2)
+        _run_reconcile(season=season, weeks=[week] if week is not None else None)
+        return
 
     if sweep and player is not None:
         typer.secho("--sweep and --player are mutually exclusive.", fg="red", err=True)
@@ -767,6 +876,53 @@ def verify_cmd(
     # scoring rules are missing (report.note explains which). Exit non-zero
     # so this can't read as success in a script.
     if report.failed > 0 or (sweep and report.total == 0):
+        raise typer.Exit(code=1)
+
+
+def _run_reconcile(*, season: int, weeks: list[int] | None) -> None:
+    """Offline team-total reconciliation: flag scoring drift incl. DST."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.scoring.verify import reconcile_team_totals
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    tolerance = settings.scoring_verify_tolerance
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            report = reconcile_team_totals(
+                ss,
+                league_id=settings.nfl_league_id,
+                season_year=season,
+                weeks=weeks,
+                tolerance=tolerance,
+            )
+    finally:
+        engine.dispose()
+
+    for c in report.comparisons:
+        ours = "—" if c.our_total is None else f"{c.our_total:.2f}"
+        theirs = "—" if c.nfl_com_total is None else f"{c.nfl_com_total:.2f}"
+        delta = "—" if c.delta is None else f"{c.delta:+.2f}"
+        status_color = "green" if c.passed else "red"
+        status = "PASS" if c.passed else "FAIL"
+        miss = f" missing={c.starters_missing_score}" if c.starters_missing_score else ""
+        suffix = f" [{c.note}]" if c.note else ""
+        typer.secho(
+            f"  {c.season_year} W{c.week:>2} {c.team_name or f'team {c.team_id}':<24} "
+            f"ours={ours:>7} nfl={theirs:>7} delta={delta:>7}  {status}{miss}{suffix}",
+            fg=status_color,
+        )
+    if report.note:
+        typer.secho(f"  {report.note}", fg="yellow", err=True)
+    typer.echo(
+        f"Reconcile: total={report.total} passed={report.passed} failed={report.failed} "
+        f"(tolerance={tolerance})"
+    )
+    if report.failed > 0 or report.total == 0:
         raise typer.Exit(code=1)
 
 

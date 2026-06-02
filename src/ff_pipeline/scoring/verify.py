@@ -33,8 +33,10 @@ from ff_pipeline.repository.models import (
     Matchup,
     Player,
     PlayerStatsRaw,
+    PlayerStatsScored,
     Season,
     Team,
+    TeamRoster,
 )
 from ff_pipeline.scoring.engine import apply_rules
 from ff_pipeline.scoring.rescore import _load_rules
@@ -529,6 +531,233 @@ def _build_comparison(
     )
 
 
+# ---------------------------------------------------------------------------
+# Team-total reconciliation (DST drift detection)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TeamTotalComparison:
+    """One ``(team, week)`` engine-total-vs-NFL.com-total comparison.
+
+    ``our_total`` is the sum of *our* scored points across the team's
+    starters that week; ``nfl_com_total`` is the authoritative
+    ``matchups.team_score`` NFL.com recorded. ``starters_missing_score``
+    counts starters we have no scored row for — the usual cause of a
+    pre-DST-fix shortfall, surfaced so a flagged delta is explainable.
+    """
+
+    team_id: int
+    team_name: str | None
+    season_year: int
+    week: int
+    our_total: float | None
+    nfl_com_total: float | None
+    delta: float | None
+    passed: bool
+    starters_counted: int
+    starters_missing_score: int
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileReport:
+    """Aggregate team-total reconciliation output (mirrors VerifyReport)."""
+
+    comparisons: tuple[TeamTotalComparison, ...] = field(default_factory=tuple)
+    tolerance: float = 0.1
+    note: str | None = None
+
+    @property
+    def total(self) -> int:
+        return len(self.comparisons)
+
+    @property
+    def passed(self) -> int:
+        return sum(1 for c in self.comparisons if c.passed)
+
+    @property
+    def failed(self) -> int:
+        return sum(1 for c in self.comparisons if not c.passed)
+
+
+def reconcile_team_totals(
+    session: Session,
+    *,
+    league_id: str,
+    season_year: int,
+    weeks: Sequence[int] | None = None,
+    tolerance: float = 0.1,
+) -> ReconcileReport:
+    """Reconcile each team's summed scored starters against its NFL.com total.
+
+    The engine stays the source of truth: this compares the sum of our
+    ``player_stats_scored`` rows over each team's **starters** with the
+    authoritative ``matchups.team_score`` and flags any delta beyond
+    ``tolerance`` as a data-quality alert. It never patches a score — it
+    reports. Runs fully offline (no NFL.com fetch).
+
+    ``weeks=None`` reconciles every week present in ``matchups`` for the
+    season. A starter with no scored row is counted in
+    ``starters_missing_score`` and contributes 0, so a DST gap (or any
+    unscored starter) shows up as a shortfall rather than silently passing.
+    """
+
+    season = (
+        session.execute(
+            select(Season).where(Season.league_id == league_id, Season.year == season_year)
+        )
+        .scalars()
+        .first()
+    )
+    if season is None:
+        return ReconcileReport(
+            comparisons=(),
+            tolerance=tolerance,
+            note=f"season_not_found: league_id={league_id} year={season_year}",
+        )
+
+    team_names = {
+        t.team_id: t.team_name
+        for t in session.execute(select(Team).where(Team.season_id == season.season_id))
+        .scalars()
+        .all()
+    }
+
+    matchup_stmt = select(Matchup).where(Matchup.season_id == season.season_id)
+    if weeks is not None:
+        matchup_stmt = matchup_stmt.where(Matchup.week.in_(list(weeks)))
+    matchups = list(session.execute(matchup_stmt).scalars().all())
+    if not matchups:
+        return ReconcileReport(
+            comparisons=(),
+            tolerance=tolerance,
+            note=f"no_matchups: season_id={season.season_id} year={season_year}",
+        )
+
+    comparisons: list[TeamTotalComparison] = []
+    for m in matchups:
+        our_total, counted, missing = _scored_starters_total(
+            session,
+            season_id=season.season_id,
+            team_id=m.team_id,
+            season_year=season_year,
+            week=m.week,
+        )
+        comparisons.append(
+            _build_team_total_comparison(
+                team_id=m.team_id,
+                team_name=team_names.get(m.team_id),
+                season_year=season_year,
+                week=m.week,
+                our_total=our_total,
+                nfl_com_total=m.team_score,
+                counted=counted,
+                missing=missing,
+                tolerance=tolerance,
+            )
+        )
+
+    return ReconcileReport(comparisons=tuple(comparisons), tolerance=tolerance)
+
+
+def _scored_starters_total(
+    session: Session,
+    *,
+    season_id: int,
+    team_id: int,
+    season_year: int,
+    week: int,
+) -> tuple[float | None, int, int]:
+    """Return ``(summed_points, starters_counted, starters_missing_score)``.
+
+    ``summed_points`` is ``None`` when the team has no starters recorded for
+    the week (can't reconcile); otherwise it's the sum over starters that
+    *do* have a scored row. Starters without one are counted as missing.
+    """
+    starter_ids = list(
+        session.execute(
+            select(TeamRoster.player_id).where(
+                TeamRoster.team_id == team_id,
+                TeamRoster.season_year == season_year,
+                TeamRoster.week == week,
+                TeamRoster.is_starter.is_(True),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not starter_ids:
+        return None, 0, 0
+
+    scored: dict[int, float | None] = {}
+    for pid, pts in session.execute(
+        select(PlayerStatsScored.player_id, PlayerStatsScored.total_points).where(
+            PlayerStatsScored.season_id == season_id,
+            PlayerStatsScored.week == week,
+            PlayerStatsScored.player_id.in_(starter_ids),
+        )
+    ).all():
+        scored[pid] = pts
+    total = 0.0
+    missing = 0
+    for pid in starter_ids:
+        pts = scored.get(pid)
+        if pts is None:
+            missing += 1
+        else:
+            total += float(pts)
+    return round(total, 2), len(starter_ids), missing
+
+
+def _build_team_total_comparison(
+    *,
+    team_id: int,
+    team_name: str | None,
+    season_year: int,
+    week: int,
+    our_total: float | None,
+    nfl_com_total: float | None,
+    counted: int,
+    missing: int,
+    tolerance: float,
+) -> TeamTotalComparison:
+    if our_total is None:
+        note = "no_starters_recorded"
+    elif nfl_com_total is None:
+        note = "nfl_com_total_missing"
+    else:
+        note = None
+    if our_total is None or nfl_com_total is None:
+        return TeamTotalComparison(
+            team_id=team_id,
+            team_name=team_name,
+            season_year=season_year,
+            week=week,
+            our_total=our_total,
+            nfl_com_total=nfl_com_total,
+            delta=None,
+            passed=False,
+            starters_counted=counted,
+            starters_missing_score=missing,
+            note=note,
+        )
+    delta = round(our_total - nfl_com_total, 2)
+    return TeamTotalComparison(
+        team_id=team_id,
+        team_name=team_name,
+        season_year=season_year,
+        week=week,
+        our_total=our_total,
+        nfl_com_total=nfl_com_total,
+        delta=delta,
+        passed=abs(delta) <= tolerance,
+        starters_counted=counted,
+        starters_missing_score=missing,
+        note=None,
+    )
+
+
 def _nfl_team_id_lookup(teams: Sequence[Team]) -> dict[int, int]:
     """Map ``teams.team_id`` (internal) → ``team_abbrev`` parsed as int.
 
@@ -548,8 +777,11 @@ def _nfl_team_id_lookup(teams: Sequence[Team]) -> dict[int, int]:
 
 __all__ = [
     "DEFAULT_SWEEP_WEEKS",
+    "ReconcileReport",
+    "TeamTotalComparison",
     "VerifyComparison",
     "VerifyReport",
+    "reconcile_team_totals",
     "verify_player",
     "verify_season_sweep",
 ]
