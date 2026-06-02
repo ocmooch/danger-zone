@@ -63,6 +63,8 @@ def run_nflverse(
     seasons: Sequence[int],
     source: NflverseSource | None = None,
     mode: str = "full_sync",
+    league_start_year: int | None = None,
+    relevant_positions: frozenset[str] | None = None,
 ) -> NflverseRunResult:
     """Pull nflverse data for ``seasons`` and write it into the DB.
 
@@ -70,6 +72,22 @@ def run_nflverse(
     Caller's responsibility to commit. On failure, the run row is marked
     ``failed`` with the exception message and the exception re-raised so
     the CLI returns a non-zero exit code.
+
+    ``league_start_year`` and ``relevant_positions`` scope which player
+    *metadata* rows get upserted: nflverse returns the entire NFL player
+    universe back to 1999, but a player whose career ended before the
+    league existed — or who plays a position this league can't roster —
+    is pure clutter. When either is ``None`` no filtering is applied
+    (preserving the historical "ingest everything" behaviour).
+
+    ``relevant_positions`` additionally gates the *stub* path: nflverse's
+    weekly stats file carries a line for every IDP and lineman, and each
+    unknown gsis_id would otherwise be stubbed into ``players`` (and its
+    stat row ingested). We skip stub creation for positively-irrelevant
+    positions so the IDP universe never regrows after a prune. A player
+    already known to the DB (e.g. one nfl_com rostered) keeps all its stat
+    rows regardless of the stat line's position label, so nothing
+    rosterable is dropped.
     """
 
     run = PipelineRun(status="running", mode=mode)
@@ -82,14 +100,26 @@ def run_nflverse(
         player_meta = client.players()
         player_stats = client.player_stats(seasons)
 
-        player_counts = _upsert_players(session, player_meta)
+        kept_meta = _filter_relevant_players(
+            player_meta,
+            league_start_year=league_start_year,
+            relevant_positions=relevant_positions,
+        )
+        player_counts = _upsert_players(session, kept_meta)
         # gsis_id -> player_id resolution depends on the players upsert above
         # having been flushed; do it now so the stat rows can reference IDs.
         session.flush()
         gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
         # Auto-create stub players for any gsis_id that showed up in stats but
         # not in load_players() (rare but possible — preseason call-ups, etc.).
-        stub_counts = _create_stub_players(session, player_stats, gsis_to_player_id)
+        # Gated by relevant_positions so the IDP/lineman universe isn't
+        # re-stubbed straight back in after a prune.
+        stub_counts = _create_stub_players(
+            session,
+            player_stats,
+            gsis_to_player_id,
+            relevant_positions=relevant_positions,
+        )
         if stub_counts > 0:
             session.flush()
             gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
@@ -160,6 +190,59 @@ def run_nflverse(
 # ---------------------------------------------------------------------------
 
 
+def _filter_relevant_players(
+    meta: list[NflversePlayerMeta],
+    *,
+    league_start_year: int | None,
+    relevant_positions: frozenset[str] | None,
+) -> list[NflversePlayerMeta]:
+    """Drop metadata rows that can never matter to this league.
+
+    A player is kept unless it fails one of the active filters:
+
+    * **Era** — ``last_season`` is known and predates ``league_start_year``;
+      the player retired before the league's first season.
+    * **Position** — ``position`` is not in ``relevant_positions``; the
+      league can't roster it (every IDP/lineman/specialist).
+
+    A ``None`` ``last_season`` or ``position`` is treated as *unknown, so
+    keep* — we only drop on positive evidence of irrelevance. Both filters
+    are skipped entirely when their parameter is ``None``.
+    """
+    if league_start_year is None and relevant_positions is None:
+        return meta
+
+    kept: list[NflversePlayerMeta] = []
+    dropped_era = 0
+    dropped_position = 0
+    for m in meta:
+        if (
+            league_start_year is not None
+            and m.last_season is not None
+            and m.last_season < league_start_year
+        ):
+            dropped_era += 1
+            continue
+        if (
+            relevant_positions is not None
+            and m.position is not None
+            and m.position.upper() not in relevant_positions
+        ):
+            dropped_position += 1
+            continue
+        kept.append(m)
+
+    if dropped_era or dropped_position:
+        log.info(
+            "Filtered nflverse player metadata to league scope",
+            kept=len(kept),
+            dropped_pre_league_era=dropped_era,
+            dropped_irrelevant_position=dropped_position,
+            league_start_year=league_start_year,
+        )
+    return kept
+
+
 def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertCounts:
     rows = [
         {
@@ -171,6 +254,7 @@ def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertC
             "nfl_team": m.nfl_team,
             "birth_date": m.birth_date,
             "rookie_year": m.rookie_year,
+            "last_season": m.last_season,
             "espn_id": m.espn_id,
             "is_active": (m.status or "").upper() == "ACT" or m.status is None,
         }
@@ -190,8 +274,26 @@ def _create_stub_players(
     session: Session,
     stats: list[NflversePlayerStat],
     gsis_to_player_id: dict[str, int],
+    *,
+    relevant_positions: frozenset[str] | None = None,
 ) -> int:
+    """Stub players for stat rows whose gsis_id isn't already known.
+
+    When ``relevant_positions`` is given, a stat row with a positively
+    irrelevant position (known, non-blank, outside the set) is *not* stubbed;
+    its stat row then resolves to no ``player_id`` and is skipped downstream.
+    A ``None``/blank position is unknown, so we still stub it. Passing
+    ``None`` stubs everything (historical behaviour).
+    """
     missing = [s for s in stats if s.gsis_id not in gsis_to_player_id]
+    if relevant_positions is not None:
+        missing = [
+            s
+            for s in missing
+            if s.position is None
+            or not s.position.strip()
+            or s.position.upper() in relevant_positions
+        ]
     if not missing:
         return 0
     rows = [
@@ -215,11 +317,15 @@ def _upsert_player_stats(
 ) -> UpsertCounts:
     now = datetime.now(tz=UTC)
     rows = []
+    skipped = 0
     for s in stats:
         pid = gsis_to_player_id.get(s.gsis_id)
         if pid is None:
-            # Shouldn't happen post-stub-creation, but skip rather than crash.
-            log.warning("Skipping nflverse stat row with no player_id", gsis_id=s.gsis_id)
+            # No player_id resolves for this stat row. Expected for stat lines
+            # whose player was intentionally not stubbed (irrelevant position);
+            # count and summarise rather than warn per row (~hundreds of
+            # thousands on a full IDP-laden backfill).
+            skipped += 1
             continue
         rows.append(
             {
@@ -236,6 +342,13 @@ def _upsert_player_stats(
                 "is_primary": True,
                 "ingested_at": now,
             }
+        )
+    if skipped:
+        log.info(
+            "Skipped nflverse stat rows with no resolved player_id "
+            "(unstubbed irrelevant-position players)",
+            skipped=skipped,
+            ingested=len(rows),
         )
     return upsert(
         session,

@@ -80,6 +80,7 @@ ff-pipeline cookie test           # Verify cookie validity
 ff-pipeline verify --player NAME --season Y --week W  # Cross-check scoring against NFL.com
 ff-pipeline verify --sweep --season Y                  # Sweep weeks 1/8/15
 ff-pipeline scoring load --csv FILE  # Load scraped league scoring rules
+ff-pipeline prune-players [--dry-run]  # Remove unrosterable IDP/OL players + fully-orphaned rows
 ff-pipeline backup [--keep-days N]   # Snapshot SQLite DB to data/backups/
 ff-pipeline serve [--reload]         # Start FastAPI read API
 ff-pipeline migrate up | status      # Alembic helpers

@@ -145,7 +145,16 @@ One row per (season, rule). Scraped from the league settings page each season.
 UNIQUE(`season_id`, `category`, `stat_key`, `threshold_min`)
 
 ### `players`
-One row per NFL player who has ever appeared in any roster in this league.
+One row per NFL player relevant to this league.
+
+**Scope.** nflverse's `load_players` returns the entire NFL player universe back to 1999 (and older) — every IDP, lineman, and long-snapper, plus everyone who retired before the league existed. We don't keep all of it. Ingestion filters `load_players` metadata to (a) positions the league can roster (`RELEVANT_POSITIONS`, default `QB,RB,WR,TE,K`; team DEF is synthesized) and (b) players whose career overlaps the league era (`last_season >= LEAGUE_START_YEAR`). The same `RELEVANT_POSITIONS` gate applies to the *stub* path: nflverse's weekly stats file carries a line for every IDP and lineman, so an unknown gsis_id with an irrelevant position is no longer stubbed in (its stat row then resolves to no player and is skipped). A player already known to the DB (e.g. one NFL.com rostered) keeps all of its stat rows regardless of any single stat line's position label, so nothing rosterable is ever dropped.
+
+The `ff-pipeline prune-players` command cleans rows that predate these filters, in two passes:
+
+- **Irrelevant position** — players whose `position` is outside `RELEVANT_POSITIONS` *and* that no real-league table references (`team_rosters`, `transactions`, `player_availability`, `player_id_overrides`). Their incidental rows (`player_stats_raw`, `player_stats_scored`, `projections`, `trending_players`) are cascade-deleted. Position labels are unreliable — NFL.com tags team defenses with a scrape artifact, fullbacks get rostered at flex, two-way players carry a defensive label — so a roster/transaction/availability/override row is treated as ground truth and **protects** the player from this pass no matter what its position string says.
+- **Fully orphaned** — players referenced by no other table at all (e.g. pre-league-era skill players).
+
+Both passes preview first (`--dry-run` shows the position breakdown and the cascade blast radius) and take a timestamped backup before any delete.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -157,6 +166,7 @@ One row per NFL player who has ever appeared in any roster in this league.
 | `nfl_team` | TEXT | 3-letter abbrev; `'FA'` if free agent |
 | `birth_date` | DATE | When available |
 | `rookie_year` | INTEGER | |
+| `last_season` | INTEGER | Last NFL season the player appeared in (nflverse `last_season`); used to scope ingestion to the league era |
 | `is_active` | BOOLEAN | Currently rostered or available |
 | `nfl_com_player_id` | TEXT | ID used in NFL.com URLs |
 | `gsis_id` | TEXT | Canonical NFL ID, used by nflverse |

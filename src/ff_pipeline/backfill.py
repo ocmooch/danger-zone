@@ -97,6 +97,8 @@ def run_backfill(
     week: int = 1,
     force: bool = False,
     nfl_com_client_factory: object | None = None,
+    league_start_year: int | None = None,
+    relevant_positions: frozenset[str] | None = None,
 ) -> BackfillResult:
     """Backfill every season in ``[start_year, end_year]`` for the given sources.
 
@@ -151,6 +153,8 @@ def run_backfill(
                         league_id=league_id,
                         week=week,
                         nfl_com_client=nfl_com_client_ctx,
+                        league_start_year=league_start_year,
+                        relevant_positions=relevant_positions,
                     )
                 except AuthFailureError as exc:
                     # Per-season failure already wrote a failed pipeline_runs
@@ -218,9 +222,17 @@ def _run_one(
     league_id: str,
     week: int,
     nfl_com_client: NflComClient | None,
+    league_start_year: int | None = None,
+    relevant_positions: frozenset[str] | None = None,
 ) -> str:
     if source == "nflverse":
-        nv_result = run_nflverse(session, seasons=[year], mode=BACKFILL_MODE)
+        nv_result = run_nflverse(
+            session,
+            seasons=[year],
+            mode=BACKFILL_MODE,
+            league_start_year=league_start_year,
+            relevant_positions=relevant_positions,
+        )
         return (
             f"players +{nv_result.players_added}~{nv_result.players_updated}, "
             f"stats +{nv_result.stats_added}~{nv_result.stats_updated}"
