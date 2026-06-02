@@ -30,8 +30,20 @@ def settings(league_id: str) -> str:
     return f"{BASE_URL}/league/{league_id}/settings"
 
 
-def draft_results(league_id: str, year: int) -> str:
-    return f"{BASE_URL}/league/{league_id}/history/{year}/draftresults"
+def draft_results(league_id: str, year: int, round_: int | None = None) -> str:
+    """Draft-results page for a season.
+
+    With ``round_`` omitted, returns the default "By Round" view (round 1
+    in the static HTML). With ``round_=N``, returns that round's view —
+    NFL.com only renders one round's picks per page, so capturing the
+    whole draft means hitting each round in turn. Every round page's
+    ``span.count`` carries the *overall* pick number (snake order), so
+    ordering survives the per-round fetch.
+    """
+    base = f"{BASE_URL}/league/{league_id}/history/{year}/draftresults"
+    if round_ is None:
+        return base
+    return f"{base}?draftResultsDetail={round_}&draftResultsTab=round&draftResultsType=results"
 
 
 def standings(league_id: str, year: int) -> str:

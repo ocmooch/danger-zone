@@ -22,11 +22,20 @@ from sqlalchemy.orm import Session
 
 from ff_pipeline.crawlers.nfl_com.history import (
     derive_team_records,
+    reconstruct_draft,
     reconstruct_standings,
 )
 from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
-from ff_pipeline.repository.models import League, Matchup, Owner, Season, Team
+from ff_pipeline.repository.models import (
+    League,
+    Matchup,
+    Owner,
+    Season,
+    Team,
+    TeamRoster,
+    Transaction,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -172,3 +181,107 @@ def test_derive_team_records_counts_regular_season_only(session: Session) -> Non
     assert team_a.regular_season_points_for == pytest.approx(210.0)
     assert team_a.regular_season_points_against == pytest.approx(185.0)
     assert (team_b.regular_season_wins, team_b.regular_season_losses) == (0, 2)
+
+
+class _DraftStub:
+    """Serve the base (round 1) and round-2 draft fixtures; rounds 3..15
+    return an empty page so the runner stops adding picks past the two
+    rounds we have real markup for."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def get_html(self, url: str) -> str:
+        import re
+
+        self.calls.append(url)
+        assert "draftresults" in url
+        detail = re.search(r"draftResultsDetail=(\d+)", url)
+        if detail is None:
+            return _load("draftresults_2024_round1.html")
+        if int(detail.group(1)) == 2:
+            return _load("draftresults_2024_round2.html")
+        return "<html><body></body></html>"
+
+
+@pytest.mark.integration
+def test_reconstruct_draft_writes_ordered_picks(session: Session) -> None:
+    season_id = _seed_league_and_teams(session)
+    outcome = reconstruct_draft(session, league_id="36271", year=2024, fetcher=_DraftStub())
+    session.commit()
+
+    assert outcome.available is True
+    assert outcome.picks_parsed == 24  # two rounds of 12
+    assert outcome.txns_added == 24
+    assert outcome.unknown_team_picks == 0
+
+    txns = (
+        session.execute(
+            select(Transaction)
+            .where(Transaction.season_id == season_id, Transaction.transaction_type == "draft")
+            .order_by(Transaction.executed_at)
+        )
+        .scalars()
+        .all()
+    )
+    assert len(txns) == 24
+    # Contract: draft picks are direction='add', effective_week=0, and the
+    # executed_at order is the true overall pick order (pick 1 earliest).
+    assert all(t.direction == "add" for t in txns)
+    assert all(t.effective_week == 0 for t in txns)
+    assert [t.executed_at for t in txns] == sorted(t.executed_at for t in txns)
+    # First pick by executed_at must be overall pick 1 — Christian McCaffrey
+    # to the team whose NFL.com id is 3 (team_abbrev "3").
+    first_team = session.get(Team, txns[0].team_id)
+    assert first_team is not None
+    assert first_team.team_abbrev == "3"
+
+    # Each pick is mirrored onto team_rosters at week 0 with the draft
+    # provenance, and the explicit overall/round live in extra_data.
+    roster = (
+        session.execute(select(TeamRoster).where(TeamRoster.week == 0)).scalars().all()
+    )
+    assert len(roster) == 24
+    assert all(r.acquisition_type == "draft" and r.acquisition_week == 0 for r in roster)
+    overalls = sorted((r.extra_data or {}).get("draft_overall") for r in roster)
+    assert overalls == list(range(1, 25))
+
+
+@pytest.mark.integration
+def test_reconstruct_draft_is_idempotent(session: Session) -> None:
+    _seed_league_and_teams(session)
+    stub = _DraftStub()
+    reconstruct_draft(session, league_id="36271", year=2024, fetcher=stub)
+    session.commit()
+
+    again = reconstruct_draft(session, league_id="36271", year=2024, fetcher=stub)
+    session.commit()
+    assert again.txns_added == 0
+    assert again.txns_skipped == 24
+
+    total = session.execute(
+        select(Transaction).where(Transaction.transaction_type == "draft")
+    ).scalars().all()
+    assert len(total) == 24
+
+
+@pytest.mark.integration
+def test_reconstruct_draft_records_nothing_when_unobtainable(session: Session) -> None:
+    _seed_league_and_teams(session)
+
+    class _EmptyDraftStub:
+        def get_html(self, url: str) -> str:
+            assert "draftresults" in url
+            return "<html><body><p>This draft has not occurred.</p></body></html>"
+
+    outcome = reconstruct_draft(session, league_id="36271", year=2024, fetcher=_EmptyDraftStub())
+    session.commit()
+
+    assert outcome.available is False
+    assert outcome.picks_parsed == 0
+    assert (
+        session.execute(select(Transaction).where(Transaction.transaction_type == "draft"))
+        .scalars()
+        .first()
+        is None
+    )

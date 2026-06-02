@@ -24,18 +24,24 @@ the rest of the crawler layer.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import select
 
 from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
 from ff_pipeline.crawlers.nfl_com.parsers import (
+    ParsedDraftPick,
     ParsedRosterEntry,
     ParseError,
+    parse_draft_picks,
+    parse_draft_round_numbers,
     parse_gamecenter,
     parse_standings,
     parse_weekly_matchups,
+)
+from ff_pipeline.crawlers.nfl_com.urls import (
+    draft_results as draft_results_url,
 )
 from ff_pipeline.crawlers.nfl_com.urls import (
     standings as standings_url,
@@ -46,7 +52,14 @@ from ff_pipeline.crawlers.nfl_com.urls import (
 )
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.normalizer.player_ids import PlayerIdentity, PlayerResolver
-from ff_pipeline.repository.models import Matchup, PipelineRun, Season, Team, TeamRoster
+from ff_pipeline.repository.models import (
+    Matchup,
+    PipelineRun,
+    Season,
+    Team,
+    TeamRoster,
+    Transaction,
+)
 from ff_pipeline.repository.upsert import upsert
 
 if TYPE_CHECKING:
@@ -57,6 +70,15 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 RECONSTRUCT_MODE = "reconstruct"
+DRAFT_MODE = "draft"
+
+# Draft picks carry no real timestamp on NFL.com, but the downstream BFF
+# orders the draft by ``executed_at`` (pick 1 earliest). We synthesize a
+# monotonic timestamp from the overall pick number anchored to a fixed
+# pre-season instant — early enough that a draft always sorts before that
+# season's in-season adds/drops/trades (which start in September).
+_DRAFT_EPOCH_MONTH = 8
+_DRAFT_EPOCH_DAY = 1
 
 # Fantasy weeks never exceed 18 (17-game regular season + the final
 # fantasy week). We probe 1..MAX_FANTASY_WEEK and stop counting a week as
@@ -514,6 +536,317 @@ def derive_team_records(session: Session, *, league_id: str, year: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Draft results → draft transactions (+ team_rosters mirror)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DraftOutcome:
+    """Result of capturing one season's draft.
+
+    ``available`` is False when NFL.com has no obtainable draft for the
+    season; everything else is then zero and nothing is written (an
+    honest gap, not fabricated picks).
+    """
+
+    year: int
+    available: bool
+    picks_parsed: int = 0
+    rounds_fetched: int = 0
+    txns_added: int = 0
+    txns_skipped: int = 0
+    roster_rows_added: int = 0
+    roster_rows_updated: int = 0
+    unknown_team_picks: int = 0
+
+
+def reconstruct_draft(
+    session: Session,
+    *,
+    league_id: str,
+    year: int,
+    fetcher: _HtmlFetcher,
+    resolver: PlayerResolver | None = None,
+) -> DraftOutcome:
+    """Capture one season's draft into ``transactions`` (+ ``team_rosters``).
+
+    Reads ``/history/{year}/draftresults`` round by round (NFL.com renders
+    one round per page), resolves each pick's player and team to internal
+    ids, and writes one ``transactions`` row per pick with
+    ``transaction_type='draft'``, ``direction='add'``, ``effective_week=0``
+    and an ``executed_at`` synthesized from the overall pick number so the
+    whole draft sorts in true pick order. Each pick is also mirrored onto
+    ``team_rosters`` at ``week=0`` with ``acquisition_type='draft'`` and the
+    explicit overall/round stashed in ``extra_data``.
+
+    Idempotent: a pick already present (matched on season + team + player)
+    is skipped, so re-running never double-inserts. Caller commits.
+    """
+    season = _resolve_season(session, league_id, year)
+    if season is None:
+        raise ParseError(f"draft: no season row for league={league_id} year={year}")
+    resolver = resolver or PlayerResolver(session)
+    nfl_to_internal = _internal_team_by_nfl_id(session, season.season_id)
+    team_count = len(nfl_to_internal) or None
+
+    base_html = fetcher.get_html(draft_results_url(league_id, year))
+    round_numbers = parse_draft_round_numbers(base_html)
+    picks: list[ParsedDraftPick] = list(parse_draft_picks(base_html))
+    seen_rounds = {p.draft_round for p in picks}
+    rounds_fetched = 1
+    for round_no in round_numbers:
+        if round_no in seen_rounds:
+            continue
+        more = parse_draft_picks(fetcher.get_html(draft_results_url(league_id, year, round_no)))
+        rounds_fetched += 1
+        picks.extend(more)
+        seen_rounds.update(p.draft_round for p in more)
+
+    if not picks:
+        log.info("Draft not obtainable; recording nothing", year=year)
+        return DraftOutcome(year=year, available=False, rounds_fetched=rounds_fetched)
+
+    picks.sort(key=lambda p: p.overall_pick)
+    return _persist_draft_picks(
+        session,
+        season_id=season.season_id,
+        year=year,
+        picks=picks,
+        nfl_to_internal=nfl_to_internal,
+        team_count=team_count,
+        resolver=resolver,
+        rounds_fetched=rounds_fetched,
+    )
+
+
+def _persist_draft_picks(
+    session: Session,
+    *,
+    season_id: int,
+    year: int,
+    picks: Sequence[ParsedDraftPick],
+    nfl_to_internal: dict[int, int],
+    team_count: int | None,
+    resolver: PlayerResolver,
+    rounds_fetched: int,
+) -> DraftOutcome:
+    # Existing draft picks for this season keyed by (team, player) so a
+    # re-run skips inserts instead of duplicating; the team_rosters mirror
+    # is upserted (idempotent) regardless.
+    existing: set[tuple[int, int]] = {
+        (team_id, player_id)
+        for team_id, player_id in session.execute(
+            select(Transaction.team_id, Transaction.player_id).where(
+                Transaction.season_id == season_id,
+                Transaction.transaction_type == "draft",
+            )
+        ).all()
+        if team_id is not None and player_id is not None
+    }
+    epoch = datetime(year, _DRAFT_EPOCH_MONTH, _DRAFT_EPOCH_DAY, tzinfo=UTC)
+
+    txns_added = 0
+    txns_skipped = 0
+    unknown_team = 0
+    roster_rows: list[dict[str, object]] = []
+
+    for pick in picks:
+        team_id = nfl_to_internal.get(pick.team_id) if pick.team_id is not None else None
+        if team_id is None:
+            unknown_team += 1
+            log.warning(
+                "draft: unknown nfl team_id", year=year, nfl_team_id=pick.team_id, overall=pick.overall_pick
+            )
+            continue
+        if not pick.player_id and not pick.player_name:
+            continue
+        player_id = resolver.resolve(
+            PlayerIdentity(
+                name_full=pick.player_name or pick.player_id or "(unknown)",
+                position=pick.position,
+                nfl_team=pick.nfl_team,
+                nfl_com_player_id=pick.player_id,
+            ),
+            source="nfl_com",
+        )
+        executed_at = epoch + timedelta(seconds=pick.overall_pick)
+        pick_in_round = (
+            pick.overall_pick - (pick.draft_round - 1) * team_count if team_count else None
+        )
+
+        key = (team_id, player_id)
+        if key in existing:
+            txns_skipped += 1
+        else:
+            existing.add(key)
+            session.add(
+                Transaction(
+                    season_id=season_id,
+                    transaction_type="draft",
+                    executed_at=executed_at,
+                    effective_week=0,
+                    team_id=team_id,
+                    player_id=player_id,
+                    direction="add",
+                    notes=_draft_note(pick, pick_in_round),
+                )
+            )
+            txns_added += 1
+
+        roster_rows.append(
+            {
+                "team_id": team_id,
+                "player_id": player_id,
+                "season_year": year,
+                "week": 0,
+                "roster_slot": None,
+                "is_starter": None,
+                "was_locked_at_kickoff": False,
+                "acquisition_type": "draft",
+                "acquisition_week": 0,
+                "acquisition_date": executed_at,
+                "extra_data": {
+                    "snapshot_kind": "draft",
+                    "draft_overall": pick.overall_pick,
+                    "draft_round": pick.draft_round,
+                    "draft_pick_in_round": pick_in_round,
+                },
+            }
+        )
+
+    roster_added = 0
+    roster_updated = 0
+    if roster_rows:
+        counts = upsert(
+            session, TeamRoster, roster_rows, conflict_cols=("team_id", "player_id", "week")
+        )
+        roster_added = counts.rows_added
+        roster_updated = counts.rows_updated
+
+    log.info(
+        "Captured draft",
+        year=year,
+        picks=len(picks),
+        txns_added=txns_added,
+        txns_skipped=txns_skipped,
+        roster_rows=roster_added + roster_updated,
+        unknown_team_picks=unknown_team,
+    )
+    return DraftOutcome(
+        year=year,
+        available=True,
+        picks_parsed=len(picks),
+        rounds_fetched=rounds_fetched,
+        txns_added=txns_added,
+        txns_skipped=txns_skipped,
+        roster_rows_added=roster_added,
+        roster_rows_updated=roster_updated,
+        unknown_team_picks=unknown_team,
+    )
+
+
+def _draft_note(pick: ParsedDraftPick, pick_in_round: int | None) -> str:
+    if pick_in_round is not None:
+        return f"Round {pick.draft_round}, Pick {pick_in_round} (overall {pick.overall_pick})"
+    return f"Overall pick {pick.overall_pick} (round {pick.draft_round})"
+
+
+def completed_drafts(session: Session) -> set[int]:
+    """Years with a successful ``mode='draft'`` pipeline run."""
+    done: set[int] = set()
+    for run in session.execute(
+        select(PipelineRun).where(PipelineRun.mode == DRAFT_MODE, PipelineRun.status == "success")
+    ).scalars():
+        summary = run.sources_summary or {}
+        if isinstance(summary, dict):
+            payload = summary.get("nfl_com_draft")
+            if isinstance(payload, dict) and isinstance(payload.get("year"), int):
+                done.add(payload["year"])
+    return done
+
+
+def capture_draft_season(
+    session: Session,
+    *,
+    league_id: str,
+    year: int,
+    fetcher: _HtmlFetcher,
+    resolver: PlayerResolver | None = None,
+) -> DraftOutcome:
+    """Capture one season's draft and record a ``mode='draft'`` run row."""
+    run = PipelineRun(status="running", mode=DRAFT_MODE)
+    session.add(run)
+    session.flush()
+    try:
+        outcome = reconstruct_draft(
+            session, league_id=league_id, year=year, fetcher=fetcher, resolver=resolver
+        )
+    except Exception as exc:
+        run.status = "failed"
+        run.error_summary = f"{type(exc).__name__}: {exc}"
+        run.finished_at = datetime.now(tz=UTC)
+        raise
+
+    run.status = "success"
+    run.finished_at = datetime.now(tz=UTC)
+    run.sources_summary = {
+        "nfl_com_draft": {
+            "year": year,
+            "available": outcome.available,
+            "picks": outcome.picks_parsed,
+            "rounds_fetched": outcome.rounds_fetched,
+            "txns_added": outcome.txns_added,
+            "txns_skipped": outcome.txns_skipped,
+            "roster_rows": outcome.roster_rows_added + outcome.roster_rows_updated,
+            "unknown_team_picks": outcome.unknown_team_picks,
+        }
+    }
+    return outcome
+
+
+def run_draft_capture(
+    session: Session,
+    *,
+    league_id: str,
+    start_year: int,
+    end_year: int,
+    fetcher: _HtmlFetcher,
+    force: bool = False,
+) -> list[DraftOutcome]:
+    """Capture every season's draft in ``[start_year, end_year]``, resumably.
+
+    Mirrors :func:`run_reconstruction`: commits after each season (so an
+    interruption preserves completed years), skips years already captured
+    unless ``force``, and lets an :class:`AuthFailureError` abort cleanly
+    after committing prior work. Seasons with no obtainable draft are still
+    marked done so a resume doesn't retry them forever.
+    """
+    if start_year > end_year:
+        raise ValueError(f"start_year ({start_year}) must be <= end_year ({end_year})")
+
+    already = set() if force else completed_drafts(session)
+    results: list[DraftOutcome] = []
+    for year in range(start_year, end_year + 1):
+        if year in already:
+            log.info("Draft capture skipping completed year", year=year)
+            continue
+        try:
+            results.append(
+                capture_draft_season(session, league_id=league_id, year=year, fetcher=fetcher)
+            )
+            session.commit()
+        except AuthFailureError:
+            session.commit()  # persist the failed run row + prior seasons
+            log.warning("Draft capture aborted by auth failure", year=year)
+            raise
+        except Exception:
+            session.commit()
+            log.error("Draft capture aborted", year=year)
+            raise
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Per-season orchestrator + resumable multi-season run
 # ---------------------------------------------------------------------------
 
@@ -647,17 +980,23 @@ def run_reconstruction(
 
 
 __all__ = [
+    "DRAFT_MODE",
     "MAX_FANTASY_WEEK",
     "RECONSTRUCT_MODE",
+    "DraftOutcome",
     "LineupsOutcome",
     "MatchupsOutcome",
     "SeasonReconstruction",
     "StandingsOutcome",
+    "capture_draft_season",
+    "completed_drafts",
     "completed_reconstructions",
     "derive_team_records",
+    "reconstruct_draft",
     "reconstruct_lineups",
     "reconstruct_matchups",
     "reconstruct_season",
     "reconstruct_standings",
+    "run_draft_capture",
     "run_reconstruction",
 ]
