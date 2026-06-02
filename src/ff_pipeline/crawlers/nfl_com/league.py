@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ff_pipeline.crawlers.nfl_com.availability import sweep_availability
 from ff_pipeline.crawlers.nfl_com.client import (
@@ -587,11 +587,28 @@ def _upsert_team_roster(
         )
     if not rows:
         return _Counts(0, 0)
+    # Replace-per-scope: clear this team's existing roster for the (season,
+    # week) before writing the fresh snapshot. Without this, a second ingest
+    # of the same week accumulated a duplicate snapshot, and players DROPPED
+    # between snapshots lingered as stale rows. Re-running a week must yield
+    # exactly one snapshot.
+    session.execute(
+        delete(TeamRoster).where(
+            TeamRoster.team_id == internal_team_id,
+            TeamRoster.season_year == season_year,
+            TeamRoster.week == week,
+        )
+    )
+    # Conflict on (season_year, week, player_id) — the cross-team invariant.
+    # A player who moved teams between snapshots conflicts with his stale row
+    # on the OLD team (which our per-team DELETE above won't reach when the old
+    # team isn't in this load) and gets UPDATEd onto the new team, rather than
+    # being double-rostered.
     counts = upsert(
         session,
         TeamRoster,
         rows,
-        conflict_cols=("team_id", "player_id", "week"),
+        conflict_cols=("season_year", "week", "player_id"),
     )
     return _Counts(counts.rows_added, counts.rows_updated)
 

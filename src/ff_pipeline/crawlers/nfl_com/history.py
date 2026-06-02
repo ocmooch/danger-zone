@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
 from ff_pipeline.crawlers.nfl_com.parsers import (
@@ -463,7 +463,20 @@ def _upsert_lineup_side(
         )
     if not rows:
         return (0, 0)
-    counts = upsert(session, TeamRoster, rows, conflict_cols=("team_id", "player_id", "week"))
+    # Replace-per-scope so a re-run of a historical week yields exactly one
+    # snapshot instead of accumulating a second one (the 2025 wk1 corruption).
+    session.execute(
+        delete(TeamRoster).where(
+            TeamRoster.team_id == internal_team_id,
+            TeamRoster.season_year == season_year,
+            TeamRoster.week == week,
+        )
+    )
+    # Conflict on (season_year, week, player_id): a player who moved teams gets
+    # UPDATEd onto the new team rather than double-rostered across teams.
+    counts = upsert(
+        session, TeamRoster, rows, conflict_cols=("season_year", "week", "player_id")
+    )
     return (counts.rows_added, counts.rows_updated)
 
 
@@ -718,7 +731,7 @@ def _persist_draft_picks(
     roster_updated = 0
     if roster_rows:
         counts = upsert(
-            session, TeamRoster, roster_rows, conflict_cols=("team_id", "player_id", "week")
+            session, TeamRoster, roster_rows, conflict_cols=("season_year", "week", "player_id")
         )
         roster_added = counts.rows_added
         roster_updated = counts.rows_updated

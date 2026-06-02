@@ -281,7 +281,16 @@ class PlayerIdOverride(Base):
 class TeamRoster(Base):
     __tablename__ = "team_rosters"
     __table_args__ = (
-        UniqueConstraint("team_id", "player_id", "week", name="uq_team_rosters_team_player_week"),
+        # A player belongs to at most ONE team in a given scoring week. Keying
+        # the natural constraint on (season_year, week, player_id) — without
+        # team_id — enforces that invariant at the DB level: re-ingesting a week
+        # upserts the existing row (moving team_id if the player changed teams)
+        # instead of creating a second row on a different team. This replaces
+        # the old (team_id, player_id, week) key, which omitted season_year and
+        # permitted the same player on two teams in one week (the 2025 wk1 bug).
+        UniqueConstraint(
+            "season_year", "week", "player_id", name="uq_team_rosters_season_week_player"
+        ),
         Index("ix_team_rosters_team_week", "team_id", "week"),
         Index("ix_team_rosters_player_season", "player_id", "season_year"),
         Index("ix_team_rosters_player_acquisition", "player_id", "acquisition_date"),
