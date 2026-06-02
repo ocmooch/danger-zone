@@ -181,7 +181,16 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
           "player_name": "Lamar Jackson",
           "raw_stats": { "passing_yards": 287, "passing_tds": 2, "rushing_yards": 41, "rushing_tds": 1 },
           "league_points": 27.78,
-          "breakdown": { "passing": 19.48, "rushing": 10.10, "bonus": 0.0 }
+          "breakdown": { "passing": 19.48, "rushing": 10.10, "bonus": 0.0 },
+          "status": "played"
+        },
+        {
+          "roster_slot": "BN",
+          "player_name": "Some Bye-Week WR",
+          "raw_stats": {},
+          "league_points": null,
+          "breakdown": {},
+          "status": "bye"
         }
         // ... etc
       ]
@@ -192,6 +201,18 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
   "meta": { ... }
 }
 ```
+
+Each lineup entry carries a **`status`** explaining its score so a client can
+tell a real zero from a missing one:
+
+| `status` | Meaning | `league_points` |
+|----------|---------|-----------------|
+| `played` | Player has a scored row; the value is real (it may legitimately be `0.0` or negative). | number |
+| `bye` | Player's NFL team had no game that week. | `null` |
+| `ir` | Player sat in a reserve/IR roster slot. | `null` |
+| `did_not_play` | Player's team played but the player recorded no stats (inactive / scratch), or the franchise was indeterminate. | `null` |
+
+A `null` `league_points` therefore means "no stat data" (`bye`/`ir`/`did_not_play`), **never** "scored zero" — an organic zero is `status: "played"` with `league_points: 0.0`. Bye detection derives the week's playing teams from ingested stats, so for a week that has not been ingested yet every entry falls back to `did_not_play` rather than being mislabeled `bye`.
 
 ### `GET /players/{player_id}/stats?season=2024&week=8`
 

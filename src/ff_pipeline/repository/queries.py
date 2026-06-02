@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
+from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
     League,
     Matchup,
@@ -155,6 +156,38 @@ def roster_for_team_week(
         .order_by(TeamRoster.roster_slot.is_(None), TeamRoster.roster_slot)
     )
     return [(r, p) for r, p in session.execute(stmt).all()]
+
+
+def nfl_franchises_that_played(session: Session, season_year: int, week: int) -> set[str]:
+    """Return the canonical franchise codes that had an NFL game that week.
+
+    Derived from the distinct ``nfl_opponent`` values recorded in
+    ``player_stats_raw`` for ``(season_year, week)``: every team that took the
+    field is some player's opponent, so the set of opponents *is* the set of
+    teams that played. Codes are folded via :func:`canonical_franchise` so the
+    result compares cleanly against a player's ``nfl_team`` regardless of
+    spelling or relocation drift.
+
+    A franchise absent from this set had no game that week — i.e. a bye. The
+    set is empty when no stats are ingested for the week yet; callers must
+    treat an empty result as "unknown" and not infer byes from it (otherwise a
+    not-yet-ingested week would flag every player as on a bye).
+    """
+    rows = session.execute(
+        select(PlayerStatsRaw.nfl_opponent)
+        .where(
+            PlayerStatsRaw.season_year == season_year,
+            PlayerStatsRaw.week == week,
+            PlayerStatsRaw.nfl_opponent.isnot(None),
+        )
+        .distinct()
+    ).scalars()
+    played: set[str] = set()
+    for opponent in rows:
+        code = canonical_franchise(opponent)
+        if code is not None:
+            played.add(code)
+    return played
 
 
 def matchups_for_team(session: Session, team_id: int) -> list[Matchup]:

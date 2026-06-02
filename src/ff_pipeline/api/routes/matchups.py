@@ -17,6 +17,7 @@ from ff_pipeline.api.schemas import (
     Envelope,
     MatchupOut,
 )
+from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
     Owner,
     Player,
@@ -26,12 +27,48 @@ from ff_pipeline.repository.models import (
     Team,
     TeamRoster,
 )
-from ff_pipeline.repository.queries import get_matchup, list_matchups
+from ff_pipeline.repository.queries import (
+    get_matchup,
+    list_matchups,
+    nfl_franchises_that_played,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/matchups", tags=["matchups"])
+
+# Roster slots that park a player out of the active lineup on injured
+# reserve. NFL.com labels the slot "RES"; we also accept any slot mentioning
+# "IR" defensively in case a source uses that spelling.
+_RESERVE_SLOTS = frozenset({"RES", "IR"})
+
+
+def _is_reserve_slot(slot: str | None) -> bool:
+    if not slot:
+        return False
+    upper = slot.upper()
+    return upper in _RESERVE_SLOTS or "IR" in upper
+
+
+def _lineup_status(
+    *,
+    scored: PlayerStatsScored | None,
+    roster_slot: str | None,
+    nfl_team: str | None,
+    played_franchises: set[str],
+) -> str:
+    """Classify why a lineup entry has (or lacks) a score. See ``BoxScoreLineupEntry``."""
+    if scored is not None:
+        return "played"
+    if _is_reserve_slot(roster_slot):
+        return "ir"
+    franchise = canonical_franchise(nfl_team)
+    # Only call a bye when we actually know which teams played; an empty set
+    # means the week isn't ingested yet, not that everyone is on a bye.
+    if played_franchises and franchise is not None and franchise not in played_franchises:
+        return "bye"
+    return "did_not_play"
 
 
 @router.get("", response_model=Envelope[list[MatchupOut]])
@@ -62,7 +99,12 @@ def get_matchup_endpoint(
 
 
 def _build_side(
-    session: Session, team_id: int, season_year: int, week: int, total_score: float | None
+    session: Session,
+    team_id: int,
+    season_year: int,
+    week: int,
+    total_score: float | None,
+    played_franchises: set[str],
 ) -> BoxScoreSide:
     team = session.get(Team, team_id)
     owner = session.get(Owner, team.owner_id) if team else None
@@ -106,6 +148,12 @@ def _build_side(
                 raw_stats=dict(raw.stats or {}) if raw else {},
                 league_points=scored.total_points if scored else None,
                 breakdown=dict(scored.points_breakdown or {}) if scored else {},
+                status=_lineup_status(
+                    scored=scored,
+                    roster_slot=roster.roster_slot,
+                    nfl_team=player.nfl_team,
+                    played_franchises=played_franchises,
+                ),
             )
         )
     return BoxScoreSide(
@@ -128,7 +176,12 @@ def get_box_score_endpoint(
     season = session.get(Season, matchup.season_id)
     season_year = season.year if season else 0
 
-    home = _build_side(session, matchup.team_id, season_year, matchup.week, matchup.team_score)
+    # Which NFL teams played this week — shared by both sides, so resolve once.
+    played_franchises = nfl_franchises_that_played(session, season_year, matchup.week)
+
+    home = _build_side(
+        session, matchup.team_id, season_year, matchup.week, matchup.team_score, played_franchises
+    )
     away: BoxScoreSide | None = None
     if matchup.opponent_team_id is not None:
         away = _build_side(
@@ -137,6 +190,7 @@ def get_box_score_endpoint(
             season_year,
             matchup.week,
             matchup.opponent_score,
+            played_franchises,
         )
 
     winner: int | None = None
