@@ -706,10 +706,109 @@ def test_matchup_box_score(client: TestClient) -> None:
     qb = body["data"]["home"]["lineup"][0]
     assert qb["player_name"] == "Lamar Jackson"
     assert qb["league_points"] == 29.78
+    # A player with a scored row is "played" even though the fixture's raw row
+    # carries no nfl_opponent (an empty played-set must never override a real
+    # scored result).
+    assert qb["status"] == "played"
 
 
 def test_matchup_box_score_404(client: TestClient) -> None:
     assert client.get("/matchups/9999/box-score").status_code == 404
+
+
+def test_box_score_classifies_missing_scores(db_engine: Engine) -> None:
+    """bye / ir / did_not_play are distinguished from a real zero score."""
+    now = datetime.now(UTC)
+    with Session(db_engine) as ss:
+        ss.add(League(league_id="L1", name="L", platform="nfl_com", current_season_year=2025))
+        season = Season(league_id="L1", year=2025, status="in_progress")
+        ss.add(season)
+        ss.flush()
+        owner = Owner(league_id="L1", display_name="O", is_active=True, joined_year=2025)
+        owner2 = Owner(league_id="L1", display_name="O2", is_active=True, joined_year=2025)
+        ss.add_all([owner, owner2])
+        ss.flush()
+        team = Team(season_id=season.season_id, owner_id=owner.owner_id, team_name="Alpha")
+        opp = Team(season_id=season.season_id, owner_id=owner2.owner_id, team_name="Bravo")
+        ss.add_all([team, opp])
+        ss.flush()
+
+        # Four rostered players, each a different missing-score story.
+        played = Player(name_full="Played Guy", position="QB", nfl_team="BAL", is_active=True)
+        dnp = Player(name_full="Inactive Guy", position="RB", nfl_team="KC", is_active=True)
+        bye = Player(name_full="Bye Guy", position="WR", nfl_team="CLE", is_active=True)
+        ir = Player(name_full="Hurt Guy", position="TE", nfl_team="HOU", is_active=True)
+        ss.add_all([played, dnp, bye, ir])
+        ss.flush()
+
+        for player, slot, starter in [
+            (played, "QB", True),
+            (dnp, "BN", False),
+            (bye, "BN", False),
+            (ir, "RES", False),
+        ]:
+            ss.add(
+                TeamRoster(
+                    team_id=team.team_id,
+                    player_id=player.player_id,
+                    season_year=2025,
+                    week=1,
+                    roster_slot=slot,
+                    is_starter=starter,
+                )
+            )
+
+        # Only the played player has stats. The week's played-set is built from
+        # nfl_opponent values, so recording BAL-vs-KC puts KC in the set: the
+        # inactive KC player resolves to "did_not_play", while CLE — absent from
+        # the set — resolves to "bye".
+        raw = PlayerStatsRaw(
+            player_id=played.player_id,
+            season_year=2025,
+            week=1,
+            source="nflverse",
+            nfl_opponent="KC",
+            stats={"passing_yards": 300},
+            is_primary=True,
+            ingested_at=now,
+        )
+        ss.add(raw)
+        ss.flush()
+        ss.add(
+            PlayerStatsScored(
+                stat_id=raw.stat_id,
+                season_id=season.season_id,
+                player_id=played.player_id,
+                week=1,
+                total_points=0.0,  # an honest zero: still "played", not missing
+                points_breakdown={},
+            )
+        )
+
+        matchup = Matchup(
+            season_id=season.season_id,
+            week=1,
+            team_id=team.team_id,
+            opponent_team_id=opp.team_id,
+            is_playoff=False,
+            is_consolation=False,
+        )
+        ss.add(matchup)
+        ss.flush()
+        matchup_id = matchup.matchup_id
+        ss.commit()
+
+    client = TestClient(create_app(engine=db_engine))
+    lineup = client.get(f"/matchups/{matchup_id}/box-score").json()["data"]["home"]["lineup"]
+    status_by_name = {e["player_name"]: e for e in lineup}
+
+    assert status_by_name["Played Guy"]["status"] == "played"
+    assert status_by_name["Played Guy"]["league_points"] == 0.0  # real zero, not null
+    assert status_by_name["Inactive Guy"]["status"] == "did_not_play"
+    assert status_by_name["Bye Guy"]["status"] == "bye"
+    assert status_by_name["Hurt Guy"]["status"] == "ir"
+    for name in ("Inactive Guy", "Bye Guy", "Hurt Guy"):
+        assert status_by_name[name]["league_points"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -237,12 +237,30 @@ class MatchupOut(BaseModel):
 
 
 class BoxScoreLineupEntry(BaseModel):
+    """One player's line in a matchup box score.
+
+    ``status`` explains why ``league_points`` is what it is, so a client can
+    distinguish a real zero from a missing score:
+
+    * ``"played"`` — the player has a scored row; ``league_points`` is the
+      real result (which may legitimately be ``0.0`` or negative).
+    * ``"bye"`` — no scored row because the player's NFL team had no game
+      that week.
+    * ``"ir"`` — no scored row; the player sat in a reserve/IR roster slot.
+    * ``"did_not_play"`` — no scored row though the player's team played
+      (inactive / healthy scratch), or the franchise could not be determined.
+
+    For ``"bye"``/``"ir"``/``"did_not_play"`` the player simply has no stat
+    data, so ``league_points`` is ``null`` and ``raw_stats`` is empty.
+    """
+
     roster_slot: str | None = None
     player_id: int
     player_name: str
     raw_stats: dict[str, Any] = Field(default_factory=dict)
     league_points: float | None = None
     breakdown: dict[str, float] = Field(default_factory=dict)
+    status: str = "played"
 
 
 class BoxScoreSide(BaseModel):
