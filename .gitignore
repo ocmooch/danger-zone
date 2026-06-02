@@ -53,6 +53,9 @@ data/nflverse_cache/*
 *.sqlite
 *.sqlite3
 
+# Claude Code — local agent state, not source
+.claude/
+
 # IDE / editor
 .vscode/
 .idea/
