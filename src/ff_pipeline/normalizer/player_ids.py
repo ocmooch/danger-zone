@@ -82,6 +82,18 @@ log = get_logger(__name__)
 FUZZY_MATCH_THRESHOLD = 88
 
 
+#: NFL.com assigns every team defense a ``nfl_com_player_id`` in this
+#: contiguous range. We use it to recognize a team defense whose scraped
+#: position is unknown — a defense scraped while its NFL.com page shows a
+#: non-position banner ("Season is Over Add to Watch List") arrives with
+#: ``position=None`` because ``_clean_position`` correctly rejects the
+#: banner. For these well-known ids the position is unambiguously "DEF",
+#: so we stamp it rather than leaving the row NULL. Mirrors the DEF
+#: handling in :mod:`ff_pipeline.crawlers.nflverse.runner`.
+_NFL_COM_DST_ID_MIN = 100001
+_NFL_COM_DST_ID_MAX = 100032
+
+
 #: External ID columns on ``players`` that the resolver knows about,
 #: ordered by precedence. ``gsis_id`` is the strongest because it's the
 #: canonical NFL ID nflverse uses; everything else is a join key for one
@@ -383,7 +395,7 @@ class PlayerResolver:
             ("name_full", identity.name_full),
             ("name_first", identity.name_first),
             ("name_last", identity.name_last),
-            ("position", identity.position),
+            ("position", _effective_position(identity)),
             ("nfl_team", identity.nfl_team),
         ):
             if new_value is None:
@@ -417,7 +429,7 @@ class PlayerResolver:
             name_full=identity.name_full,
             name_first=identity.name_first,
             name_last=identity.name_last,
-            position=identity.position,
+            position=_effective_position(identity),
             nfl_team=identity.nfl_team,
             gsis_id=identity.gsis_id,
             sleeper_id=identity.sleeper_id,
@@ -493,6 +505,33 @@ class PlayerResolver:
 def _id_value(identity: PlayerIdentity, kind: str) -> str | None:
     """Extract one external-ID field from a :class:`PlayerIdentity`."""
     return getattr(identity, kind, None)
+
+
+def _is_nfl_com_team_defense(identity: PlayerIdentity) -> bool:
+    """True if ``identity`` carries a team-defense ``nfl_com_player_id``."""
+    raw = identity.nfl_com_player_id
+    if raw is None:
+        return False
+    try:
+        nfl_id = int(raw)
+    except (TypeError, ValueError):
+        return False
+    return _NFL_COM_DST_ID_MIN <= nfl_id <= _NFL_COM_DST_ID_MAX
+
+
+def _effective_position(identity: PlayerIdentity) -> str | None:
+    """Position to store for ``identity``, correcting known team defenses.
+
+    A team defense scraped while its NFL.com page shows a non-position
+    banner arrives with ``position=None`` (``_clean_position`` rejects the
+    banner as a position). For the well-known DST id range the position is
+    unambiguously "DEF", so supply it rather than storing NULL. All other
+    identities pass through unchanged — this only *fills* an unknown
+    position, it never overrides one the source actually reported.
+    """
+    if identity.position is None and _is_nfl_com_team_defense(identity):
+        return "DEF"
+    return identity.position
 
 
 __all__ = [

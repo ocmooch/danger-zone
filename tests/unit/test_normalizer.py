@@ -451,3 +451,85 @@ class TestResolverEndToEnd:
             select(Player.player_id).where(Player.nfl_com_player_id == "2569790")
         ).scalar_one()
         assert by_gsis == by_sleeper == by_nfl_com
+
+
+class TestResolverTeamDefensePosition:
+    """Part B forward-hardening: a team defense scraped with an unknown
+    position (e.g. an offseason "Season is Over" banner that
+    ``_clean_position`` rejects to ``None``) must still resolve to a row
+    with ``position='DEF'`` — never NULL — because its ``nfl_com_player_id``
+    falls in NFL.com's contiguous DST range (100001-100032)."""
+
+    def test_create_unknown_position_defense_becomes_def(self, session: Session) -> None:
+        resolver = PlayerResolver(session)
+        # NFL.com banner already cleaned to None by the parser before it
+        # reaches the resolver; only the DST id identifies it as a defense.
+        pid = resolver.resolve(
+            PlayerIdentity(
+                name_full="Pittsburgh Steelers",
+                position=None,
+                nfl_com_player_id="100001",
+            ),
+            source="nfl_com",
+        )
+        stored = session.execute(
+            select(Player.position).where(Player.player_id == pid)
+        ).scalar_one()
+        assert stored == "DEF"
+
+    def test_merge_fills_null_position_for_defense(self, session: Session) -> None:
+        # Existing row carries a DST id but a NULL position (the NULL that
+        # the current guard would otherwise leave behind).
+        seeded = _seed_player(
+            session,
+            name_full="Chicago Bears",
+            position=None,
+            nfl_com_player_id="100032",
+        )
+        resolver = PlayerResolver(session)
+        pid = resolver.resolve(
+            PlayerIdentity(
+                name_full="Chicago Bears",
+                position=None,
+                nfl_com_player_id="100032",
+            ),
+            source="nfl_com",
+        )
+        assert pid == seeded
+        stored = session.execute(
+            select(Player.position).where(Player.player_id == seeded)
+        ).scalar_one()
+        assert stored == "DEF"
+
+    def test_offensive_player_unknown_position_stays_none(self, session: Session) -> None:
+        # A non-DST id with an unknown position must NOT be coerced to DEF.
+        resolver = PlayerResolver(session)
+        pid = resolver.resolve(
+            PlayerIdentity(
+                name_full="D. Hamilton",
+                position=None,
+                nfl_com_player_id="2566370",
+            ),
+            source="nfl_com",
+        )
+        stored = session.execute(
+            select(Player.position).where(Player.player_id == pid)
+        ).scalar_one()
+        assert stored is None
+
+    def test_reported_position_not_overridden(self, session: Session) -> None:
+        # A DST-range id that DID report a real position passes through
+        # unchanged — _effective_position only fills an unknown one.
+        resolver = PlayerResolver(session)
+        pid = resolver.resolve(
+            PlayerIdentity(
+                name_full="Green Bay Packers",
+                position="DST",
+                nfl_com_player_id="100016",
+            ),
+            source="nfl_com",
+        )
+        stored = session.execute(
+            select(Player.position).where(Player.player_id == pid)
+        ).scalar_one()
+        assert stored == "DST"
