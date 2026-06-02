@@ -5,9 +5,10 @@ team-level events, not from individual defenders. nflverse exposes the
 pieces we need across two frames:
 
 * ``load_team_stats`` — one row per ``(team, season, week)`` with the
-  defense's own counting events (``def_sacks``, ``def_interceptions``,
-  ...) plus that team's *offensive* yardage, which we reuse to derive the
-  opponent's "yards allowed".
+  defense's own counting events (``def_interceptions``, ...) plus that
+  team's *offensive* yardage and ``sacks_suffered``, which we reuse to
+  derive the opponent's "yards allowed" and sack count. (Sacks come from
+  the opponent's offense-side count, not the noisier ``def_sacks``.)
 * ``load_schedules`` — one row per game, carrying both teams and their
   final scores, which gives us each defense's ``points_allowed`` (the
   opponent's points) and the opponent identity used to look up
@@ -48,11 +49,15 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-# Engine defense counting keys ← candidate nflverse team-stat columns.
-# Values are summed when more than one candidate is present; a key with no
-# present candidate resolves to 0.0.
+# Engine defense counting keys ← candidate nflverse team-stat columns read
+# from the team's *own* row. Values are summed when more than one candidate
+# is present; a key with no present candidate resolves to 0.0.
+#
+# ``sacks`` is deliberately **not** here: the defense-side ``def_sacks``
+# undercounts via half-sack / unattributed plays, so the rollup sources it
+# from the opponent's offense-side ``sacks_suffered`` instead (see
+# ``_OPPONENT_SACKS`` and :func:`build_team_defense_stats`).
 _DEFENSE_COUNTING_MAP: dict[str, tuple[str, ...]] = {
-    "sacks": ("def_sacks",),
     "interceptions": ("def_interceptions",),
     # DST "fumbles recovered" = takeaways: opponent fumbles this team
     # recovered (defense or special teams), nflverse ``fumble_recovery_opp``.
@@ -62,11 +67,21 @@ _DEFENSE_COUNTING_MAP: dict[str, tuple[str, ...]] = {
     "special_teams_tds": ("special_teams_tds",),
 }
 
+# DST "sacks" = the number of times the *opponent's* offense was sacked.
+# nflverse's offense-side ``sacks_suffered`` (on the opponent's row) is the
+# clean team-level count; ``def_sacks`` is read from this team's own row only
+# as a fallback when the opponent's stat row can't be located.
+_OPPONENT_SACKS: tuple[str, ...] = ("sacks_suffered",)
+_DEFENSE_SACKS_FALLBACK: tuple[str, ...] = ("def_sacks",)
+
 # A team's offensive total **net** yards — reused as the opponent's
-# ``total_yards_allowed``. The official NFL total subtracts sack yardage
-# from passing, so net = passing_yards + rushing_yards - sack_yards_lost
-# (nflverse ``passing_yards`` is gross of sacks; ``sack_yards_lost`` is the
-# yardage this offense lost to sacks).
+# ``total_yards_allowed``. The official NFL total subtracts sack yardage from
+# passing: net = passing_yards + rushing_yards - |sack_yards_lost|, where
+# nflverse ``passing_yards`` is gross of sacks. NOTE: nflreadpy stores
+# ``sack_yards_lost`` as a **negative** number (yards lost), so we subtract
+# its *magnitude* — subtracting the signed value would double-negate and add
+# the sack yardage back, inflating the total (e.g. 233 - (-46) = 279 vs the
+# correct 233 - 46 = 187).
 _OFFENSE_YARDS_ADD: tuple[str, ...] = ("passing_yards", "rushing_yards")
 _OFFENSE_YARDS_SUBTRACT: tuple[str, ...] = ("sack_yards_lost",)
 
@@ -97,6 +112,8 @@ def expected_team_columns() -> frozenset[str]:
     """
 
     cols: set[str] = set(_OFFENSE_YARDS_ADD) | set(_OFFENSE_YARDS_SUBTRACT)
+    cols.update(_OPPONENT_SACKS)
+    cols.update(_DEFENSE_SACKS_FALLBACK)
     for candidates in _DEFENSE_COUNTING_MAP.values():
         cols.update(candidates)
     return frozenset(cols)
@@ -118,10 +135,16 @@ def project_team_counting_stats(row: Mapping[str, object]) -> dict[str, float]:
 
 def team_offense_yards(row: Mapping[str, object]) -> float:
     """Total **net** offensive yards for a team-stats row (the yards the
-    *defense* on the other side allowed): passing + rushing - sack yards."""
+    *defense* on the other side allowed): passing + rushing - sack yards.
+
+    ``sack_yards_lost`` is taken as a magnitude (``abs``) so the result is
+    correct regardless of nflverse's sign convention — nflreadpy stores it
+    negative, and subtracting the signed value would add the sack yardage
+    back rather than remove it.
+    """
 
     gained = sum(_as_float(row.get(c)) for c in _OFFENSE_YARDS_ADD)
-    lost = sum(_as_float(row.get(c)) for c in _OFFENSE_YARDS_SUBTRACT)
+    lost = sum(abs(_as_float(row.get(c))) for c in _OFFENSE_YARDS_SUBTRACT)
     return gained - lost
 
 
@@ -166,6 +189,11 @@ def build_team_defense_stats(
         stats = project_team_counting_stats(row)
         season_type = str(row.get("season_type") or "REG")
 
+        # Sacks default to this team's own (possibly undercounted) def_sacks;
+        # overridden below by the opponent's authoritative ``sacks_suffered``
+        # when the opponent's stat row is available.
+        stats["sacks"] = sum(_as_float(row.get(c)) for c in _DEFENSE_SACKS_FALLBACK)
+
         opponent: str | None = None
         ctx = game_context.get(key)
         if ctx is not None:
@@ -173,7 +201,13 @@ def build_team_defense_stats(
             if points_allowed is not None:
                 stats["points_allowed"] = points_allowed
             if opponent is not None:
-                opp_yards = offense_yards.get((season_year, week, opponent))
+                opp_key = (season_year, week, opponent)
+                opp_row = team_row_index.get(opp_key)
+                if opp_row is not None:
+                    stats["sacks"] = sum(
+                        _as_float(opp_row.get(c)) for c in _OPPONENT_SACKS
+                    )
+                opp_yards = offense_yards.get(opp_key)
                 if opp_yards is not None:
                     stats["total_yards_allowed"] = opp_yards
 

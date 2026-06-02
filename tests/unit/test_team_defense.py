@@ -91,6 +91,7 @@ def _team_row(team: str, *, week: int = 3, **stats: float) -> dict[str, object]:
         "passing_yards": 0,
         "rushing_yards": 0,
         "sack_yards_lost": 0,
+        "sacks_suffered": 0,
         "def_sacks": 0,
         "def_interceptions": 0,
         "fumble_recovery_opp": 0,
@@ -109,16 +110,18 @@ def _team_row(team: str, *, week: int = 3, **stats: float) -> dict[str, object]:
 
 def test_rollup_builds_expected_stat_dict() -> None:
     team_rows = [
+        # SF's own def_sacks (3) is the undercounted defense-side number; the
+        # authoritative sack count is DAL's offense-side sacks_suffered (4).
         _team_row(
             "SF",
             passing_yards=300,
             rushing_yards=120,
-            def_sacks=4,
+            def_sacks=3,
             def_interceptions=2,
             fumble_recovery_opp=1,
             def_tds=1,
         ),
-        _team_row("DAL", passing_yards=180, rushing_yards=70),
+        _team_row("DAL", passing_yards=180, rushing_yards=70, sacks_suffered=4),
     ]
     schedule_rows = [
         {
@@ -138,6 +141,7 @@ def test_rollup_builds_expected_stat_dict() -> None:
 
     sf = out["SF"]
     assert sf.nfl_opponent == "DAL"
+    # Sourced from DAL's sacks_suffered (4), not SF's def_sacks (3).
     assert sf.stats["sacks"] == 4.0
     assert sf.stats["interceptions"] == 2.0
     assert sf.stats["fumbles_recovered"] == 1.0
@@ -153,12 +157,12 @@ def test_rollup_scores_to_hand_computed_total() -> None:
             "SF",
             passing_yards=300,
             rushing_yards=120,
-            def_sacks=4,
             def_interceptions=2,
             fumble_recovery_opp=1,
             def_tds=1,
         ),
-        _team_row("DAL", passing_yards=180, rushing_yards=70),
+        # SF's 4 sacks come from DAL's offense-side sacks_suffered.
+        _team_row("DAL", passing_yards=180, rushing_yards=70, sacks_suffered=4),
     ]
     schedule_rows = [
         {
@@ -183,11 +187,17 @@ def test_rollup_scores_to_hand_computed_total() -> None:
 
 def test_total_yards_allowed_is_net_of_sacks() -> None:
     """The opponent's yards allowed are *net*: sack yardage is subtracted
-    from passing, matching the official NFL total."""
+    from passing, matching the official NFL total.
+
+    nflreadpy stores ``sack_yards_lost`` **negative**, so this fixture uses
+    -30 — the regression guard for the sign bug where ``gained - signed``
+    double-negated and *added* sack yards (250+70-(-30)=350) instead of
+    removing them (250+70-30=290).
+    """
     team_rows = [
         _team_row("SF", passing_yards=0, rushing_yards=0),
         # DAL gained 320 gross but lost 30 to sacks -> 290 net.
-        _team_row("DAL", passing_yards=250, rushing_yards=70, sack_yards_lost=30),
+        _team_row("DAL", passing_yards=250, rushing_yards=70, sack_yards_lost=-30),
     ]
     schedule_rows = [
         {
@@ -206,6 +216,65 @@ def test_total_yards_allowed_is_net_of_sacks() -> None:
         if t.nfl_team == "SF"
     )
     assert sf.stats["total_yards_allowed"] == 290.0
+
+
+def test_real_game_dal_dst_week11_2023_scores_28() -> None:
+    """Known-answer regression from real nflverse data: DAL DEF vs CAR,
+    2023 week 11, must score 28 (matches NFL.com).
+
+    The stat values below are exactly what nflreadpy 0.1.5 returns. This
+    case is what surfaced the two bugs:
+
+    * yards: CAR offense passing=123, rushing=110, sack_yards_lost=-46 ->
+      net 187 (the 100-199 bracket = 7 pts), not the buggy 279 (4 pts);
+    * sacks: DAL def_sacks=6 undercounts; CAR's sacks_suffered=7 is the
+      authoritative count (7 pts, not 6).
+
+    7 sacks(7) + 1 INT(2) + 1 fum(2) + 1 def TD(6) + 10 pts allowed(4)
+    + 187 yds(7) = 28.
+    """
+    team_rows = [
+        _team_row(
+            "DAL",
+            week=11,
+            season=2023,
+            passing_yards=204,
+            rushing_yards=107,
+            def_sacks=6,  # undercount — must be overridden by CAR.sacks_suffered
+            def_interceptions=1,
+            fumble_recovery_opp=1,
+            def_tds=1,
+        ),
+        _team_row(
+            "CAR",
+            week=11,
+            season=2023,
+            passing_yards=123,
+            rushing_yards=110,
+            sack_yards_lost=-46,  # nflreadpy stores this negative
+            sacks_suffered=7,
+        ),
+    ]
+    schedule_rows = [
+        {
+            "season": 2023,
+            "week": 11,
+            "game_type": "REG",
+            "home_team": "DAL",
+            "away_team": "CAR",
+            "home_score": 33,
+            "away_score": 10,
+        }
+    ]
+    dal = next(
+        t
+        for t in build_team_defense_stats(team_rows=team_rows, schedule_rows=schedule_rows)
+        if t.nfl_team == "DAL"
+    )
+    assert dal.stats["sacks"] == 7.0
+    assert dal.stats["total_yards_allowed"] == 187.0
+    assert dal.stats["points_allowed"] == 10.0
+    assert apply_rules(dal.stats, _defense_rules()).total_points == 28.0
 
 
 def test_missing_schedule_omits_bracket_keys() -> None:

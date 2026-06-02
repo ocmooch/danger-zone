@@ -64,6 +64,9 @@ class _StubSource:
                 "season_type": ["REG", "REG"],
                 "passing_yards": [300, 180],
                 "rushing_yards": [120, 70],
+                # SF's DEF sacks come from DAL's offense-side sacks_suffered (4);
+                # def_sacks is now only a fallback when the opponent row is absent.
+                "sacks_suffered": [1, 4],
                 "def_sacks": [4, 1],
                 "def_interceptions": [2, 0],
                 "fumble_recovery_opp": [1, 0],
@@ -237,6 +240,9 @@ def test_matches_def_by_roster_slot_when_position_mislabeled(session: Session) -
                     "passing_yards": [100],
                     "rushing_yards": [50],
                     "sack_yards_lost": [0],
+                    # No PIT (opponent) row in this fixture, so CLE's DEF sacks
+                    # fall back to its own def_sacks (2).
+                    "sacks_suffered": [0],
                     "def_sacks": [2],
                     "def_interceptions": [1],
                     "fumble_recovery_opp": [0],
