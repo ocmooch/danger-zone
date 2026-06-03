@@ -318,6 +318,7 @@ def search_players(
     position: str | None = None,
     nfl_team: str | None = None,
     active: bool | None = None,
+    league_relevant: bool | None = None,
     gsis_id: str | None = None,
     sleeper_id: str | None = None,
     nfl_com_player_id: str | None = None,
@@ -334,6 +335,15 @@ def search_players(
         stmt = stmt.where(Player.nfl_team == nfl_team)
     if active is not None:
         stmt = stmt.where(Player.is_active.is_(active))
+    # League-relevance is a *historical* fact — "was this player ever rostered
+    # in THIS league?" — and is distinct from ``active`` (a current-NFL fact).
+    # A non-NULL rostered span is the marker; nflverse ships the whole NFL
+    # universe and most of it (the "ghost" players) never touched this league.
+    if league_relevant is not None:
+        if league_relevant:
+            stmt = stmt.where(Player.last_rostered_season.is_not(None))
+        else:
+            stmt = stmt.where(Player.last_rostered_season.is_(None))
     # External-ID filters are exact-match join keys, not fuzzy text — they
     # let Phase 2/3 resolve a player by any platform's ID (the M7 goal:
     # queryable by name, GSIS, Sleeper, or NFL.com ID).

@@ -66,6 +66,7 @@ from ff_pipeline.crawlers.nfl_com.urls import (
 )
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.normalizer.player_ids import PlayerIdentity, PlayerResolver
+from ff_pipeline.repository.maintenance import recompute_rostered_spans
 from ff_pipeline.repository.models import (
     League,
     Matchup,
@@ -228,6 +229,11 @@ def run_nfl_com(
             snapshot_kind=effective_snapshot,
             resolver=resolver,
         )
+
+        # The roster write above may have added a player's first/last appearance
+        # in this league; refresh the materialized league-relevance span so the
+        # read API's "rostered 2012-2018" / league-relevant filter stays current.
+        recompute_rostered_spans(session)
 
     except AuthFailureError as exc:
         duration_ms = int((time.perf_counter() - start) * 1000)

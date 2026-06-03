@@ -156,6 +156,12 @@ The `ff-pipeline prune-players` command cleans rows that predate these filters, 
 
 Both passes preview first (`--dry-run` shows the position breakdown and the cascade blast radius) and take a timestamped backup before any delete.
 
+**League relevance vs. NFL facts.** Two different questions get asked of a player row, and they have two different answer columns. *Is this player currently an NFL thing?* is a **current-NFL fact** sourced from nflverse — `is_active`, `nfl_team`, `last_season`. *Was this player ever part of THIS league?* is a **historical league fact** derived from `team_rosters` — the `first_rostered_season` / `last_rostered_season` span. These do not agree, and shouldn't: nflverse ships the entire NFL universe, so thousands of rows are current-NFL-active but never touched this league (the "ghost" players). A consumer that wants "players in this league's history" must filter on a non-NULL rostered span (`league_relevant` on the players API), **not** on `is_active`. A consumer that wants an active/retired-in-league badge should read the rostered span, not `is_active`.
+
+- `is_active` is the **raw nflverse status snapshot** as of the last metadata crawl (`status == 'ACT'`, or unknown/`NULL` status treated as active). It is deliberately *not* overloaded into a league-relevance signal — a player can be NFL-active yet never have been in this league, or league-historical yet now NFL-retired. Treat it as "nflverse's current view of the player," nothing more. (Historical reason it reads as unreliable in a league index: the `status is None → active` fallback, plus `nfl_team` being a single mutable "latest team" that nflverse keeps populated even for retired players.)
+- `last_season` is likewise a current-NFL fact (the last NFL season nflverse saw the player). It powers the ingestion **era filter** (drop metadata for players whose career ended before `LEAGUE_START_YEAR`). It is NULL only for rows nflverse can't identify — players first seen on NFL.com with no `gsis_id`, and team-DEF rows (which are synthetic and have no nflverse player record). That NULL is an honest source gap, not a population bug.
+- `first_rostered_season` / `last_rostered_season` are **materialized** from `team_rosters` (`MIN`/`MAX` `season_year`; NULL ⇒ never rostered here). They are recomputed at the end of every NFL.com roster sync (`recompute_rostered_spans`) and backfilled by their migration, so a fresh DB and an incrementally-synced DB agree.
+
 | Column | Type | Notes |
 |--------|------|-------|
 | `player_id` | INTEGER PK AUTOINCREMENT | Internal stable ID |
@@ -163,11 +169,13 @@ Both passes preview first (`--dry-run` shows the position breakdown and the casc
 | `name_first` | TEXT | |
 | `name_last` | TEXT | |
 | `position` | TEXT | `'QB'`, `'RB'`, `'WR'`, `'TE'`, `'K'`, `'DEF'` |
-| `nfl_team` | TEXT | 3-letter abbrev; `'FA'` if free agent |
+| `nfl_team` | TEXT | nflverse "latest team" (current-NFL fact); 3-letter abbrev. Stale for retired players — see note above |
 | `birth_date` | DATE | When available |
-| `rookie_year` | INTEGER | |
-| `last_season` | INTEGER | Last NFL season the player appeared in (nflverse `last_season`); used to scope ingestion to the league era |
-| `is_active` | BOOLEAN | Currently rostered or available |
+| `rookie_year` | INTEGER | nflverse `rookie_season`. NULL for non-nflverse rows (NFL.com-only stubs) and team-DEF rows |
+| `last_season` | INTEGER | Last NFL season the player appeared in (nflverse `last_season`); a current-NFL fact, used to scope ingestion to the league era. NULL ⇒ player not identifiable in nflverse |
+| `is_active` | BOOLEAN | **Raw nflverse status snapshot, NOT league relevance** — see note above |
+| `first_rostered_season` | INTEGER | First season rostered in THIS league (`MIN(team_rosters.season_year)`). NULL ⇒ never rostered here. The canonical league-relevance signal |
+| `last_rostered_season` | INTEGER | Last season rostered in THIS league (`MAX(team_rosters.season_year)`). NULL ⇒ never rostered here |
 | `nfl_com_player_id` | TEXT | ID used in NFL.com URLs |
 | `gsis_id` | TEXT | Canonical NFL ID, used by nflverse |
 | `sleeper_id` | TEXT | |
@@ -176,6 +184,21 @@ Both passes preview first (`--dry-run` shows the position breakdown and the casc
 | `created_at`, `updated_at` | TIMESTAMP | |
 
 INDEX on `gsis_id`, `sleeper_id`, `nfl_com_player_id` (join columns)
+
+**Querying league-relevant players.** The read API exposes this as an additive
+filter rather than making callers join: `GET /players?league_relevant=true`
+returns only players with a non-NULL rostered span, `=false` returns only the
+never-rostered ghosts, and omitting it returns everything. `PlayerOut` carries
+`last_season`, `first_rostered_season`, and `last_rostered_season` so a client
+can render "rostered 2012-2018" and a league active/retired badge with no
+business logic of its own.
+
+**Refreshing nflverse metadata.** `last_season` (and the other nflverse fields)
+are kept current by any `ff-pipeline run --source nflverse`. To refresh metadata
+on the players already in the DB *without* re-ingesting a season's weekly stats
+or regrowing the ghost set, run `scripts/refresh_player_metadata.py` (dry-run by
+default; `--apply` commits after a backup). It re-runs the production upsert path
+restricted to existing `gsis_id`s, then recomputes the rostered spans.
 
 ### `team_rosters`
 A **game-time snapshot** of a team's roster. Captured once per week, at the moment NFL.com locks rosters for game day (typically Sunday 12:55 PM ET for most slots; Thursday 8:15 PM ET for the TNF slot if pulled forward). This is the authoritative record of "who was on whose team when the game started."
@@ -199,8 +222,19 @@ For mid-week roster moves (Tuesday waivers, Wednesday free-agent adds, etc.), th
 | `extra_data` | TEXT (JSON) | Opportunistic fields (e.g., waiver bid amount, pre-locked projected points) |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
-UNIQUE(`team_id`, `player_id`, `week`)
+UNIQUE(`season_year`, `week`, `player_id`)
 INDEX(`team_id`, `week`), INDEX(`player_id`, `season_year`), INDEX(`player_id`, `acquisition_date`)
+
+**Idempotency / the "one owner per week" invariant.** The unique key is keyed on
+`(season_year, week, player_id)` — deliberately *without* `team_id` — so the DB
+itself enforces that a player belongs to at most **one** team in a given scoring
+week. The loader is idempotent in two complementary ways: it **replaces per
+scope** (deletes a team's existing rows for the `(season, week)` before writing
+the fresh snapshot, so a re-ingest yields exactly one snapshot and players
+dropped between snapshots don't linger), and it **upserts on the cross-team
+key** (a player who changed teams mid-week conflicts with his stale row on the
+*old* team and is moved, not double-rostered). Re-running a week is therefore
+safe and the `same player on two teams in one week` query returns zero rows.
 
 ### `player_availability`
 **Every player in the league universe**, with their availability state at game time of every week. This is the league-wide companion to `team_rosters` (which only covers rostered players). With this table, you can answer "who was available on waivers in week 5?", "when did this player first become a free agent?", etc.

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from ff_pipeline.api.main import create_app
 from ff_pipeline.repository.database import create_app_engine
+from ff_pipeline.repository.maintenance import recompute_rostered_spans
 from ff_pipeline.repository.migrations import upgrade_to_head
 from ff_pipeline.repository.models import (
     League,
@@ -340,6 +341,11 @@ def seeded_db(db_engine: Engine) -> Engine:
                 duration_ms=1200,
             )
         )
+        # Mirror production: NFL.com roster sync recomputes the materialized
+        # league-relevance span after writing roster rows. Lamar Jackson is
+        # rostered (2025) so his span is set; Roman Wilson never is, so his
+        # span stays NULL.
+        recompute_rostered_spans(ss)
         ss.commit()
     return db_engine
 
@@ -597,6 +603,32 @@ def test_list_players_by_gsis_and_sleeper_id_same_row(client: TestClient) -> Non
 def test_list_players_by_unknown_external_id_empty(client: TestClient) -> None:
     body = client.get("/players?gsis_id=00-9999999").json()
     assert body["data"] == []
+
+
+def test_list_players_league_relevant_filter(client: TestClient) -> None:
+    # Lamar Jackson is rostered (2025); Roman Wilson never is.
+    relevant = client.get("/players?league_relevant=true").json()["data"]
+    assert [p["name_full"] for p in relevant] == ["Lamar Jackson"]
+
+    ghosts = client.get("/players?league_relevant=false").json()["data"]
+    assert [p["name_full"] for p in ghosts] == ["Roman Wilson"]
+
+    # Omitting the filter returns both.
+    assert len(client.get("/players").json()["data"]) == 2
+
+
+def test_player_out_exposes_season_spans(client: TestClient) -> None:
+    # The rostered player carries last_season (additive field) plus the
+    # materialized league-relevance span the dashboard renders.
+    rostered = client.get("/players?league_relevant=true").json()["data"][0]
+    assert "last_season" in rostered  # additive PlayerOut field
+    assert rostered["first_rostered_season"] == 2025
+    assert rostered["last_rostered_season"] == 2025
+
+    # A never-rostered player reports NULL spans, not a fabricated value.
+    ghost = client.get("/players?league_relevant=false").json()["data"][0]
+    assert ghost["first_rostered_season"] is None
+    assert ghost["last_rostered_season"] is None
 
 
 def test_get_player(client: TestClient) -> None:
