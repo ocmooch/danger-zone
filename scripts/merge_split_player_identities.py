@@ -73,9 +73,11 @@ from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from ff_pipeline.crawlers.nfl_com.parsers import _clean_position
 from ff_pipeline.repository.database import create_app_engine
+from ff_pipeline.repository.maintenance import recompute_rostered_spans
 from ff_pipeline.settings import get_settings
 
 # External-ID columns we move from stub → canonical (NULL → value only).
@@ -315,6 +317,16 @@ def main(argv: list[str] | None = None) -> int:
                             f"{str(exc.orig)[:120]}"
                         )
             print(f"\nApplied {applied} merges ({integrity_failures} integrity skips).")
+
+            # Folding a stub repoints its team_rosters rows onto the canonical
+            # player, which can widen that player's league-relevance span. Refresh
+            # the materialized first/last_rostered_season so the players index
+            # stays correct without waiting for the next NFL.com sync.
+            if applied:
+                with Session(engine) as ss:
+                    touched = recompute_rostered_spans(ss)
+                    ss.commit()
+                print(f"Recomputed rostered-season spans ({touched} player rows).")
     finally:
         engine.dispose()
     return 0

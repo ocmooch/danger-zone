@@ -346,7 +346,16 @@ class PlayerOut(BaseModel):
     nfl_team: str | None = None
     birth_date: date | None = None
     rookie_year: int | None = None
+    # Last NFL season the player appeared in (nflverse fact). NULL when nflverse
+    # can't identify the player (e.g. NFL.com-only rows with no gsis_id).
+    last_season: int | None = None
     is_active: bool
+    # League-relevance span: first/last season the player was rostered in THIS
+    # league. NULL ⇒ never rostered here. Lets the client show "rostered
+    # 2012-2018" and derive an active/retired-in-league badge without its own
+    # joins. Pair with the ``league_relevant`` list filter.
+    first_rostered_season: int | None = None
+    last_rostered_season: int | None = None
     nfl_com_player_id: str | None = None
     gsis_id: str | None = None
     sleeper_id: str | None = None

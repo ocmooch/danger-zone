@@ -52,6 +52,16 @@ def list_players_endpoint(
     position: Annotated[str | None, Query()] = None,
     nfl_team: Annotated[str | None, Query()] = None,
     active: Annotated[bool | None, Query()] = None,
+    league_relevant: Annotated[
+        bool | None,
+        Query(
+            description=(
+                "Filter by whether the player was ever rostered in this league. "
+                "true = league-relevant only (has a rostered-season span); "
+                "false = never-rostered 'ghost' players only; omit for all."
+            )
+        ),
+    ] = None,
     gsis_id: Annotated[str | None, Query()] = None,
     sleeper_id: Annotated[str | None, Query()] = None,
     nfl_com_player_id: Annotated[str | None, Query()] = None,
@@ -64,6 +74,7 @@ def list_players_endpoint(
         position=position,
         nfl_team=nfl_team,
         active=active,
+        league_relevant=league_relevant,
         gsis_id=gsis_id,
         sleeper_id=sleeper_id,
         nfl_com_player_id=nfl_com_player_id,
