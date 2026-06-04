@@ -92,6 +92,53 @@ non-nflverse names. They do not shadow a real player on the players index.
 **Owner**: optional. **Fix path**: hand-verify individual cases into
 `player_id_overrides` and re-run the affected weeks — no automated guess is safe.
 
+### P1-V4. Misstamped roster identities (the Nelson bug generalized)
+
+**State (RESOLVED)**: the J.J./Jordy Nelson untangle (§P1-V3) turned out to be
+one instance of a recurring class — the resolver's fuzzy fallback folded an
+abbreviated NFL.com lineup name ("S. Smith") onto a same-name + same-position
+player **without checking the lineup's season fell inside that player's NFL
+career**, so the wrong row accreted another player's `nfl_com_player_id` +
+fantasy history (`team_rosters`, `transactions`) while the real player sat
+stranded (stats, but no `nfl_com_player_id`, no roster rows).
+
+A direction-agnostic audit (`scripts/audit_roster_stat_era_mismatch.py` —
+rostered before `rookie_year` / disjoint roster∩stat eras / rostered >2y past
+`last_season`) found the bug is **bounded, not systemic**: 5 real cases among
+1,168 skill players, each with a uniquely-identified stranded owner, all
+confirmed by matching the misplaced rows' weekly `nfl_com_points` to the
+owner's production:
+
+| misattached onto (kept its own stats) | → true owner |
+|---|---|
+| Shi Smith (rookie '21) | Steve Smith Sr |
+| Jon Brown K (rookie '17) | Josh Brown K |
+| Ben Edwards (rookie '15) | Braylon Edwards |
+| John Matthews (last '11) | Jordan Matthews |
+| Tom Crabtree TE (last '13) | Michael Crabtree WR |
+
+Repaired by `scripts/untangle_misstamped_roster_identities.py` (whole-pile
+re-home of the id + NFL.com tables to the owner, override seeded, spans
+recomputed). `verify` passes to the cent for the scored-era owners (Michael
+Crabtree 2017 W1 14.30=14.30, Jordan Matthews 2016 W1 25.40=25.40); pre-2016
+owners are confirmed offline via `nfl_com_points` (no scoring rules <2016).
+
+**Prevention**: `normalizer/player_ids.py` now season-constrains the fuzzy
+fallback (`_career_contains`), so reconstruction can't reproduce this — the
+right same-era namesake wins. Exact override/direct-ID paths are *not*
+constrained (a player legitimately rostered past their career still resolves
+by their own id). Re-run the audit after any reconstruction to catch
+regressions.
+
+**Accepted (benign, surface in the audit)**: Tim Tebow (rostered to 2021) and
+Colin Kaepernick (to 2023) are real players kept on keeper rosters past their
+careers — unique names, no younger namesake to confuse, nothing to repair.
+
+**Known blind spot**: two same-name players whose careers *overlap* (ids
+swapped between contemporaries) are invisible to temporal checks. Catching
+those needs a name-level cross-check (`nfl_com_player_id` → NFL.com display
+name vs canonical name) — deferred to Phase 2.
+
 ---
 
 ## NFL.com crawler follow-ups (deferred past Phase 1)
