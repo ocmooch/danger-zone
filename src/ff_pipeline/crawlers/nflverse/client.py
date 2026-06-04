@@ -26,6 +26,11 @@ from ff_pipeline.crawlers.nflverse.stat_keys import (
     expected_nflverse_columns,
     project_stats,
 )
+from ff_pipeline.crawlers.nflverse.team_defense import (
+    TeamDefenseStat,
+    build_team_defense_stats,
+    expected_team_columns,
+)
 from ff_pipeline.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -66,6 +71,7 @@ class NflversePlayerMeta:
     nfl_team: str | None
     birth_date: date | None
     rookie_year: int | None
+    last_season: int | None
     espn_id: str | None
     status: str | None
 
@@ -86,6 +92,7 @@ class NflverseSource(Protocol):
     def load_players(self) -> pl.DataFrame: ...
     def load_rosters(self, seasons: Sequence[int]) -> pl.DataFrame: ...
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame: ...
+    def load_team_stats(self, seasons: Sequence[int]) -> pl.DataFrame: ...
 
 
 class LiveNflverseSource:
@@ -115,6 +122,12 @@ class LiveNflverseSource:
         frame: pl.DataFrame = nfl.load_schedules(seasons=list(seasons))
         return frame
 
+    def load_team_stats(self, seasons: Sequence[int]) -> pl.DataFrame:
+        import nflreadpy as nfl
+
+        frame: pl.DataFrame = nfl.load_team_stats(seasons=list(seasons))
+        return frame
+
 
 @dataclass(frozen=True, slots=True)
 class LocalParquetSource:
@@ -126,6 +139,7 @@ class LocalParquetSource:
     * ``players.parquet``
     * ``rosters_{year}.parquet``
     * ``schedules_{year}.parquet``
+    * ``team_stats_{year}.parquet``
 
     Missing files raise — tests should fail loudly if a fixture is absent.
     """
@@ -145,6 +159,10 @@ class LocalParquetSource:
 
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame:
         frames = [self._read(f"schedules_{y}.parquet") for y in seasons]
+        return pl.concat(frames) if len(frames) > 1 else frames[0]
+
+    def load_team_stats(self, seasons: Sequence[int]) -> pl.DataFrame:
+        frames = [self._read(f"team_stats_{y}.parquet") for y in seasons]
         return pl.concat(frames) if len(frames) > 1 else frames[0]
 
     def _read(self, filename: str) -> pl.DataFrame:
@@ -204,6 +222,32 @@ class NflverseClient:
         )
         return out
 
+    # ----- team_defense -----
+
+    def team_defense_stats(self, seasons: Sequence[int]) -> list[TeamDefenseStat]:
+        """Roll up team-level frames into per-team DST stat dicts.
+
+        Reads ``load_team_stats`` (counting events + offensive yardage) and
+        ``load_schedules`` (scores + opponent identity) and combines them
+        via :func:`build_team_defense_stats`. The returned stats are keyed
+        to the engine's defense vocabulary, ready for the scorer.
+        """
+
+        team_df = self._source.load_team_stats(seasons)
+        self._check_team_columns(team_df)
+        schedule_df = self._source.load_schedules(seasons)
+
+        out = build_team_defense_stats(
+            team_rows=team_df.iter_rows(named=True),
+            schedule_rows=schedule_df.iter_rows(named=True),
+        )
+        log.info(
+            "Built nflverse team-defense stats",
+            seasons=list(seasons),
+            row_count=len(out),
+        )
+        return out
+
     # ----- players -----
 
     def players(self) -> list[NflversePlayerMeta]:
@@ -228,6 +272,7 @@ class NflverseClient:
                     nfl_team=_opt_str(row.get("latest_team")),
                     birth_date=_parse_date(row.get("birth_date")),
                     rookie_year=_opt_int(row.get("rookie_season")),
+                    last_season=_opt_int(row.get("last_season")),
                     espn_id=_opt_str(row.get("espn_id")),
                     status=_opt_str(row.get("status")),
                 )
@@ -245,6 +290,25 @@ class NflverseClient:
             log.warning(
                 "nflverse columns expected by projection are absent",
                 source=source_label,
+                missing=sorted(new_missing),
+            )
+            self._missing_columns_warned.update(new_missing)
+
+    def _check_team_columns(self, df: pl.DataFrame) -> None:
+        """Warn once if a team-defense column the rollup reads is absent.
+
+        Each engine defense key maps to a *list* of candidate columns, so a
+        single absent candidate isn't necessarily a problem — but a column
+        we expected to find disappearing is worth surfacing, since the
+        ``def_*`` family has been renamed across nflverse versions.
+        """
+        present = set(df.columns)
+        missing = expected_team_columns() - present
+        new_missing = missing - self._missing_columns_warned
+        if new_missing:
+            log.warning(
+                "nflverse team-stat columns expected by team-defense rollup are absent",
+                source="team_stats",
                 missing=sorted(new_missing),
             )
             self._missing_columns_warned.update(new_missing)
@@ -304,4 +368,5 @@ __all__ = [
     "NflversePlayerMeta",
     "NflversePlayerStat",
     "NflverseSource",
+    "TeamDefenseStat",
 ]

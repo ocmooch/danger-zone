@@ -73,9 +73,11 @@ from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from ff_pipeline.crawlers.nfl_com.parsers import _clean_position
 from ff_pipeline.repository.database import create_app_engine
+from ff_pipeline.repository.maintenance import recompute_rostered_spans
 from ff_pipeline.settings import get_settings
 
 # External-ID columns we move from stub → canonical (NULL → value only).
@@ -87,14 +89,26 @@ _MIN_LEADER_ROWS = 10
 _DOMINANCE_FACTOR = 5
 
 
+# Generational suffixes stripped during normalization. "v"/"i"/"x" double
+# as single-letter initials, so they are only dropped when they are *not*
+# the leading token (see _normalize) — a leading "v" is "V. Cruz", not a fifth.
+_NAME_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv", "v"})
+
+
 def _normalize(name: str | None) -> str:
     if not name:
         return ""
     decoded = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     decoded = decoded.lower()
-    decoded = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", "", decoded)
+    # Strip punctuation without inserting space so "D.J." collapses to "dj"
+    # (keeps "D.J. Moore" ≡ "DJ Moore"); spaces in the source still split.
     decoded = re.sub(r"[^a-z ]", "", decoded)
-    return re.sub(r"\s+", " ", decoded).strip()
+    # Drop generational suffixes, but never the leading token: a lone
+    # "v"/"i"/"x" there is an abbreviated first name ("V. Cruz" → "v cruz"),
+    # not a roman-numeral suffix. Eating it collapsed the name to a single
+    # token and silently defeated the initial+last match path.
+    tokens = [t for i, t in enumerate(decoded.split()) if not (i > 0 and t in _NAME_SUFFIXES)]
+    return " ".join(tokens)
 
 
 class _Player:
@@ -315,6 +329,16 @@ def main(argv: list[str] | None = None) -> int:
                             f"{str(exc.orig)[:120]}"
                         )
             print(f"\nApplied {applied} merges ({integrity_failures} integrity skips).")
+
+            # Folding a stub repoints its team_rosters rows onto the canonical
+            # player, which can widen that player's league-relevance span. Refresh
+            # the materialized first/last_rostered_season so the players index
+            # stays correct without waiting for the next NFL.com sync.
+            if applied:
+                with Session(engine) as ss:
+                    touched = recompute_rostered_spans(ss)
+                    ss.commit()
+                print(f"Recomputed rostered-season spans ({touched} player rows).")
     finally:
         engine.dispose()
     return 0

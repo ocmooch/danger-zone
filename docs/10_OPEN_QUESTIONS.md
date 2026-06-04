@@ -1,386 +1,243 @@
-# 10 — Open Questions & Default Decisions
+# 10 — Open Questions & Follow-up Work
 
-The user has explicitly confirmed three core decisions; remaining defaults are clearly marked. Each remaining default is reversible without major rework.
+Live tracker of what is still **open** after the v1.0.0 Phase 1 release
+(2026-05-29). Confirmed decisions, settled architecture defaults, and the
+deferred questions resolved during Phase 1 (Q1–Q4, Q6–Q8) have moved to
+`10_OPEN_QUESTIONS_ARCHIVE.md`.
 
-## Decisions confirmed by the user
-
-### 1. League is currently active on NFL.com ✓ CONFIRMED
-
-**Implication**: The crawler targets both the current season AND historical seasons. Scheduled in-season runs are enabled. Cookie refresh workflow is critical (current league data depends on it).
-
-### 2. 10+ years of NFL.com history ✓ CONFIRMED
-
-**Implication**: Backfill is the long pole — ~1 hour with rate limiting. The pipeline is resumable. We need to verify that NFL.com still serves historical pages going back that far (their `/history/{YR}` pages typically remain accessible to former participants, but very old leagues sometimes have data purged).
-
-### 3. Scoring + game-time state requirements ✓ CONFIRMED
-
-The user explicitly requested:
-- Standard scoring + PPR variants ✓
-- Custom bonuses (long TDs, yardage tiers) ✓
-- **Player waiver status at game time** (Owned / Free Agent / On Waivers) ✓
-- **Player roster spot at game time** (Starter / Bench / IR) ✓
-- **Date added to / dropped from team** ✓
-- **Schema must be extensible to new sections** ✓
-
-These flow into:
-- `scoring_rules` table with full bonus support (see `05_SCORING_ENGINE.md`)
-- New `player_availability` table for league-wide player state (see `04_DATA_MODEL.md`)
-- Extended `team_rosters` table with `acquisition_date`, `drop_date`, `was_locked_at_kickoff` (see `04_DATA_MODEL.md`)
-- `extra_data` JSON column on most entity tables for opportunistic capture
-- M5 in roadmap explicitly scopes scraping the league-wide players page
-
-## Defaults applied (not explicitly answered)
-
-The following were defaulted because the input tool didn't capture selections. Tell me which (if any) need changing:
-
-### 4. Local-first, cloud-ready architecture (DEFAULT)
-
-**Implication**: SQLite, cron, `.env` files. Everything works on a laptop. Cloud migration path is clearly documented (SQLAlchemy + alembic make it a `DATABASE_URL` change).
-
-**To change to cloud-from-day-1**: tell me; primary changes are: PostgreSQL instead of SQLite, secrets in a vault, scheduler becomes something like Fly.io scheduled tasks or systemd timers in a small VM.
-
-### 5. Python 3.11+ (DEFAULT)
-
-**Implication**: Modern type syntax, the entire NFL data ecosystem (nflreadpy, sleeper-api-wrapper, etc.) is Python-native.
-
-**To change to TypeScript**: tell me; the design is mostly portable but the data sources are weaker in TS (you'd have to wrap nflverse data via CSV downloads or call into Python). Strongly recommend Python here.
-
-### 6. SQLite default with PostgreSQL migration path (DEFAULT)
-
-**Implication**: One file at `data/fantasy.db`. Easy backup. Single-writer at a time.
-
-**To change to PostgreSQL from day 1**: tell me; same schema works, but you'll need a running Postgres instance (Docker, local install, or hosted).
+Owners that previously read `M9` / `M10` have been re-pointed to **Phase 2**:
+those Phase 1 milestones shipped via the reconstruction path, and the items
+below were explicitly carried past them.
 
 ---
 
-## Questions deferred to implementation
+## Phase 1 data gaps (known, bounded, documented)
 
-These don't block the design but will need answers as you build:
+These are real limits of the v1.0.0 dataset — not bugs. Each has a clear fix
+path once its input becomes available.
 
-### Q1. How do you want to handle "deleted from NFL.com" data?
+### P1-V1. 2010–2015 seasons are unscored (no period rules)
 
-**Context**: NFL.com sometimes purges old league data (typically 7+ year old leagues from inactive accounts). If your league was inactive any year, those records may be unrecoverable.
+**State**: The current ruleset (`.project-src/dz-rules.csv`, 51 rules) is
+loaded for **2016–2025** and `verify --sweep`-confirmed against NFL.com. We
+have no evidence the same rules held for **2010–2015**, and NFL.com history
+pages expose final points but not the era's rule table. Reconstruction
+populated standings/matchups/lineups for all of 2010–2025, but
+`player_stats_scored` is intentionally empty for 2010–2015. nflverse raw
+stats for those years remain available, so they can be scored retroactively.
 
-**Default**: Scrape what's available; log a warning when historical seasons return empty pages; don't fail the run.
+**Fix path**: source period-correct rules → `scoring load --season <YR>` →
+`rescore --season <YR>` → `verify --sweep --season <YR>`. Rationale in
+`PHASE1_COMPLETION_PLAN.md` §0.2, §5.
 
-**Decision point**: Do you want to write a one-time "memory dump" of what's there NOW so we don't lose it later? (Suggested: yes, run backfill ASAP.)
+### P1-V2. Long-TD-length bonuses are unscored (data-source gap)
 
-### Q2. What's the ID for unknown players in your league's history?
+**State**: Residual non-DST `verify` deltas are a steady ~12–18/season of
+clean **−1 / −4 / −8** under-scores — the `*_yards_bonus_long_td_40/_50`
+bonuses (40+ yd TD = +1, 50+ yd stacks to +4). The rules exist in
+`scoring_rules`, but nflverse weekly aggregates carry no per-TD distance, so
+the engine never gets a count. Documented out-of-scope in
+`crawlers/nflverse/stat_keys.py` and `05_SCORING_ENGINE.md`. Deltas come in
+pairs (the same long TD credits passer and receiver).
 
-**Context**: Players who appeared on a roster but whom nflverse doesn't recognize (deep waiver-wire kickers, practice squad call-ups, DEF placeholders). They'll have NFL.com IDs but no GSIS / Sleeper IDs.
+**Owner**: Phase 2. **Fix path**: ingest nflverse play-by-play (`load_pbp`),
+derive per-week 40+/50+ yd TD counts into `player_stats_raw`, map to the
+existing `*_bonus_long_td_*` keys, `rescore`. Engine + rules already handle
+the keys; only the input values are missing.
 
-**Default**: Insert them with NULL for missing IDs. They get 0 league points unless raw stats also come from NFL.com.
+### P1-V3. Ambiguous abbreviated names can't be auto-merged
 
-**Future enhancement**: Add a manual `unknown_players_resolution` step to the M7 milestone.
+**State**: Gamecenter lineups render abbreviated names ("E. Pineiro").
+`scripts/merge_split_player_identities.py` folds stubs onto the nflverse row
+by (first-initial, last-token, position) — 539 merges applied — but
+**deliberately skips** when two real players share that key, because a wrong
+fold would mis-attribute another player's stats.
 
-### Q3. How aggressive should the verifier be?
+The **league-rostered** subset of these skips (stubs that hold a
+`first/last_rostered_season` span, so they shadow a real player on the
+players index) is now resolved: `scripts/merge_roster_name_stubs.py` carries
+a hand-verified `nfl_com_player_id` → canonical map, applies it through the
+same FK-repoint / stamp path, and **seeds `player_id_overrides`** so future
+roster syncs resolve directly and never re-stub (48 merges). Two root causes
+were behind these specific skips: (a) a `_normalize` bug that ate a leading
+`V.`/`I.`/`X.` initial as a roman-numeral suffix, hiding *unique* matches
+(Victor Cruz, Vernon Davis …) — now fixed with a regression test; and (b)
+nflverse storing **legal** first names (Torrey Smith = `James Smith`, Duke
+Johnson = `Randy Johnson`), which defeats first-initial keys — handled by the
+curated map (David **and** Duke Johnson both resolved).
 
-**Context**: The scoring verifier compares our computed points to NFL.com's stored points. There WILL be tiny differences (rounding, stat corrections that landed after our fetch).
+**Remaining**: gamecenter-only skips with no rostered span still surface as
+`our_raw_stats_missing` in `verify`. One rostered stub (J.J. Nelson, ARI
+2016-2017) is **held back** because its obvious canonical row (17322) is
+itself a pre-existing J.J./Jordy Nelson conflation — that row carries a
+2010-2018 span though J.J. debuted in 2015. Untangle 17322 first, then fold.
+Two more (Torry Holt, Vonta Leach) have no nflverse row at all (retired
+before the 2010 window) and are left as honest single-row gaps.
 
-**Default**: Tolerance is 0.1 points; differences logged but don't fail the run.
-
-**Decision point**: If you find that's too tight or too loose, adjust `SCORING_VERIFY_TOLERANCE` in `.env`.
-
-### Q4. Should we save raw HTML responses long-term?
-
-**Context**: For audit/forensics, every successful NFL.com page fetch could be saved to `data/raw_pages/{date}/{url_path}.html`.
-
-**Default**: NO, by default. Storage grows quickly. Enable via `SAVE_RAW_HTML=true` in `.env` if you want it. The test fixture HTMLs serve as smaller-scale audit.
-
-### Q5. What about projections vs actual variance tracking?
-
-**Context**: Useful for Phase 3. Phase 1 stores the raw data; computing variance is a Phase 3 task.
-
-**Default**: No precomputation. Variance is a Phase 3 / dashboard concern.
-
-### Q6. Cookie storage — `.env` vs OS keychain?
-
-**Context**: `.env` is fine for the cookie if you trust your file system. OS keychain (macOS Keychain, etc.) is more secure but adds complexity.
-
-**Default**: `.env`.
-
-**To upgrade**: Implement `keyring`-based fetching in `settings.py`; the rest of the code consumes it identically.
-
-### Q7. How granular do you want availability tracking?
-
-**Context**: We've decided to capture one canonical "pre-kickoff" snapshot per (player, week). But NFL.com supports finer granularity — e.g., a player added Tuesday and dropped Thursday would be invisible at the weekly snapshot level.
-
-**Default**: One pre-kickoff row per (player, week); the transaction log captures intra-week moves; we DON'T create additional `player_availability` rows for mid-week states unless we observe them in the wild.
-
-**To change to fine-grained**: enable per-day polling and `is_pre_kickoff_snapshot=False` rows for each intermediate observation. Storage grows ~7×.
-
-### Q8. Off-season sync cadence?
-
-**Context**: After Super Bowl through the next draft (~Feb–Aug), there's still league activity (trades, keepers, retirements, draft).
-
-**Default**: Weekly sync on Sundays. Adequate for catching keeper deadlines, free agency moves, retirements.
-
-**To change**: adjust the cron schedule in `08_OPERATIONS.md`.
-
----
-
-## Things that ARE NOT open questions (locked in)
-
-These are stated here so they're not re-litigated later:
-
-- **Python**, not Go or TypeScript. The NFL/fantasy data ecosystem is overwhelmingly Python.
-- **nflreadpy**, not `nfl_data_py`. The latter is archived as of 2025.
-- **Static HTTP + BeautifulSoup**, not Playwright. NFL.com renders server-side; Playwright would be overkill.
-- **SQLAlchemy 2.0**, not raw SQL or Django ORM. Type-safe, future-proof, lets the DB swap easily.
-- **alembic for migrations**, not "drop and recreate". You will have data you don't want to lose.
-- **FastAPI**, not Flask. Auto-OpenAPI generation is too valuable to give up.
-- **structlog**, not stdlib logging or loguru. Structured JSON logs that work with future log aggregators.
-- **uv for dependency management**, not pip/poetry/pdm. Fast, modern, well-maintained by astral.sh.
-- **typer for CLI**, not argparse or click. Same author as FastAPI; consistent type-driven syntax.
-- **pytest for testing**, not unittest. Industry default.
-- **ruff for linting + formatting**, not black + flake8 + isort. Ruff replaces all three.
-- **mypy for type checking**. Phase 1 is fully typed.
-- **pre-commit hooks** for ruff and mypy on every commit.
+**Owner**: optional manual cleanup. **Fix path**: extend the curated map in
+`merge_roster_name_stubs.py` (or `player_id_overrides`) for the gamecenter
+remainder, then re-run reconstruction for the affected weeks.
 
 ---
 
-## Future manual-access work (surfaced during M5 verification)
+## NFL.com crawler follow-ups (deferred past Phase 1)
 
-These were discovered while running the live NFL.com crawler against the
-real league. Each is a concrete follow-up but explicitly **out of M5
-scope**. They will get picked up by the milestone listed beside each.
+Surfaced during the M5 live run; carried past the Phase 1 milestones they
+were originally tagged to.
 
 ### M5-V1. Availability sweep only sees `FREE_AGENT` rows
 
-**Observed (2026-05-27 live run)**: All 875 rows persisted to
-`player_availability` for `(season_year=2025, week=17)` were tagged
-`status='FREE_AGENT'`. NFL.com's `/league/{id}/players?...` URL ships
-with `playerStatus=available` baked into the rendered pagination links,
-so OWNED and ON_WAIVERS rows never appear via that endpoint.
+**State**: All rows persisted to `player_availability` are tagged
+`status='FREE_AGENT'` — NFL.com's players URL bakes `playerStatus=available`
+into its pagination, so OWNED / ON_WAIVERS rows never appear there. OWNED is
+implicit from `team_rosters`; ON_WAIVERS is captured nowhere yet.
 
-**Implication**: The `player_availability` table currently captures
-only the *available* slice of the player universe. Owned players'
-status is implicit from the `team_rosters` table, but ON_WAIVERS
-players are not captured anywhere yet.
+**Owner**: Phase 2. Deferred deliberately — the sweep variants only pay off
+once waiver analytics consume them, and in the offseason every player is
+unowned (a live sweep would capture nothing). Historical ownership is already
+covered by gamecenter-backed `team_rosters` (2010–2025). **Fix path**: sweep
+`playerStatus=owned` and `playerStatus=waivers` URL variants.
 
-**Owner**: M9 (backfill) or whichever milestone first needs full
-status coverage. Likely fix: have the runner sweep `playerStatus=owned`
-and `playerStatus=waivers` URL variants in addition to the default.
+### M5-V2. Transactions page is paginated; runner reads only page 1
 
-**Phase 1 wrap-up decision (2026-05-29)**: Deferred to Phase 2. The
-sweep variants only earn their keep once waiver analytics consume them,
-and that's a Phase 2 concern. It is also the offseason — every player is
-currently unowned/available, so a live OWNED/ON_WAIVERS sweep would
-capture nothing right now; historical ownership is already covered by the
-gamecenter-backed `team_rosters` table (2010–2025 populated). Revisit
-when Phase 2 first needs free-agent-vs-waiver distinctions, scraping the
-`playerStatus=owned` / `playerStatus=waivers` variants at that time.
+**State**: The transactions log surfaced only 8 records (all week 17) for
+2025 because the runner doesn't iterate NFL.com's `?offset=` pagination.
+Pre-week-17 transactions are missing. (Confirmed still unimplemented as of
+v1.0.0 — `history.py` reconstructs standings/matchups/lineups only.)
 
-### M5-V2. Transactions page is paginated; runner only reads page 1
+**Owner**: Phase 2. **Fix path**: sweep `?offset=` on
+`/history/{year}/transactions`, mirroring `sweep_availability`.
 
-**Observed**: The transactions log on the real league surfaced only 8
-records (4 Add + 4 Drop) for the 2025 season, all from week 17. The
-parser handled them correctly. NFL.com's history transactions page is
-paginated by `?offset=` like the players page, but the runner doesn't
-iterate.
+### M5-V3. Live auth-failure path not verified end-to-end
 
-**Implication**: Pre-week-17 transactions are not in the DB.
+**State**: Unit tests cover `AuthFailureError` detection and the CLI exit-77 +
+"refresh `NFL_COOKIE`" message, but the full stale-session → exit-77 → friendly
+message chain is verified only by inspection + units. A manual test by flipping
+one cookie char didn't invalidate the (multi-field) session.
 
-**Owner**: M9 backfill (historical seasons need this anyway) — wire
-a sweep over the `?offset=` pagination on `/history/{year}/transactions`,
-mirroring `sweep_availability`.
+**Owner**: next natural cookie expiry — the cookie will go stale on its own and
+the next scheduled run will exercise the path. Add a `source_health` row check
+then. Related: M5-V7.
 
-### M5-V3. Live auth-failure path not end-to-end verified
+### M5-V4. Off-by-one in player-page pagination
 
-**Observed**: Unit tests cover `AuthFailureError` detection (signin
-marker, 302 to id.nfl.com, `test_auth()` returning False) and the CLI
-maps `AuthFailureError` → exit code 77 with the actionable
-"refresh NFL_COOKIE via `ff-pipeline cookie set`" message. A manual
-end-to-end test was attempted by flipping a single character mid-cookie
-in `.env`, but the run still authenticated successfully — NFL.com
-cookies are multi-field, and flipping one char usually lands in a
-non-session field (timestamp, locale, GDPR consent token).
+**State**: The "Next" link advances `offset` by 26 while rendering 25 rows.
+The manual-advance fallback compensates, and the live end-of-season sweep hit
+875/875 rows, so no data was lost there — but it's unconfirmed on a denser
+mid-season week.
 
-**Implication**: The full chain "stale session → AuthFailureError →
-typer.Exit(77) → friendly message" is verified only by code inspection
-+ unit tests, not by a real end-to-end run.
+**Owner**: Phase 2. **Fix path**: advance by `current_offset + len(rows)`
+instead of trusting the "Next" href; verify against a mid-season capture.
 
-**Owner**: Reviewed at the natural next cookie expiry — the cookie
-will become invalid on its own and the next scheduled run will exercise
-the path properly. Add a `source_health` row check at that point.
+### M5-V5. Pages not yet parsed — capture fixtures before building
 
-### M5-V4. Off-by-one in NFL.com player-page pagination
-
-**Observed**: The "Next" link on each `/league/.../players?...` page
-advances `offset` by 26, not 25, even though the page renders 25 rows
-("1 - 25 of 875"). The sweep's manual-advance fallback handles this
-correctly, but it means at least one row may be skipped at each page
-boundary.
-
-**Implication**: Live sweep reported 875 unique rows for a stated
-total of 875, so in practice the off-by-one doesn't lose data here —
-NFL.com appears to be 1-indexed internally and our `offset=PAGE_SIZE*N`
-fallback hits the right slice. Worth confirming on a non-end-of-season
-week, when the player universe is denser.
-
-**Owner**: M9 — switch to a `current_offset + len(rows)`-based advance
-instead of trusting NFL.com's "Next" href, and verify against a
-mid-season capture.
-
-### M5-V5. Some pages NOT in M5 — captured fixtures available
-
-The user-captured `teamgamecenter.html` lives at
-`/history/2025/teamgamecenter?teamId=N` (the per-team weekly view).
-This is the gamecenter parser's fixture. **Other pages that M9
-backfill will need but M5 doesn't parse**:
-
+**State**: Reconstruction parses standings; still **unparsed** and needed for
+fuller history:
 - `/league/{id}/history/{year}/draftresults` — draft picks
-- `/league/{id}/history/{year}/standings` — final standings
 - `/league/{id}/history/{year}/playoffs` — playoff bracket
 - `/league/{id}/gamecenter?gameId={N}` — game-ID-keyed gamecenter
-  (distinct URL pattern from teamgamecenter)
-- A `playerStatus=owned` and `playerStatus=waivers` variant of the
-  players page (see M5-V1)
+  (distinct from the `teamgamecenter` URL we do parse)
+- `playerStatus=owned` / `playerStatus=waivers` players-page variants (M5-V1)
 
-**Owner**: M9. Have the user capture HTML for each before that work
-starts; iterate selectors using the M5 "real fixture, then test, then
-runner" loop that worked here.
+**Owner**: Phase 2. Capture real HTML for each first, then iterate selectors
+with the "real fixture → test → runner" loop that worked in M5.
 
-### M5-V6. Trade-row markup not exercised against a real fixture
+### M5-V6. Trade-row markup never exercised against a real fixture
 
-**Observed**: `parse_transactions` includes a "Trade" branch that emits
-two `ParsedTransaction` records sharing an NFL.com transaction id, but
-the real 2025 fixture contained no trade rows (only Add/Drop/Lineup).
-The branch is unit-tested only indirectly (by structural reasoning).
+**State**: `parse_transactions` has a "Trade" branch (two records sharing an
+NFL.com txn id), but the 2025 fixture had no trades, so it's only
+structurally reasoned about — no `transactions_with_trade.html` fixture exists.
 
-**Owner**: Manual capture of a historical season's transactions page
-that includes at least one trade (M9 backfill will hit one). Save as
-`tests/fixtures/nfl_com_html/transactions_with_trade.html` and add a
-parser test.
-
-### M7-V1. End-to-end "every roster player has all IDs" verification deferred
-
-**Observed**: M7's `PlayerResolver` merges IDs across sources via direct
-match + fuzzy fallback and has full unit coverage, but a live "run all
-three crawlers against the user's league and assert every rostered player
-has `{gsis_id, sleeper_id, nfl_com_player_id}` populated" check has not
-been executed. Doing it now would require a live multi-source run, which
-is M8's natural scope (the API will need a `/players/{id}` endpoint that
-exposes the merged shape).
-
-**Owner**: M8 — once the API is up, add a one-shot script
-(`scripts/audit_player_ids.py` or similar) that walks the current
-roster and asserts the resolver succeeded for every row. Any holes
-become candidates for the `player_id_overrides` table.
-
-### M7-V2. PlayerResolver doesn't recover from cross-source ID conflicts
-
-**Observed**: When two sources disagree on, say, `sleeper_id` for the
-same canonical player (an actual upstream bug), the resolver logs a
-warning and refuses to overwrite the incumbent value. The operator must
-manually intervene via the `player_id_overrides` table — but the CLI
-exposes no command to do that yet.
-
-**Owner**: M10 ops — add `ff-pipeline normalize override add
---kind sleeper_id --value 9999 --player-id 42` so operators can resolve
-conflicts without hand-writing SQL.
+**Owner**: Phase 2. Capture a historical transactions page with ≥1 trade, save
+as `tests/fixtures/nfl_com_html/transactions_with_trade.html`, add a test.
 
 ### M5-V7. Cookie refresh cadence still uncharacterized
 
-**Observed**: The cookie the user pasted on 2026-05-27 was refreshed
-just before this session. We do not know the natural TTL.
+**State**: The cookie's natural TTL is unknown. The scheduled weekly sync will
+silently start failing on expiry; the pipeline writes a `source_health`
+`auth_failure` row, but the operator must notice.
 
-**Implication**: M10's cron schedule (weekly Sunday sync) will silently
-start failing once the cookie expires. The pipeline does write a
-`source_health` row with `status='auth_failure'` when that happens, but
-the operator has to notice.
+**Owner**: Phase 2 ops. **Fix path**: run `cookie test` ahead of each
+scheduled sync and emit a notification on failure; record observed TTLs in
+project memory to tune the schedule. Related: M5-V3.
 
-**Owner**: M10 ops — add a "cookie staleness" check that runs `cookie test`
-ahead of every scheduled sync and emits a desktop notification (or
-similar) on failure. Track observed TTLs in the project memory so the
-schedule can be tuned.
+---
 
-### P1-V1. 2010–2015 scoring rules are unknown — those seasons stay unscored
+## Player-identity follow-ups (deferred past Phase 1)
 
-**Observed (Phase 1 completion, 2026-05-29)**: The league's current
-scoring ruleset (`.project-src/dz-rules.csv`, 51 rules) was loaded and
-propagated to seasons **2016–2025**, which `verify --sweep` confirms
-against NFL.com gamecenter totals. For **2010–2015** we have no evidence
-that the same ruleset was in force — NFL.com's history pages render
-final per-player *points* but do not expose the era's *rule table*, and
-league settings from that period were not captured.
+### M7-V1. No end-to-end "every roster player has all IDs" audit
 
-**Implication**: Reconstruction (`ff-pipeline reconstruct`) populates
-real standings, matchups, and per-week lineups for **all** seasons
-2010–2025, but `player_stats_scored` is intentionally left empty for
-2010–2015. nflverse `player_stats_raw` for those years remains available,
-so the seasons can be scored retroactively the moment a trustworthy
-ruleset is sourced. Phase 2 features that read scored points must treat
-2010–2015 as a known gap, not a bug.
+**State**: `PlayerResolver` has full unit coverage, but no live run asserts
+that every rostered player has `{gsis_id, sleeper_id, nfl_com_player_id}`
+populated. No audit script exists yet.
 
-**Owner**: deferred until real 2010–2015 scoring rules can be sourced
-(e.g. from the user's archived league settings, NFL.com league-history
-settings pages if still reachable, or member recollection). Fix path:
-load the period-correct rules with `scoring load --season <YR>`, then
-`rescore --season <YR>` and `verify --sweep --season <YR>`. Decision and
-rationale tracked in `docs/PHASE1_COMPLETION_PLAN.md` §0.2 and §5.
+**Owner**: Phase 2. **Fix path**: add `scripts/audit_player_ids.py` to walk the
+roster and assert resolution per row; holes become `player_id_overrides`
+candidates.
 
-### P1-V2. Long-TD-length bonuses are unscored — the dominant `verify` real-delta class
+### M7-V2. No CLI to resolve cross-source ID conflicts
 
-**Observed (Phase 1 completion, 2026-05-29)**: After the historical
-reconstruction and identity merge, the residual `verify --sweep`
-failures that are *not* DST units split into a steady ~12–18 per season
-of genuine point deltas, almost all of them a clean **−1.00, −4.00, or
-−8.00** (our score lower than NFL.com). These are the
-`*_yards_bonus_long_td_40` / `_50` bonuses: a TD of 40+ yards is +1 and a
-TD of 50+ yards is +3, and because the 50+ tier *stacks* on the 40+
-tier, a single 50+ yard TD is worth **+4**. The bonus rows exist in
-`scoring_rules` (loaded from `dz-rules.csv`), but the scoring engine never
-receives a value for them: nflverse's weekly `player_stats` aggregates
-carry season/week totals (`passing_yards`, `passing_tds`, …) with **no
-per-TD distance**, so "count of TDs of 40+/50+ yards" cannot be derived.
-This is documented as out-of-scope in
-`src/ff_pipeline/crawlers/nflverse/stat_keys.py` and
-`docs/05_SCORING_ENGINE.md` §threshold-bonuses. Example: 2016 W1 Drew
-Brees (−4) and Brandin Cooks (−4) — the *same* long TD pass credits both
-the passer and the receiver, which is why such deltas come in pairs.
+**State**: On conflicting IDs across sources the resolver logs a warning and
+refuses to overwrite the incumbent; the operator must edit
+`player_id_overrides` by hand — there's no CLI command (confirmed absent in
+`cli.py` as of v1.0.0).
 
-**Implication**: This is a data-source gap, not an engine or rule bug.
-Every starter who scored a 40+/50+ yard TD in a swept week shows a small
-fixed under-score; everyone else matches NFL.com exactly. It caps the
-achievable `verify` pass rate but is fully explained and bounded.
+**Owner**: Phase 2 ops. **Fix path**: add e.g. `ff-pipeline normalize override
+add --kind sleeper_id --value 9999 --player-id 42`.
 
-**Owner**: Phase 2 (or an M7 follow-up). Fix path: ingest nflverse
-play-by-play (`load_pbp`, already a known dependency per
-`02_ARCHITECTURE.md`), derive per-week counts of each player's 40+/50+
-yard passing/rushing/receiving TDs into `player_stats_raw`, map them to
-the existing `*_bonus_long_td_*` stat keys, and `rescore`. The engine and
-rules already handle the keys — only the input values are missing.
+---
 
-### P1-V3. Ambiguous abbreviated names can't be auto-merged to a single identity
+## Parked for Phase 3
 
-**Observed (Phase 1 completion, 2026-05-29)**: The gamecenter lineup
-pages render abbreviated names ("E. Pineiro"). `scripts/merge_split_player_identities.py`
-folds those stubs onto the stats-bearing nflverse row by
-(first-initial, last-token, position) — 539 merges applied. But when two
-real players share that key (e.g. "D. Johnson" = David vs Duke Johnson,
-both RB; J.J. vs Jordy Nelson, both WR), the merge **deliberately
-skips** (≈44 stubs) rather than guess. Those starters still resolve to a
-statless stub and surface as `our_raw_stats_missing` in `verify`.
+### Q5. Projections vs actual variance tracking
+Phase 1 stores raw projections + actuals; computing variance is a Phase 3 /
+dashboard concern. No precomputation in Phase 1.
 
-**Implication**: A small, bounded set of historical starters can't be
-scored/verified until their identity is pinned by hand. Conservative by
-design — a wrong fold would silently mis-attribute another player's
-stats (the merge logic was tightened specifically to stop an id-conflict
-shortcut from mis-folding "J. Nelson" into Jordy Nelson).
+---
 
-**Owner**: optional manual cleanup. Fix path: add the correct
-`nfl_com_player_id` → canonical `player_id` pair to `player_id_overrides`
-(the resolver consults it first), or extend the merge script with a
-curated allowlist for known ambiguous names, then re-run reconstruction
-for the affected weeks.
+## Phase 2 entry review (was "revisit at end of Phase 1" — now due)
 
-## Questions to revisit at end of Phase 1
-
-These should be re-evaluated before starting Phase 2:
+v1.0.0 closes Phase 1, so re-evaluate these before Phase 2 design:
 
 - Has any data source become unreliable? Replacement needed?
 - Is SQLite still adequate, or are query patterns demanding PostgreSQL?
-- Is the API contract complete enough for Phase 2 needs, or are endpoints missing?
-- Has Phase 1 surfaced any data quality issues that should be addressed in Phase 2's design?
-- Did fine-grained availability tracking (Q7) become necessary? Did off-season cadence (Q8) miss anything important?
+- Is the API contract complete enough for Phase 2, or are endpoints missing?
+- Did Phase 1 surface data-quality issues to address in Phase 2 design?
+  (P1-V1/V2/V3 are the known ones.)
+- Did the default availability granularity (archived Q7 / M5-V1) or off-season
+  cadence (archived Q8) miss anything important in practice?
+
+---
+
+## Locked in — do not re-litigate
+
+Stated so they aren't reopened in later sessions:
+
+- **No IDP.** The league rosters `QB/RB/WR/TE/K` + team DEF only. nflverse's
+  full player universe is filtered to `RELEVANT_POSITIONS` at ingestion (both
+  the `load_players` metadata pass and the stat-stub path) and legacy rows
+  were removed via `prune-players` in two passes: fully-orphaned rows
+  (25,355 → 8,587 on 2026-06-01) and then referenced-but-irrelevant
+  IDP/OL players (8,587 → 3,093 on 2026-06-01, cascading ~305k incidental
+  stat/projection rows). Do **not** re-widen position scope or re-ingest
+  pre-`LEAGUE_START_YEAR` retirees on the assumption IDP might be wanted
+  later — it won't be. The prune **protects** any player referenced by
+  `team_rosters` / `transactions` / `player_availability` /
+  `player_id_overrides` regardless of position label, because those rows are
+  ground truth and position strings are not (NFL.com scrape artifacts on team
+  defenses, rostered fullbacks, two-way players). So no roster/transaction
+  data was discarded — only incidental nflverse/Sleeper rows for players this
+  league can never field.
+- **Python**, not Go/TypeScript — the NFL/fantasy data ecosystem is Python.
+- **nflreadpy**, not `nfl_data_py` (archived as of 2025).
+- **Static HTTP + BeautifulSoup**, not Playwright — NFL.com renders server-side.
+- **SQLAlchemy 2.0**, not raw SQL or Django ORM.
+- **alembic** migrations, not drop-and-recreate.
+- **FastAPI**, not Flask — auto-OpenAPI.
+- **structlog**, not stdlib logging or loguru.
+- **uv** for dependencies, not pip/poetry/pdm.
+- **typer** for CLI, not argparse/click.
+- **pytest**, not unittest.
+- **ruff** for lint + format (replaces black + flake8 + isort).
+- **mypy** type checking — Phase 1 is fully typed.
+- **pre-commit** hooks for ruff + mypy on every commit.

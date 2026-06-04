@@ -18,13 +18,11 @@ Out of M4 scope (need play-by-play, land in M7):
 * ``rushing_yards_bonus_long_td_40`` / ``_50``
 * ``receiving_yards_bonus_long_td_40`` / ``_50``
 
-Out of nflverse player-stats scope entirely (need team-level derivation
-from schedules + pbp, land in M5/M7):
-
-* All team-defense keys: ``sacks``, ``interceptions``, ``points_allowed*``,
-  ``total_yards_allowed``, etc. Individual ``def_*`` columns in nflverse
-  are IDP-style player stats; our league uses team DST and those rollups
-  happen separately.
+Team-defense keys (``sacks``, ``interceptions``, ``points_allowed``,
+``total_yards_allowed``, etc.) are *not* projected here — they need
+team-level derivation from ``load_team_stats`` + ``load_schedules`` rather
+than the per-player weekly file. That rollup lives in ``team_defense.py``
+and is keyed by NFL team rather than ``gsis_id``.
 """
 
 from __future__ import annotations

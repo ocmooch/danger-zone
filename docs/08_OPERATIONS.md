@@ -81,6 +81,10 @@ ff-pipeline rescore               # Recompute scoring from raw stats
 ff-pipeline rescore --season 2024 # For one season
 ff-pipeline rescore --dry-run     # Report diffs, don't write
 
+ff-pipeline team-defense          # Ingest team-defense (DST) raw stats (every season w/ DEF players)
+ff-pipeline team-defense --season 2024            # One season
+ff-pipeline team-defense --start-year 2016 --end-year 2025  # Range backfill
+
 ff-pipeline status                # Show pipeline health, last run, per-source status
 ff-pipeline status --verbose      # Include recent errors
 
@@ -89,6 +93,7 @@ ff-pipeline cookie test           # Verify the current cookie works
 
 ff-pipeline verify --player NAME --season Y --week W   # Compare our score vs NFL.com
 ff-pipeline verify --sweep --season Y                  # Sweep weeks 1/8/15 for a season
+ff-pipeline verify --reconcile --season Y              # Offline team-total drift check (incl. DST)
 
 ff-pipeline scoring load --csv path/to/settings.csv    # Load scraped scoring rules
 
@@ -222,6 +227,27 @@ rclone copy data/backups/ remote:fantasy-football-backups/
    ```
 3. If raw is wrong: `ff-pipeline run --source nflverse --season 2025` (idempotent — upserts overwrite stale rows)
 4. If raw is right but score is wrong: scoring rule bug — re-run `ff-pipeline rescore --season 2025 --dry-run` to see the diff, then `ff-pipeline scoring load --csv ...` to re-load rules if they were wrong
+
+### "Team-defense (DST) slots show no points"
+
+DST scoring is derived from team-level nflverse data, not the per-player
+weekly file, so it lands via a separate step that must run **after** the
+DEF players exist (i.e. after the NFL.com roster sync). Order:
+
+1. `ff-pipeline team-defense --start-year 2016 --end-year 2025` — ingests
+   per-team DST raw rows (sacks/INTs/.../points_allowed/yards_allowed) and
+   matches them to rostered DEF players. Franchises this league never
+   rostered that season are reported as `unmatched` (expected, not an error).
+2. `ff-pipeline rescore` — scores the new DEF raw rows with each season's
+   `defense` rules.
+3. `ff-pipeline verify --reconcile --season Y` — confirm each team's summed
+   starters (now including DST) reconcile to the authoritative NFL.com total;
+   deltas beyond `SCORING_VERIFY_TOLERANCE` are flagged as data-quality
+   alerts (stat corrections, returned defensive PATs, etc.) — the engine is
+   never silently patched.
+
+A normal `ff-pipeline run` (no `--source`) now runs `team_defense` last in
+the sequence, so current-season DST stays fresh automatically.
 
 ### "The database file got corrupted"
 

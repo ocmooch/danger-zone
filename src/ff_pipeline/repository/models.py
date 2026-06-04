@@ -231,6 +231,18 @@ class Player(Base):
     nfl_team: Mapped[str | None] = mapped_column(String(8))
     birth_date: Mapped[date | None] = mapped_column(Date)
     rookie_year: Mapped[int | None] = mapped_column(Integer)
+    # Last NFL season the player appeared in, per nflverse ``load_players``.
+    # Used to scope ingestion to the league era: a player whose career ended
+    # before ``LEAGUE_START_YEAR`` can never matter to this league.
+    last_season: Mapped[int | None] = mapped_column(Integer)
+    # League-relevance span: the first/last season this player appears on any
+    # ``team_rosters`` row in *this* league (MIN/MAX of ``team_rosters.season_year``).
+    # NULL ⇒ never rostered here — the canonical "league-relevant?" signal that
+    # ``last_season`` (a current-NFL fact) cannot give. Materialized so the read
+    # API can filter and surface a "rostered 2012-2018" span without a join, and
+    # recomputed at the end of every NFL.com roster sync.
+    first_rostered_season: Mapped[int | None] = mapped_column(Integer)
+    last_rostered_season: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     nfl_com_player_id: Mapped[str | None] = mapped_column(String)
     gsis_id: Mapped[str | None] = mapped_column(String)
@@ -277,7 +289,16 @@ class PlayerIdOverride(Base):
 class TeamRoster(Base):
     __tablename__ = "team_rosters"
     __table_args__ = (
-        UniqueConstraint("team_id", "player_id", "week", name="uq_team_rosters_team_player_week"),
+        # A player belongs to at most ONE team in a given scoring week. Keying
+        # the natural constraint on (season_year, week, player_id) — without
+        # team_id — enforces that invariant at the DB level: re-ingesting a week
+        # upserts the existing row (moving team_id if the player changed teams)
+        # instead of creating a second row on a different team. This replaces
+        # the old (team_id, player_id, week) key, which omitted season_year and
+        # permitted the same player on two teams in one week (the 2025 wk1 bug).
+        UniqueConstraint(
+            "season_year", "week", "player_id", name="uq_team_rosters_season_week_player"
+        ),
         Index("ix_team_rosters_team_week", "team_id", "week"),
         Index("ix_team_rosters_player_season", "player_id", "season_year"),
         Index("ix_team_rosters_player_acquisition", "player_id", "acquisition_date"),

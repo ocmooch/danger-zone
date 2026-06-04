@@ -21,12 +21,14 @@ from ff_pipeline.crawlers.nflverse.client import (
     NflversePlayerMeta,
     NflversePlayerStat,
 )
+from ff_pipeline.crawlers.nflverse.franchises import resolve_def_team_abbrev
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
     PlayerStatsRaw,
     SourceHealth,
+    TeamRoster,
 )
 from ff_pipeline.repository.upsert import UpsertCounts, upsert
 
@@ -40,6 +42,11 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 SOURCE_NAME = "nflverse"
+# Team-defense raw rows are tagged with the same source as the offensive
+# nflverse rows so ``rescore`` (which scores only ``nflverse`` rows) picks
+# them up automatically. The distinct *health/summary* label below keeps
+# the team-defense step's observability separable from the player-stats run.
+TEAM_DEFENSE_LABEL = "nflverse_team_defense"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +70,8 @@ def run_nflverse(
     seasons: Sequence[int],
     source: NflverseSource | None = None,
     mode: str = "full_sync",
+    league_start_year: int | None = None,
+    relevant_positions: frozenset[str] | None = None,
 ) -> NflverseRunResult:
     """Pull nflverse data for ``seasons`` and write it into the DB.
 
@@ -70,6 +79,22 @@ def run_nflverse(
     Caller's responsibility to commit. On failure, the run row is marked
     ``failed`` with the exception message and the exception re-raised so
     the CLI returns a non-zero exit code.
+
+    ``league_start_year`` and ``relevant_positions`` scope which player
+    *metadata* rows get upserted: nflverse returns the entire NFL player
+    universe back to 1999, but a player whose career ended before the
+    league existed — or who plays a position this league can't roster —
+    is pure clutter. When either is ``None`` no filtering is applied
+    (preserving the historical "ingest everything" behaviour).
+
+    ``relevant_positions`` additionally gates the *stub* path: nflverse's
+    weekly stats file carries a line for every IDP and lineman, and each
+    unknown gsis_id would otherwise be stubbed into ``players`` (and its
+    stat row ingested). We skip stub creation for positively-irrelevant
+    positions so the IDP universe never regrows after a prune. A player
+    already known to the DB (e.g. one nfl_com rostered) keeps all its stat
+    rows regardless of the stat line's position label, so nothing
+    rosterable is dropped.
     """
 
     run = PipelineRun(status="running", mode=mode)
@@ -82,14 +107,26 @@ def run_nflverse(
         player_meta = client.players()
         player_stats = client.player_stats(seasons)
 
-        player_counts = _upsert_players(session, player_meta)
+        kept_meta = _filter_relevant_players(
+            player_meta,
+            league_start_year=league_start_year,
+            relevant_positions=relevant_positions,
+        )
+        player_counts = _upsert_players(session, kept_meta)
         # gsis_id -> player_id resolution depends on the players upsert above
         # having been flushed; do it now so the stat rows can reference IDs.
         session.flush()
         gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
         # Auto-create stub players for any gsis_id that showed up in stats but
         # not in load_players() (rare but possible — preseason call-ups, etc.).
-        stub_counts = _create_stub_players(session, player_stats, gsis_to_player_id)
+        # Gated by relevant_positions so the IDP/lineman universe isn't
+        # re-stubbed straight back in after a prune.
+        stub_counts = _create_stub_players(
+            session,
+            player_stats,
+            gsis_to_player_id,
+            relevant_positions=relevant_positions,
+        )
         if stub_counts > 0:
             session.flush()
             gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
@@ -160,6 +197,59 @@ def run_nflverse(
 # ---------------------------------------------------------------------------
 
 
+def _filter_relevant_players(
+    meta: list[NflversePlayerMeta],
+    *,
+    league_start_year: int | None,
+    relevant_positions: frozenset[str] | None,
+) -> list[NflversePlayerMeta]:
+    """Drop metadata rows that can never matter to this league.
+
+    A player is kept unless it fails one of the active filters:
+
+    * **Era** — ``last_season`` is known and predates ``league_start_year``;
+      the player retired before the league's first season.
+    * **Position** — ``position`` is not in ``relevant_positions``; the
+      league can't roster it (every IDP/lineman/specialist).
+
+    A ``None`` ``last_season`` or ``position`` is treated as *unknown, so
+    keep* — we only drop on positive evidence of irrelevance. Both filters
+    are skipped entirely when their parameter is ``None``.
+    """
+    if league_start_year is None and relevant_positions is None:
+        return meta
+
+    kept: list[NflversePlayerMeta] = []
+    dropped_era = 0
+    dropped_position = 0
+    for m in meta:
+        if (
+            league_start_year is not None
+            and m.last_season is not None
+            and m.last_season < league_start_year
+        ):
+            dropped_era += 1
+            continue
+        if (
+            relevant_positions is not None
+            and m.position is not None
+            and m.position.upper() not in relevant_positions
+        ):
+            dropped_position += 1
+            continue
+        kept.append(m)
+
+    if dropped_era or dropped_position:
+        log.info(
+            "Filtered nflverse player metadata to league scope",
+            kept=len(kept),
+            dropped_pre_league_era=dropped_era,
+            dropped_irrelevant_position=dropped_position,
+            league_start_year=league_start_year,
+        )
+    return kept
+
+
 def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertCounts:
     rows = [
         {
@@ -171,6 +261,7 @@ def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertC
             "nfl_team": m.nfl_team,
             "birth_date": m.birth_date,
             "rookie_year": m.rookie_year,
+            "last_season": m.last_season,
             "espn_id": m.espn_id,
             "is_active": (m.status or "").upper() == "ACT" or m.status is None,
         }
@@ -190,8 +281,26 @@ def _create_stub_players(
     session: Session,
     stats: list[NflversePlayerStat],
     gsis_to_player_id: dict[str, int],
+    *,
+    relevant_positions: frozenset[str] | None = None,
 ) -> int:
+    """Stub players for stat rows whose gsis_id isn't already known.
+
+    When ``relevant_positions`` is given, a stat row with a positively
+    irrelevant position (known, non-blank, outside the set) is *not* stubbed;
+    its stat row then resolves to no ``player_id`` and is skipped downstream.
+    A ``None``/blank position is unknown, so we still stub it. Passing
+    ``None`` stubs everything (historical behaviour).
+    """
     missing = [s for s in stats if s.gsis_id not in gsis_to_player_id]
+    if relevant_positions is not None:
+        missing = [
+            s
+            for s in missing
+            if s.position is None
+            or not s.position.strip()
+            or s.position.upper() in relevant_positions
+        ]
     if not missing:
         return 0
     rows = [
@@ -215,11 +324,15 @@ def _upsert_player_stats(
 ) -> UpsertCounts:
     now = datetime.now(tz=UTC)
     rows = []
+    skipped = 0
     for s in stats:
         pid = gsis_to_player_id.get(s.gsis_id)
         if pid is None:
-            # Shouldn't happen post-stub-creation, but skip rather than crash.
-            log.warning("Skipping nflverse stat row with no player_id", gsis_id=s.gsis_id)
+            # No player_id resolves for this stat row. Expected for stat lines
+            # whose player was intentionally not stubbed (irrelevant position);
+            # count and summarise rather than warn per row (~hundreds of
+            # thousands on a full IDP-laden backfill).
+            skipped += 1
             continue
         rows.append(
             {
@@ -237,6 +350,13 @@ def _upsert_player_stats(
                 "ingested_at": now,
             }
         )
+    if skipped:
+        log.info(
+            "Skipped nflverse stat rows with no resolved player_id "
+            "(unstubbed irrelevant-position players)",
+            skipped=skipped,
+            ingested=len(rows),
+        )
     return upsert(
         session,
         PlayerStatsRaw,
@@ -245,4 +365,210 @@ def _upsert_player_stats(
     )
 
 
-__all__ = ["NflverseRunResult", "run_nflverse"]
+# ---------------------------------------------------------------------------
+# Team defense (DST)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TeamDefenseRunResult:
+    """Outcome of one team-defense ingest run.
+
+    ``teams_matched`` / ``teams_unmatched`` count DEF stat rows that did /
+    did not resolve to a rostered DEF ``players`` row (an unmatched team is
+    a franchise this league never rostered that season — expected, not an
+    error).
+    """
+
+    stats_added: int
+    stats_updated: int
+    teams_matched: int
+    teams_unmatched: int
+    duration_ms: int
+
+
+def run_team_defense(
+    session: Session,
+    *,
+    seasons: Sequence[int],
+    source: NflverseSource | None = None,
+    mode: str = "full_sync",
+) -> TeamDefenseRunResult:
+    """Ingest team-defense (DST) raw stats for ``seasons``.
+
+    Builds per-team weekly DST stat dicts from nflverse team stats +
+    schedules, matches each to a rostered ``position='DEF'`` player via the
+    season-aware franchise resolver, and upserts them into
+    ``player_stats_raw`` with ``source='nflverse'``. The existing
+    ``rescore`` step then scores them with the season's ``defense`` rules.
+
+    Must run *after* the league's DEF players exist (i.e. after the NFL.com
+    roster sync) — a DEF stat row with no matching rostered franchise is
+    counted and skipped, not stubbed. Caller commits.
+    """
+
+    run = PipelineRun(status="running", mode=mode)
+    session.add(run)
+    session.flush()
+    start = time.perf_counter()
+
+    try:
+        client = NflverseClient(source=source or LiveNflverseSource())
+        team_stats = client.team_defense_stats(seasons)
+        # (season_year, abbrev) -> player_id, built from rostered DEF rows.
+        abbrev_to_player = _def_player_index(session, seasons)
+
+        now = datetime.now(tz=UTC)
+        rows: list[dict[str, object]] = []
+        matched = 0
+        unmatched = 0
+        for ts in team_stats:
+            pid = abbrev_to_player.get((ts.season_year, ts.nfl_team))
+            if pid is None:
+                unmatched += 1
+                continue
+            matched += 1
+            rows.append(
+                {
+                    "player_id": pid,
+                    "season_year": ts.season_year,
+                    "week": ts.week,
+                    "season_type": ts.season_type,
+                    "nfl_opponent": ts.nfl_opponent,
+                    "source": SOURCE_NAME,
+                    "stats": ts.stats,
+                    "is_primary": True,
+                    "ingested_at": now,
+                }
+            )
+        counts = upsert(
+            session,
+            PlayerStatsRaw,
+            rows,
+            conflict_cols=("player_id", "season_year", "week", "source"),
+        )
+
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        run.status = "failed"
+        run.finished_at = datetime.now(tz=UTC)
+        run.error_summary = f"{type(exc).__name__}: {exc}"
+        session.add(
+            SourceHealth(
+                run_id=run.run_id,
+                source=TEAM_DEFENSE_LABEL,
+                status="failed",
+                error_message=str(exc),
+                duration_ms=duration_ms,
+            )
+        )
+        raise
+
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    run.status = "success"
+    run.finished_at = datetime.now(tz=UTC)
+    run.sources_summary = {
+        TEAM_DEFENSE_LABEL: {
+            "stats_added": counts.rows_added,
+            "stats_updated": counts.rows_updated,
+            "teams_matched": matched,
+            "teams_unmatched": unmatched,
+            "seasons": list(seasons),
+        }
+    }
+    session.add(
+        SourceHealth(
+            run_id=run.run_id,
+            source=TEAM_DEFENSE_LABEL,
+            status="success",
+            rows_added=counts.rows_added,
+            rows_updated=counts.rows_updated,
+            duration_ms=duration_ms,
+        )
+    )
+
+    log.info(
+        "team-defense run complete",
+        seasons=list(seasons),
+        stats_added=counts.rows_added,
+        stats_updated=counts.rows_updated,
+        teams_matched=matched,
+        teams_unmatched=unmatched,
+        duration_ms=duration_ms,
+    )
+
+    return TeamDefenseRunResult(
+        stats_added=counts.rows_added,
+        stats_updated=counts.rows_updated,
+        teams_matched=matched,
+        teams_unmatched=unmatched,
+        duration_ms=duration_ms,
+    )
+
+
+#: Roster-slot labels NFL.com uses for the single team-defense lineup spot.
+_DEF_ROSTER_SLOTS: tuple[str, ...] = ("DEF", "DST", "D/ST")
+
+
+def _def_player_index(
+    session: Session,
+    seasons: Sequence[int],
+) -> dict[tuple[int, str], int]:
+    """``(season_year, nflverse_abbrev) -> player_id`` for rostered DEFs.
+
+    A team-defense player is identified by **ever having been rostered in a
+    DEF lineup slot** (``team_rosters.roster_slot``), not by
+    ``players.position`` — NFL.com tags many team defenses with a scrape
+    artifact (e.g. ``"Season is Over Add to Watch List"``) and a NULL
+    ``nfl_team``, so the position column misses ~half of them. The roster
+    slot is ground truth. ``position='DEF'`` is unioned in as a belt-and-
+    braces fallback. Each is resolved to its season-correct abbreviation
+    (the resolver recovers the franchise from the full team name when
+    ``nfl_team`` is blank, and applies relocations). A franchise that
+    resolves twice in one season keeps the lowest ``player_id``
+    deterministically and logs the collision.
+    """
+    def_player_ids = set(
+        session.execute(
+            select(TeamRoster.player_id)
+            .where(TeamRoster.roster_slot.in_(_DEF_ROSTER_SLOTS))
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
+    def_players = list(
+        session.execute(
+            select(Player)
+            .where((Player.position == "DEF") | (Player.player_id.in_(def_player_ids)))
+            .order_by(Player.player_id)
+        )
+        .scalars()
+        .all()
+    )
+    index: dict[tuple[int, str], int] = {}
+    for player in def_players:
+        for year in seasons:
+            abbrev = resolve_def_team_abbrev(player, year)
+            if abbrev is None:
+                continue
+            key = (year, abbrev)
+            if key in index and index[key] != player.player_id:
+                log.warning(
+                    "Multiple DEF players resolve to one franchise-season; keeping first",
+                    season_year=year,
+                    abbrev=abbrev,
+                    kept_player_id=index[key],
+                    dropped_player_id=player.player_id,
+                )
+                continue
+            index[key] = player.player_id
+    return index
+
+
+__all__ = [
+    "NflverseRunResult",
+    "TeamDefenseRunResult",
+    "run_nflverse",
+    "run_team_defense",
+]

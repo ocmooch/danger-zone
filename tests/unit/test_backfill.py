@@ -80,8 +80,10 @@ def _stub_nflverse_runner(
         seasons: Any,
         mode: str = "full_sync",
         source: Any = None,
+        league_start_year: int | None = None,
+        relevant_positions: Any = None,
     ) -> _StubNflverseResult:
-        _ = source
+        _ = (source, league_start_year, relevant_positions)
         year = seasons[0]
         if raise_on_year is not None and year == raise_on_year:
             raise raise_kind(f"boom on {year}")

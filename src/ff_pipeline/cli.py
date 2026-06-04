@@ -165,7 +165,7 @@ def run_cmd(
         )
         raise typer.Exit(code=2)
 
-    if source is not None and source not in {"nflverse", "nfl_com", "sleeper"}:
+    if source is not None and source not in {"nflverse", "nfl_com", "sleeper", "team_defense"}:
         _stub(f"run --source {source}", "unknown source")
 
     from datetime import datetime
@@ -178,15 +178,17 @@ def run_cmd(
     settings = get_settings()
     target_year = season or datetime.now().year
     # No --source = the full sequence; nflverse first so player rows exist
-    # before nfl_com / sleeper try to resolve against them.
-    sources = [source] if source is not None else ["nflverse", "nfl_com", "sleeper"]
+    # before nfl_com / sleeper try to resolve against them. team_defense
+    # runs last because it matches against the DEF players that the NFL.com
+    # roster sync creates.
+    sources = [source] if source is not None else ["nflverse", "nfl_com", "sleeper", "team_defense"]
 
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as ss:
             for src in sources:
                 if src == "nflverse":
-                    _run_nflverse(ss, target_year=target_year)
+                    _run_nflverse(ss, settings=settings, target_year=target_year)
                 elif src == "nfl_com":
                     _run_nfl_com(
                         ss,
@@ -195,17 +197,24 @@ def run_cmd(
                         week=week,
                         snapshot_kind=snapshot_kind,
                     )
+                elif src == "team_defense":
+                    _run_team_defense(ss, seasons=[target_year])
                 else:  # sleeper
                     _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
     finally:
         engine.dispose()
 
 
-def _run_nflverse(ss: Session, *, target_year: int) -> None:
+def _run_nflverse(ss: Session, *, settings: Settings, target_year: int) -> None:
     """Sync players + raw weekly stats from nflverse, then commit."""
     from ff_pipeline.crawlers.nflverse.runner import run_nflverse
 
-    result = run_nflverse(ss, seasons=[target_year])
+    result = run_nflverse(
+        ss,
+        seasons=[target_year],
+        league_start_year=settings.league_start_year,
+        relevant_positions=settings.relevant_positions_set,
+    )
     ss.commit()
     typer.echo(
         f"nflverse: players +{result.players_added} "
@@ -214,6 +223,28 @@ def _run_nflverse(ss: Session, *, target_year: int) -> None:
         f"~{result.stats_updated} "
         f"({result.duration_ms} ms)"
     )
+
+
+def _run_team_defense(ss: Session, *, seasons: list[int]) -> None:
+    """Ingest team-defense (DST) raw stats, then commit.
+
+    Runs after the league sync so DEF players exist to match against. The
+    scored points land on the next ``ff-pipeline rescore``.
+    """
+    from ff_pipeline.crawlers.nflverse.runner import run_team_defense
+
+    result = run_team_defense(ss, seasons=seasons)
+    ss.commit()
+    typer.echo(
+        f"team_defense: stats +{result.stats_added} ~{result.stats_updated}, "
+        f"teams matched {result.teams_matched} / unmatched {result.teams_unmatched} "
+        f"({result.duration_ms} ms)"
+    )
+    if result.stats_added or result.stats_updated:
+        typer.secho(
+            "  run `ff-pipeline rescore` to score the new DST rows.",
+            fg="cyan",
+        )
 
 
 def _run_nfl_com(
@@ -430,6 +461,8 @@ def backfill_cmd(
                 sources=chosen,
                 week=week,
                 force=force,
+                league_start_year=settings.league_start_year,
+                relevant_positions=settings.relevant_positions_set,
             )
     finally:
         engine.dispose()
@@ -558,6 +591,103 @@ def reconstruct_cmd(
 
 
 # ---------------------------------------------------------------------------
+# draft
+# ---------------------------------------------------------------------------
+
+
+@app.command("draft")
+def draft_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year - 1)."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Capture only this season (sets --start and --end)."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run seasons already captured in pipeline_runs."
+    ),
+) -> None:
+    """Capture historical draft results from NFL.com /history pages.
+
+    Per season, reads ``/history/{year}/draftresults`` round by round and
+    writes one ``transactions`` row per pick (``transaction_type='draft'``,
+    ``effective_week=0``, ``executed_at`` ordered by overall pick), mirrored
+    onto ``team_rosters`` at week 0. Seasons whose draft NFL.com never
+    recorded are left empty (an honest gap). Resumable per season via
+    ``pipeline_runs(mode='draft')``; exits 77 on auth failure so it can be
+    resumed after ``cookie set``.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.history import run_draft_capture
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        end_year = end if end is not None else datetime.now().year - 1
+
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
+    try:
+        with Session(engine) as ss:
+            try:
+                results = run_draft_capture(
+                    ss,
+                    league_id=settings.nfl_league_id,
+                    start_year=start_year,
+                    end_year=end_year,
+                    fetcher=client,
+                    force=force,
+                )
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure during draft capture: {exc}. "
+                    "Refresh NFL_COOKIE via `cookie set`, then re-run to resume.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+    finally:
+        client.close()
+        engine.dispose()
+
+    captured = 0
+    for r in results:
+        if r.available:
+            captured += 1
+            typer.secho(
+                f"  {r.year}: picks={r.picks_parsed}, txns_added={r.txns_added} "
+                f"(skipped {r.txns_skipped}), roster_rows="
+                f"{r.roster_rows_added + r.roster_rows_updated}"
+                + (f", unknown_team={r.unknown_team_picks}" if r.unknown_team_picks else ""),
+                fg="green",
+            )
+        else:
+            typer.secho(f"  {r.year}: no obtainable draft — recorded nothing.", fg="yellow")
+    typer.echo(
+        f"Draft: seasons processed={len(results)} "
+        f"(captured {captured}, range {start_year}-{end_year})."
+    )
+
+
+# ---------------------------------------------------------------------------
 # rescore
 # ---------------------------------------------------------------------------
 
@@ -619,6 +749,70 @@ def rescore_cmd(
                 )
 
 
+@app.command("team-defense")
+def team_defense_cmd(
+    season: int | None = typer.Option(
+        None,
+        "--season",
+        help="Ingest only this season (default: every season with DEF players).",
+    ),
+    start_year: int | None = typer.Option(
+        None,
+        "--start-year",
+        help="First season for a range backfill (defaults to LEAGUE_START_YEAR).",
+    ),
+    end_year: int | None = typer.Option(
+        None,
+        "--end-year",
+        help="Last season for a range backfill (defaults to the current year).",
+    ),
+) -> None:
+    """Ingest team-defense (DST) raw stats from nflverse for past seasons.
+
+    DST stats are derived from nflverse team stats + schedules and matched
+    to rostered DEF players. Run after the league data is backfilled (DEF
+    players must exist), then run ``ff-pipeline rescore`` to score them.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nflverse.runner import run_team_defense
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        seasons = [season]
+    else:
+        first = start_year if start_year is not None else settings.league_start_year
+        last = end_year if end_year is not None else datetime.now().year
+        if first > last:
+            typer.secho(
+                f"--start-year ({first}) must be <= --end-year ({last}).", fg="red", err=True
+            )
+            raise typer.Exit(code=2)
+        seasons = list(range(first, last + 1))
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = run_team_defense(ss, seasons=seasons)
+            ss.commit()
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"team-defense: seasons={len(seasons)} stats +{result.stats_added} "
+        f"~{result.stats_updated}, teams matched {result.teams_matched} / "
+        f"unmatched {result.teams_unmatched}"
+    )
+    if result.stats_added or result.stats_updated:
+        typer.secho("Run `ff-pipeline rescore` to score the new DST rows.", fg="cyan")
+
+
 # ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------
@@ -675,6 +869,14 @@ def verify_cmd(
         "--sweep",
         help="Sweep mode: verify every starter on 3 named weeks for --season.",
     ),
+    reconcile: bool = typer.Option(
+        False,
+        "--reconcile",
+        help=(
+            "Reconcile each team's summed scored starters (incl. DST) against the "
+            "authoritative NFL.com team total. Offline; flags drift beyond tolerance."
+        ),
+    ),
 ) -> None:
     """Cross-check our scoring vs. NFL.com's stored point total."""
     _bootstrap_settings_and_logging()
@@ -690,6 +892,17 @@ def verify_cmd(
         verify_season_sweep,
     )
     from ff_pipeline.settings import get_settings
+
+    # Reconcile mode is offline (uses DB-stored team totals) and is mutually
+    # exclusive with the NFL.com-fetching player/sweep modes.
+    if reconcile:
+        if player is not None or sweep:
+            typer.secho(
+                "--reconcile cannot be combined with --player or --sweep.", fg="red", err=True
+            )
+            raise typer.Exit(code=2)
+        _run_reconcile(season=season, weeks=[week] if week is not None else None)
+        return
 
     if sweep and player is not None:
         typer.secho("--sweep and --player are mutually exclusive.", fg="red", err=True)
@@ -760,6 +973,53 @@ def verify_cmd(
     # scoring rules are missing (report.note explains which). Exit non-zero
     # so this can't read as success in a script.
     if report.failed > 0 or (sweep and report.total == 0):
+        raise typer.Exit(code=1)
+
+
+def _run_reconcile(*, season: int, weeks: list[int] | None) -> None:
+    """Offline team-total reconciliation: flag scoring drift incl. DST."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.scoring.verify import reconcile_team_totals
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    tolerance = settings.scoring_verify_tolerance
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            report = reconcile_team_totals(
+                ss,
+                league_id=settings.nfl_league_id,
+                season_year=season,
+                weeks=weeks,
+                tolerance=tolerance,
+            )
+    finally:
+        engine.dispose()
+
+    for c in report.comparisons:
+        ours = "—" if c.our_total is None else f"{c.our_total:.2f}"
+        theirs = "—" if c.nfl_com_total is None else f"{c.nfl_com_total:.2f}"
+        delta = "—" if c.delta is None else f"{c.delta:+.2f}"
+        status_color = "green" if c.passed else "red"
+        status = "PASS" if c.passed else "FAIL"
+        miss = f" missing={c.starters_missing_score}" if c.starters_missing_score else ""
+        suffix = f" [{c.note}]" if c.note else ""
+        typer.secho(
+            f"  {c.season_year} W{c.week:>2} {c.team_name or f'team {c.team_id}':<24} "
+            f"ours={ours:>7} nfl={theirs:>7} delta={delta:>7}  {status}{miss}{suffix}",
+            fg=status_color,
+        )
+    if report.note:
+        typer.secho(f"  {report.note}", fg="yellow", err=True)
+    typer.echo(
+        f"Reconcile: total={report.total} passed={report.passed} failed={report.failed} "
+        f"(tolerance={tolerance})"
+    )
+    if report.failed > 0 or report.total == 0:
         raise typer.Exit(code=1)
 
 
@@ -848,6 +1108,136 @@ def backup_cmd(
         f"Backup: wrote {result.backup_path} ({result.bytes_written} bytes); "
         f"pruned {len(result.pruned_files)}."
     )
+
+
+# ---------------------------------------------------------------------------
+# prune-players
+# ---------------------------------------------------------------------------
+
+
+@app.command("prune-players")
+def prune_players_cmd(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be deleted; touch nothing."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt (for non-interactive use)."
+    ),
+    no_backup: bool = typer.Option(
+        False, "--no-backup", help="Skip the automatic pre-delete backup (not recommended)."
+    ),
+) -> None:
+    """Delete players this IDP-less league can never roster.
+
+    nflverse ships the entire NFL player universe; this removes the noise in
+    two complementary passes:
+
+    * **Irrelevant position** — players whose position is outside
+      ``RELEVANT_POSITIONS`` and that no roster / transaction / availability /
+      override row references. Their incidental stat and projection rows are
+      cascade-deleted. Anything the league actually rostered is protected,
+      regardless of its (often mislabeled) position string.
+    * **Fully orphaned** — leftover rows no other table references at all
+      (e.g. pre-league-era skill players).
+
+    Always previews first: run with ``--dry-run`` to see both breakdowns and
+    the cascade blast radius, then re-run to delete. A timestamped backup is
+    taken before any delete unless ``--no-backup`` is given.
+    """
+    _bootstrap_settings_and_logging()
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.observability import BackupError, perform_backup
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.prune import (
+        prune_irrelevant_position_players,
+        prune_orphan_players,
+    )
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    relevant = settings.relevant_positions_set
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            # Preview both passes first so the operator sees the full blast
+            # radius before any destructive choice — even in delete mode.
+            pos_preview = prune_irrelevant_position_players(
+                ss, relevant_positions=relevant, dry_run=True
+            )
+            orphan_preview = prune_orphan_players(ss, dry_run=True)
+
+            if pos_preview.players_found:
+                typer.echo(
+                    f"Irrelevant-position players (not rostered): {pos_preview.players_found}"
+                )
+                for pos, n in sorted(
+                    pos_preview.by_position.items(), key=lambda kv: kv[1], reverse=True
+                ):
+                    typer.echo(f"  {pos:<8} {n}")
+                if pos_preview.cascade_deleted:
+                    cascade = ", ".join(
+                        f"{tbl}={n}" for tbl, n in pos_preview.cascade_deleted.items() if n
+                    )
+                    if cascade:
+                        typer.echo(f"  + cascade rows: {cascade}")
+            else:
+                typer.echo("No prunable irrelevant-position players found.")
+
+            if orphan_preview.orphans_found:
+                typer.echo(f"Fully-orphaned players: {orphan_preview.orphans_found}")
+                for pos, n in sorted(
+                    orphan_preview.by_position.items(), key=lambda kv: kv[1], reverse=True
+                ):
+                    typer.echo(f"  {pos:<8} {n}")
+            else:
+                typer.echo("No fully-orphaned players found.")
+
+            total = pos_preview.players_found + orphan_preview.orphans_found
+            if dry_run or not total:
+                return
+
+            if not yes:
+                confirmed = typer.confirm(
+                    f"Delete {total} players ({pos_preview.players_found} "
+                    f"irrelevant-position + {orphan_preview.orphans_found} orphaned)?",
+                    default=False,
+                )
+                if not confirmed:
+                    typer.echo("Aborted; nothing deleted.")
+                    return
+
+            if not no_backup:
+                backup_dir = (PROJECT_ROOT / "data" / "backups").resolve()
+                try:
+                    result = perform_backup(
+                        database_url=settings.database_url, backup_dir=backup_dir
+                    )
+                    typer.echo(f"Backup written to {result.backup_path} before pruning.")
+                except BackupError as exc:
+                    typer.secho(
+                        f"Pre-prune backup failed ({exc}); aborting. "
+                        "Re-run with --no-backup to override.",
+                        fg="red",
+                        err=True,
+                    )
+                    raise typer.Exit(code=1) from exc
+
+            pos_outcome = prune_irrelevant_position_players(
+                ss, relevant_positions=relevant, dry_run=False
+            )
+            orphan_outcome = prune_orphan_players(ss, dry_run=False)
+            ss.commit()
+            cascade_total = sum(pos_outcome.cascade_deleted.values())
+            typer.secho(
+                f"Deleted {pos_outcome.players_deleted} irrelevant-position players "
+                f"(+{cascade_total} cascade rows) and "
+                f"{orphan_outcome.deleted} orphaned players.",
+                fg="green",
+            )
+    finally:
+        engine.dispose()
 
 
 # ---------------------------------------------------------------------------

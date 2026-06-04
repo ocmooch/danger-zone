@@ -105,6 +105,7 @@ def _patch_run_machinery():
         mock.patch("ff_pipeline.cli._run_nflverse", manager.nflverse),
         mock.patch("ff_pipeline.cli._run_nfl_com", manager.nfl_com),
         mock.patch("ff_pipeline.cli._run_sleeper", manager.sleeper),
+        mock.patch("ff_pipeline.cli._run_team_defense", manager.team_defense),
     ):
         yield manager
 
@@ -118,11 +119,13 @@ def test_run_no_source_sequences_all_three_in_order() -> None:
     with _patch_run_machinery() as manager:
         result = runner.invoke(app, ["run"])
     assert result.exit_code == 0, result.stdout
-    assert _sources_run(manager) == ["nflverse", "nfl_com", "sleeper"]
+    # team_defense runs last: it matches against the DEF players the NFL.com
+    # roster sync creates earlier in the sequence.
+    assert _sources_run(manager) == ["nflverse", "nfl_com", "sleeper", "team_defense"]
 
 
 def test_run_single_source_runs_only_that_source() -> None:
-    for src in ("nflverse", "nfl_com", "sleeper"):
+    for src in ("nflverse", "nfl_com", "sleeper", "team_defense"):
         with _patch_run_machinery() as manager:
             result = runner.invoke(app, ["run", "--source", src])
         assert result.exit_code == 0, result.stdout

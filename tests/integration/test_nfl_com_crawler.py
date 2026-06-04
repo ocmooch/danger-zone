@@ -15,6 +15,7 @@ so the test runs offline. Verifies:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -73,12 +74,17 @@ class _StubFetcher:
         if "/owners" in url:
             return _load("owners.html")
         if "/team/" in url:
-            # Every team URL returns the same real roster fixture. The
-            # runner FKs rosters off the internal team_id it computes from
-            # the owners list, not off the parsed page's own team_id, so
-            # repeating one team's roster across all 12 owners is fine for
-            # exercising the upsert + FK plumbing.
-            return _load("team_roster_1.html")
+            # Every team URL returns the same real roster fixture, but with
+            # its NFL.com player ids offset per team so each of the 12 teams
+            # carries a *distinct* set of players. The season-scoped
+            # UNIQUE(season_year, week, player_id) enforces one team per
+            # player per week, so reusing identical players across teams
+            # would collapse all 12 rosters onto one team. The offset is
+            # keyed on the URL's teamId (not a call counter) so re-runs
+            # resolve to the same players and stay idempotent. Distinct ids
+            # also defeat the resolver's fuzzy name merge: an existing
+            # player's conflicting nfl_com_player_id rejects the match.
+            return _offset_player_ids(_load("team_roster_1.html"), url)
         if "schedule" in url:
             return _load("weekly_matchups_w7.html")
         if "transactions" in url:
@@ -100,6 +106,28 @@ class _StubFetcher:
 
 def _load(name: str) -> str:
     return (FIXTURE_DIR / name).read_text(encoding="utf-8")
+
+
+# Matches both the href form (``playerId=NNN``) the parser reads first and
+# the class fallback (``playerNameId-NNN``); offsetting both keeps a single
+# player's two id encodings in agreement.
+_PLAYER_ID_TOKEN = re.compile(r"(playerId=|playerNameId-)(\d+)")
+_TEAM_ID_IN_URL = re.compile(r"/team/(\d+)")
+
+
+def _offset_player_ids(html: str, url: str) -> str:
+    """Make a reused roster fixture team-unique by offsetting player ids.
+
+    The offset derives from the URL's teamId so the same team always maps
+    to the same players (idempotent re-runs); base ids are ~2.5M, so a
+    100M-per-team stride never collides across the 12 teams.
+    """
+    m = _TEAM_ID_IN_URL.search(url)
+    team_no = int(m.group(1)) if m else 0
+    offset = team_no * 100_000_000
+    return _PLAYER_ID_TOKEN.sub(
+        lambda mm: f"{mm.group(1)}{int(mm.group(2)) + offset}", html
+    )
 
 
 @pytest.fixture
@@ -338,15 +366,19 @@ def test_runner_creates_player_stubs_for_new_nfl_com_ids(session: Session) -> No
 
     players = session.execute(select(Player)).scalars().all()
     nfl_ids = {p.nfl_com_player_id for p in players if p.nfl_com_player_id}
-    # 16 roster entries x 12 teams = 192 references but they all share the
-    # same 16 nfl_com_player_ids (the same fixture is reused per team), so
-    # we expect 16 unique players from the roster + 3 from the synthetic
-    # availability fixtures (555, 666, 777).
-    assert "2563722" in nfl_ids  # Joe Burrow (QB) — from team roster
-    assert "2569747" in nfl_ids  # Jahmyr Gibbs (RB) — from team roster
+    # Each of the 12 teams carries the 16-entry roster fixture with its
+    # player ids offset per team (see _offset_player_ids), so the roster
+    # contributes 16 * 12 = 192 distinct nfl_com_player_ids. The offset
+    # stride (100M) is far above any real base id, so the offset roster
+    # ids are exactly the ids at/above 100M.
+    roster_ids = {i for i in nfl_ids if i.isdigit() and int(i) >= 100_000_000}
+    assert len(roster_ids) == 192
+    # Joe Burrow (base id 2563722) on team 1 → offset by 100M.
+    assert str(100_000_000 + 2563722) in nfl_ids
     # Availability fixtures (real Week 17 captures): Mahomes is the top
     # row of page 0, Boutte is the top of page 25 — both are FA in the
-    # live league but still need a Player stub.
+    # live league but still need a Player stub. These come from the
+    # /players sweep, not the /team pages, so they are not offset.
     assert "2558125" in nfl_ids  # Patrick Mahomes (availability page 0)
     assert "2570092" in nfl_ids  # Kayshon Boutte (availability page 25)
 

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
+from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
     League,
     Matchup,
@@ -157,6 +158,38 @@ def roster_for_team_week(
     return [(r, p) for r, p in session.execute(stmt).all()]
 
 
+def nfl_franchises_that_played(session: Session, season_year: int, week: int) -> set[str]:
+    """Return the canonical franchise codes that had an NFL game that week.
+
+    Derived from the distinct ``nfl_opponent`` values recorded in
+    ``player_stats_raw`` for ``(season_year, week)``: every team that took the
+    field is some player's opponent, so the set of opponents *is* the set of
+    teams that played. Codes are folded via :func:`canonical_franchise` so the
+    result compares cleanly against a player's ``nfl_team`` regardless of
+    spelling or relocation drift.
+
+    A franchise absent from this set had no game that week — i.e. a bye. The
+    set is empty when no stats are ingested for the week yet; callers must
+    treat an empty result as "unknown" and not infer byes from it (otherwise a
+    not-yet-ingested week would flag every player as on a bye).
+    """
+    rows = session.execute(
+        select(PlayerStatsRaw.nfl_opponent)
+        .where(
+            PlayerStatsRaw.season_year == season_year,
+            PlayerStatsRaw.week == week,
+            PlayerStatsRaw.nfl_opponent.isnot(None),
+        )
+        .distinct()
+    ).scalars()
+    played: set[str] = set()
+    for opponent in rows:
+        code = canonical_franchise(opponent)
+        if code is not None:
+            played.add(code)
+    return played
+
+
 def matchups_for_team(session: Session, team_id: int) -> list[Matchup]:
     stmt = (
         select(Matchup).where(Matchup.team_id == team_id).order_by(Matchup.season_id, Matchup.week)
@@ -285,6 +318,7 @@ def search_players(
     position: str | None = None,
     nfl_team: str | None = None,
     active: bool | None = None,
+    league_relevant: bool | None = None,
     gsis_id: str | None = None,
     sleeper_id: str | None = None,
     nfl_com_player_id: str | None = None,
@@ -301,6 +335,15 @@ def search_players(
         stmt = stmt.where(Player.nfl_team == nfl_team)
     if active is not None:
         stmt = stmt.where(Player.is_active.is_(active))
+    # League-relevance is a *historical* fact — "was this player ever rostered
+    # in THIS league?" — and is distinct from ``active`` (a current-NFL fact).
+    # A non-NULL rostered span is the marker; nflverse ships the whole NFL
+    # universe and most of it (the "ghost" players) never touched this league.
+    if league_relevant is not None:
+        if league_relevant:
+            stmt = stmt.where(Player.last_rostered_season.is_not(None))
+        else:
+            stmt = stmt.where(Player.last_rostered_season.is_(None))
     # External-ID filters are exact-match join keys, not fuzzy text — they
     # let Phase 2/3 resolve a player by any platform's ID (the M7 goal:
     # queryable by name, GSIS, Sleeper, or NFL.com ID).

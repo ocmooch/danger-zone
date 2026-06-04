@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     scoring_verify_tolerance: float = 0.1
     save_raw_html: bool = False
 
+    # --- Scope ---
+    # Positions this league can actually roster. nflverse returns the entire
+    # NFL player universe (every IDP, lineman, long-snapper, etc.); we only
+    # ingest player metadata for these. Team defense ("DEF") is synthesized
+    # separately, not emitted by nflverse load_players, but is kept here so
+    # the set is the single source of truth for "rosterable in this league".
+    # Override via RELEVANT_POSITIONS as a comma-separated string.
+    relevant_positions: str = "QB,RB,WR,TE,K,DEF"
+
     # ---- Validators ----
 
     @field_validator("nfl_league_id")
@@ -95,6 +104,11 @@ class Settings(BaseSettings):
         if not v.is_absolute():
             return (PROJECT_ROOT / v).resolve()
         return v
+
+    @property
+    def relevant_positions_set(self) -> frozenset[str]:
+        """``relevant_positions`` parsed into an upper-cased frozenset."""
+        return frozenset(p.strip().upper() for p in self.relevant_positions.split(",") if p.strip())
 
 
 def load_settings() -> Settings:

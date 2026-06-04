@@ -1,0 +1,66 @@
+"""Unit tests for the DEF → nflverse-abbreviation resolver.
+
+Pure function over a player-like object; no DB needed. Covers:
+
+* abbreviation taken straight from ``nfl_team`` when present;
+* nickname backfill when ``nfl_team`` is blank;
+* relocation-aware abbreviations keyed by season year;
+* unresolvable input returns ``None``.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from ff_pipeline.crawlers.nflverse.franchises import resolve_def_team_abbrev
+
+
+def _player(*, name_full: str, nfl_team: str | None) -> SimpleNamespace:
+    return SimpleNamespace(player_id=1, name_full=name_full, nfl_team=nfl_team)
+
+
+def test_uses_stored_abbrev_when_present() -> None:
+    p = _player(name_full="San Francisco 49ers", nfl_team="SF")
+    assert resolve_def_team_abbrev(p, 2024) == "SF"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Cowboys", "DAL"),
+        ("Jets", "NYJ"),
+        ("Panthers", "CAR"),
+        ("New York Giants", "NYG"),
+    ],
+)
+def test_backfills_blank_nfl_team_from_nickname(name: str, expected: str) -> None:
+    p = _player(name_full=name, nfl_team=None)
+    assert resolve_def_team_abbrev(p, 2024) == expected
+
+
+def test_raiders_relocation_by_year() -> None:
+    # Blank nfl_team, recovered from the "Raiders" nickname, then
+    # relocation-adjusted: OAK through 2019, LV from 2020.
+    p = _player(name_full="Raiders", nfl_team=None)
+    assert resolve_def_team_abbrev(p, 2019) == "OAK"
+    assert resolve_def_team_abbrev(p, 2020) == "LV"
+
+
+def test_chargers_relocation_by_year() -> None:
+    # Stored as the current LAC; SD through 2016, LAC from 2017.
+    p = _player(name_full="Los Angeles Chargers", nfl_team="LAC")
+    assert resolve_def_team_abbrev(p, 2016) == "SD"
+    assert resolve_def_team_abbrev(p, 2017) == "LAC"
+
+
+def test_rams_relocation_by_year() -> None:
+    p = _player(name_full="Los Angeles Rams", nfl_team="LA")
+    assert resolve_def_team_abbrev(p, 2015) == "STL"
+    assert resolve_def_team_abbrev(p, 2016) == "LA"
+
+
+def test_unresolvable_returns_none() -> None:
+    p = _player(name_full="", nfl_team=None)
+    assert resolve_def_team_abbrev(p, 2024) is None

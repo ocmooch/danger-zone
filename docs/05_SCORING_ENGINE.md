@@ -185,7 +185,7 @@ This is an integration test that runs as part of `pytest tests/integration/test_
 | Player has no stat line that week (DNP) | Stats dict has all zeros / missing keys; `.get(key, 0)` defaults work; result is 0 points |
 | Player is on bye week | Same as DNP — 0 points |
 | Stat correction post-game (nflverse re-publishes) | New `player_stats_raw` row with updated `ingested_at`; engine re-runs; new `player_stats_scored` row written; old one retained for audit |
-| Defense/ST scoring uses opponent stats | The "stats" dict for a DEF is the OPPONENT'S offensive stats — handled by a different normalizer pre-step that constructs the DEF stat dict from opponent stats |
+| Defense/ST scoring uses opponent stats | The "stats" dict for a DEF mixes the team's own defensive counting events with opponent-derived `points_allowed` / `total_yards_allowed`. Built by `crawlers/nflverse/team_defense.py` from `load_team_stats` + `load_schedules`, keyed per NFL team, then matched to the rostered DEF player by the season-aware resolver in `franchises.py`. The engine itself is unchanged — it scores the resulting dict like any other. |
 | Negative stats (INTs, fumbles, missed FGs) | Rule's `points_per_unit` is negative; engine math handles naturally |
 | Bonus stacking (300+ AND 400+ yard bonuses) | Each is a separate rule; both trigger independently for a 400-yard game |
 | Bonus only above threshold (e.g., long TD 40+ yards) | `threshold_min` on the stat applies; nflverse's `pbp` data provides the per-play yardage we need to compute "TDs of 40+ yards" |

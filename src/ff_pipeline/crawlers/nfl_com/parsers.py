@@ -198,6 +198,27 @@ class ParsedStandings:
     last_place_team_id: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedDraftPick:
+    """One pick from /history/{year}/draftresults (By Round view).
+
+    ``overall_pick`` is NFL.com's own global pick number (the ``.count``
+    cell renders "13." on the first pick of round 2 of a 12-team draft),
+    so it already encodes snake order and is the authority for sequencing
+    — the runner does not reconstruct it from round + team count.
+    ``draft_round`` comes from the round header; ``team_id`` /
+    ``player_id`` are the NFL.com ids the runner resolves to internal rows.
+    """
+
+    overall_pick: int
+    draft_round: int
+    team_id: int | None
+    player_id: str | None
+    player_name: str | None
+    position: str | None
+    nfl_team: str | None
+
+
 # ---------------------------------------------------------------------------
 # League home
 # ---------------------------------------------------------------------------
@@ -1104,6 +1125,120 @@ def _direction_from_text(text: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Draft results
+# ---------------------------------------------------------------------------
+
+
+_ROUND_FROM_TEXT = re.compile(r"Round\s+(\d+)", re.IGNORECASE)
+_DRAFT_ROUND_DETAIL_RE = re.compile(r"draftResultsDetail=(\d+)")
+
+
+def parse_draft_round_numbers(html: str) -> tuple[int, ...]:
+    """Round numbers offered by the draft page's round navigation.
+
+    The "By Round" view only renders one round at a time, so the runner
+    needs this list to know how many round pages to fetch. Returns an
+    empty tuple when the page carries no draft navigation (e.g. a season
+    whose draft NFL.com never recorded).
+    """
+    soup = BeautifulSoup(html, "lxml")
+    rounds: list[int] = []
+    seen: set[int] = set()
+    for anchor in soup.select("div.detailNav a"):
+        href = anchor.get("href")
+        if not isinstance(href, str):
+            continue
+        match = _DRAFT_ROUND_DETAIL_RE.search(href)
+        if match:
+            value = int(match.group(1))
+            if value not in seen:
+                seen.add(value)
+                rounds.append(value)
+    return tuple(rounds)
+
+
+def parse_draft_picks(html: str) -> list[ParsedDraftPick]:
+    """Parse every draft pick rendered on one draft-results page.
+
+    Handles both the default page (round 1) and a per-round page; each
+    ``div.results div.wrap`` is one round (a header + a list of picks).
+    Returns ``[]`` when the page has no draft module or no picks — the
+    runner treats that as "no obtainable draft" and records nothing,
+    rather than fabricating.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    results = soup.select_one("div.results")
+    if results is None:
+        return []
+
+    picks: list[ParsedDraftPick] = []
+    for wrap in results.select("div.wrap"):
+        header = wrap.find("h4")
+        round_match = _ROUND_FROM_TEXT.search(header.get_text(" ", strip=True)) if header else None
+        if round_match is None:
+            continue
+        draft_round = int(round_match.group(1))
+        roster = wrap.find("ul")
+        if roster is None:
+            continue
+        for li in roster.find_all("li", recursive=False):
+            pick = _parse_draft_pick_row(li, draft_round)
+            if pick is not None:
+                picks.append(pick)
+    return picks
+
+
+def _parse_draft_pick_row(li: Tag, draft_round: int) -> ParsedDraftPick | None:
+    overall = _parse_int(_text_or_none(li.select_one("span.count")))
+    if overall is None:
+        return None
+
+    player_anchor = li.select_one("a.playerName") or _first_player_anchor(li)
+    player_id = _player_id_from_anchor(player_anchor) if player_anchor else None
+    player_name = player_anchor.get_text(strip=True) if player_anchor else None
+
+    position, nfl_team = _split_position_team(_text_or_none(li.select_one("em")))
+
+    team_anchor = li.select_one("a.teamName")
+    team_id = _team_id_from_node(team_anchor) if team_anchor else None
+
+    return ParsedDraftPick(
+        overall_pick=overall,
+        draft_round=draft_round,
+        team_id=team_id,
+        player_id=player_id,
+        player_name=player_name,
+        position=position,
+        nfl_team=nfl_team,
+    )
+
+
+def _text_or_none(node: Tag | None) -> str | None:
+    return node.get_text(" ", strip=True) if node is not None else None
+
+
+def _split_position_team(text: str | None) -> tuple[str | None, str | None]:
+    """Split an "RB - SF" descriptor into (position, nfl_team)."""
+    if not text:
+        return (None, None)
+    parts = [p.strip() for p in text.split("-", 1)]
+    position = _clean_position(parts[0]) if parts else None
+    nfl_team = parts[1].upper() if len(parts) > 1 and parts[1] else None
+    return (position, nfl_team)
+
+
+def _team_id_from_node(node: Tag) -> int | None:
+    """NFL.com team id from a team anchor's ``teamId-N`` class or href."""
+    classes: list[str] | str = node.get("class") or []
+    if isinstance(classes, list):
+        for cls in classes:
+            match = _TEAM_ID_FROM_CLASS.search(cls)
+            if match:
+                return int(match.group(1))
+    return _id_from_anchor(node, _TEAM_ID_FROM_HREF)
+
+
+# ---------------------------------------------------------------------------
 # Settings (scoring page)
 # ---------------------------------------------------------------------------
 
@@ -1385,6 +1520,7 @@ __all__ = [
     "ParseError",
     "ParsedAvailability",
     "ParsedAvailabilityPage",
+    "ParsedDraftPick",
     "ParsedGamecenter",
     "ParsedGamecenterSide",
     "ParsedLeagueHome",
@@ -1396,6 +1532,8 @@ __all__ = [
     "ParsedTeamRoster",
     "ParsedTransaction",
     "parse_availability_page",
+    "parse_draft_picks",
+    "parse_draft_round_numbers",
     "parse_gamecenter",
     "parse_league_home",
     "parse_owners",
