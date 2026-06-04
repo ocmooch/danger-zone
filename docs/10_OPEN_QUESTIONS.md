@@ -50,15 +50,33 @@ the keys; only the input values are missing.
 **State**: Gamecenter lineups render abbreviated names ("E. Pineiro").
 `scripts/merge_split_player_identities.py` folds stubs onto the nflverse row
 by (first-initial, last-token, position) — 539 merges applied — but
-**deliberately skips** (~44 stubs) when two real players share that key
-(David vs Duke Johnson; J.J. vs Jordy Nelson). Those starters resolve to a
-statless stub and surface as `our_raw_stats_missing` in `verify`. Conservative
-by design — a wrong fold would mis-attribute another player's stats.
+**deliberately skips** when two real players share that key, because a wrong
+fold would mis-attribute another player's stats.
 
-**Owner**: optional manual cleanup. **Fix path**: add the correct
-`nfl_com_player_id` → canonical `player_id` to `player_id_overrides`, or
-extend the merge script with a curated allowlist, then re-run reconstruction
-for the affected weeks.
+The **league-rostered** subset of these skips (stubs that hold a
+`first/last_rostered_season` span, so they shadow a real player on the
+players index) is now resolved: `scripts/merge_roster_name_stubs.py` carries
+a hand-verified `nfl_com_player_id` → canonical map, applies it through the
+same FK-repoint / stamp path, and **seeds `player_id_overrides`** so future
+roster syncs resolve directly and never re-stub (48 merges). Two root causes
+were behind these specific skips: (a) a `_normalize` bug that ate a leading
+`V.`/`I.`/`X.` initial as a roman-numeral suffix, hiding *unique* matches
+(Victor Cruz, Vernon Davis …) — now fixed with a regression test; and (b)
+nflverse storing **legal** first names (Torrey Smith = `James Smith`, Duke
+Johnson = `Randy Johnson`), which defeats first-initial keys — handled by the
+curated map (David **and** Duke Johnson both resolved).
+
+**Remaining**: gamecenter-only skips with no rostered span still surface as
+`our_raw_stats_missing` in `verify`. One rostered stub (J.J. Nelson, ARI
+2016-2017) is **held back** because its obvious canonical row (17322) is
+itself a pre-existing J.J./Jordy Nelson conflation — that row carries a
+2010-2018 span though J.J. debuted in 2015. Untangle 17322 first, then fold.
+Two more (Torry Holt, Vonta Leach) have no nflverse row at all (retired
+before the 2010 window) and are left as honest single-row gaps.
+
+**Owner**: optional manual cleanup. **Fix path**: extend the curated map in
+`merge_roster_name_stubs.py` (or `player_id_overrides`) for the gamecenter
+remainder, then re-run reconstruction for the affected weeks.
 
 ---
 

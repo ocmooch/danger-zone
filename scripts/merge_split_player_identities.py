@@ -89,14 +89,26 @@ _MIN_LEADER_ROWS = 10
 _DOMINANCE_FACTOR = 5
 
 
+# Generational suffixes stripped during normalization. "v"/"i"/"x" double
+# as single-letter initials, so they are only dropped when they are *not*
+# the leading token (see _normalize) — a leading "v" is "V. Cruz", not a fifth.
+_NAME_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv", "v"})
+
+
 def _normalize(name: str | None) -> str:
     if not name:
         return ""
     decoded = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     decoded = decoded.lower()
-    decoded = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", "", decoded)
+    # Strip punctuation without inserting space so "D.J." collapses to "dj"
+    # (keeps "D.J. Moore" ≡ "DJ Moore"); spaces in the source still split.
     decoded = re.sub(r"[^a-z ]", "", decoded)
-    return re.sub(r"\s+", " ", decoded).strip()
+    # Drop generational suffixes, but never the leading token: a lone
+    # "v"/"i"/"x" there is an abbreviated first name ("V. Cruz" → "v cruz"),
+    # not a roman-numeral suffix. Eating it collapsed the name to a single
+    # token and silently defeated the initial+last match path.
+    tokens = [t for i, t in enumerate(decoded.split()) if not (i > 0 and t in _NAME_SUFFIXES)]
+    return " ".join(tokens)
 
 
 class _Player:
