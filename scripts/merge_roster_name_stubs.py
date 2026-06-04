@@ -150,14 +150,13 @@ NO_CANONICAL_STUBS: dict[int, str] = {
 # corrupted, so folding the stub in would compound the error. These need a
 # separate untangle before they can be merged. Reported, not modified.
 #
-#   26662  J. Nelson WR ARI 2016-2017 — is J.J. Nelson, but the canonical
-#   row 17322 ("J.J. Nelson", legal Jamarcus) already carries a 2010-2018
-#   rostered span: the 2010-2014 weeks belong to *Jordy* Nelson (J.J.
-#   debuted 2015). 17322 is a pre-existing J.J./Jordy conflation; fix that
-#   first, then this stub can fold into the cleaned J.J. Nelson row.
-NEEDS_REVIEW_STUBS: dict[int, str] = {
-    26662: "J. Nelson WR ARI 2016-2017 — canonical 17322 is a J.J./Jordy Nelson conflation",
-}
+# RESOLVED 2026-06: 26662 (J. Nelson) is handled by
+# scripts/untangle_nelson_conflation.py. NFL.com id 1032 — actually *Jordy*
+# Nelson's id — had been stamped on the J.J./Jamarcus row 17322, dragging
+# Jordy's fantasy history onto J.J.; that script repoints it back to the real
+# Jordy row (17326) and only then folds J.J.'s own stub into 17322. See
+# §P1-V3 in docs/10_OPEN_QUESTIONS.md.
+NEEDS_REVIEW_STUBS: dict[int, str] = {}
 
 
 def _validate(by_id: dict[int, Any], stub_id: int, canon_id: int) -> tuple[str, str] | None:

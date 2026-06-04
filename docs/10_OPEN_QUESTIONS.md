@@ -66,17 +66,31 @@ nflverse storing **legal** first names (Torrey Smith = `James Smith`, Duke
 Johnson = `Randy Johnson`), which defeats first-initial keys — handled by the
 curated map (David **and** Duke Johnson both resolved).
 
-**Remaining**: gamecenter-only skips with no rostered span still surface as
-`our_raw_stats_missing` in `verify`. One rostered stub (J.J. Nelson, ARI
-2016-2017) is **held back** because its obvious canonical row (17322) is
-itself a pre-existing J.J./Jordy Nelson conflation — that row carries a
-2010-2018 span though J.J. debuted in 2015. Untangle 17322 first, then fold.
-Two more (Torry Holt, Vonta Leach) have no nflverse row at all (retired
-before the 2010 window) and are left as honest single-row gaps.
+**Resolved — J.J. / Jordy Nelson (rostered subset now fully closed)**: the
+held-back stub is folded. The blocker was that NFL.com id `1032` — actually
+**Jordy** Nelson's id — had been stamped onto the J.J./Jamarcus canonical row
+(17322), dragging Jordy's whole fantasy history (`team_rosters`,
+`transactions`) onto J.J. and leaving the real Jordy row (17326) with no
+NFL.com side at all. The nflverse stats were never conflated (they split
+cleanly by `gsis_id`); the defect was purely the misplaced NFL.com id.
+`scripts/untangle_nelson_conflation.py` repoints Jordy's NFL.com rows
+17322 → 17326, hands id `1032` back to Jordy, then folds J.J.'s own stub
+(id `2552656`) into 17322 — seeding `player_id_overrides` for both so neither
+re-stubs. Final spans: Jordy 2010-2018, J.J. 2016-2017. `verify` passes to the
+cent for both (J.J. 2017 W1 15.30=15.30, 2016 W15 14.80=14.80; Jordy 2016 W1
+15.20=15.20).
 
-**Owner**: optional manual cleanup. **Fix path**: extend the curated map in
-`merge_roster_name_stubs.py` (or `player_id_overrides`) for the gamecenter
-remainder, then re-run reconstruction for the affected weeks.
+**Accepted source gaps (cannot be merged)**: Torry Holt and Vonta Leach have
+no nflverse row at all (retired before the 2010 window), so there is nothing
+to fold into. Left as honest single-row gaps — *not* pending work; do not
+fabricate a canonical identity for them.
+
+**Remaining (irreducible)**: gamecenter-only skips with **no** rostered span
+still surface as `our_raw_stats_missing` in `verify` — genuinely ambiguous
+abbreviated names (several real players sharing initial+last+position) plus
+non-nflverse names. They do not shadow a real player on the players index.
+**Owner**: optional. **Fix path**: hand-verify individual cases into
+`player_id_overrides` and re-run the affected weeks — no automated guess is safe.
 
 ---
 
