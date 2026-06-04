@@ -67,8 +67,6 @@ from ff_pipeline.normalizer.conflicts import Source, is_higher_precedence
 from ff_pipeline.repository.models import Player, PlayerIdOverride
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from sqlalchemy.orm import Session
 
 log = get_logger(__name__)
@@ -166,7 +164,8 @@ class PlayerResolver:
         # external_id_kind -> {external_value -> player_id}
         self._direct_index: dict[str, dict[str, int]] = {kind: {} for kind in _EXTERNAL_ID_KINDS}
         # Lazy-loaded on first fuzzy lookup; refreshed after creates.
-        self._fuzzy_index: list[tuple[int, str, str | None]] | None = None
+        # Tuple: (player_id, name_full, position, rookie_year, last_season).
+        self._fuzzy_index: list[tuple[int, str, str | None, int | None, int | None]] | None = None
         self._fuzzy_dirty = True
         self.stats = ResolveStats()
         self._prime_direct_index()
@@ -175,16 +174,22 @@ class PlayerResolver:
     # Public API
     # ------------------------------------------------------------------
 
-    def resolve(self, identity: PlayerIdentity, *, source: Source) -> int:
+    def resolve(
+        self, identity: PlayerIdentity, *, source: Source, season: int | None = None
+    ) -> int:
         """Return the internal ``player_id`` for ``identity``.
 
         Side effects: creates a new ``players`` row if no match exists,
         merges any newly-seen external IDs onto the matched row, and
         overwrites identity fields when ``source`` outranks the previous
         identity source per :mod:`conflicts`.
+
+        ``season`` is the year the observation belongs to (e.g. the lineup
+        week's season). When given, it constrains the *fuzzy* fallback to
+        candidates whose NFL career spans that year — see :meth:`try_match`.
         """
 
-        matched = self.try_match(identity, source=source)
+        matched = self.try_match(identity, source=source, season=season)
         if matched is not None:
             return matched
         return self._create(identity, source=source)
@@ -194,11 +199,14 @@ class PlayerResolver:
         identities: list[PlayerIdentity],
         *,
         source: Source,
+        season: int | None = None,
     ) -> list[int]:
         """Convenience wrapper — resolve a batch, preserving input order."""
-        return [self.resolve(i, source=source) for i in identities]
+        return [self.resolve(i, source=source, season=season) for i in identities]
 
-    def try_match(self, identity: PlayerIdentity, *, source: Source) -> int | None:
+    def try_match(
+        self, identity: PlayerIdentity, *, source: Source, season: int | None = None
+    ) -> int | None:
         """Resolve ``identity`` *without* creating a stub on miss.
 
         Same precedence chain as :meth:`resolve` (override → direct ID →
@@ -207,21 +215,28 @@ class PlayerResolver:
         league actually cares about (every NFL player is in Sleeper's
         ``/players/nfl`` feed) — we don't want 11k stub rows just to
         store an ID mapping that may never get joined against.
+
+        When ``season`` is supplied, the fuzzy fallback only considers
+        candidates whose ``[rookie_year, last_season]`` career window
+        contains that year. This blocks the cross-namesake misattribution
+        where, e.g., a 2010 ``"S. Smith"`` lineup name-matches a Smith who
+        didn't enter the NFL until 2021 (override/direct-ID paths, which
+        are exact, are never season-constrained).
         """
-        # Lookups are listed in priority order. Each entry pairs a label
-        # (used for stats bookkeeping) with the bound lookup method —
-        # comparing bound-method identity via ``is`` is unreliable since
-        # ``self._lookup_x`` creates a fresh bound method on each access.
-        lookups: tuple[tuple[str, Callable[[PlayerIdentity], int | None]], ...] = (
+        # Override and direct-ID are exact and season-independent.
+        for label, lookup in (
             ("override", self._lookup_override),
             ("direct_id", self._lookup_direct),
-            ("fuzzy", self._lookup_fuzzy),
-        )
-        for label, lookup in lookups:
+        ):
             pid = lookup(identity)
             if pid is not None:
                 self._record_match(label, identity, pid, source=source)
                 return pid
+        # Fuzzy is name-similarity only, so it gets the era guard.
+        pid = self._lookup_fuzzy(identity, season=season)
+        if pid is not None:
+            self._record_match("fuzzy", identity, pid, source=source)
+            return pid
         return None
 
     def _record_match(
@@ -281,7 +296,7 @@ class PlayerResolver:
             )
         return matches[0][1]
 
-    def _lookup_fuzzy(self, identity: PlayerIdentity) -> int | None:
+    def _lookup_fuzzy(self, identity: PlayerIdentity, season: int | None = None) -> int | None:
         index = self._get_fuzzy_index()
         if not index:
             return None
@@ -290,8 +305,14 @@ class PlayerResolver:
 
         best_score = 0
         best_pid: int | None = None
-        for pid, name_full, position in index:
+        for pid, name_full, position, rookie_year, last_season in index:
             if target_position and position and position.upper() != target_position:
+                continue
+            # Era guard: a name match is only credible if the candidate was
+            # actually in the NFL that season. Filtering here (not just on the
+            # winner) lets the *right* same-name player win — the 2010 "S.
+            # Smith" lineup skips the 2021-rookie Smith and lands on Steve Smith.
+            if season is not None and not _career_contains(season, rookie_year, last_season):
                 continue
             score = fuzz.token_sort_ratio(identity.name_full, name_full)
             if score > best_score:
@@ -492,11 +513,18 @@ class PlayerResolver:
                 if value:
                     self._direct_index[kind][value] = player_id
 
-    def _get_fuzzy_index(self) -> list[tuple[int, str, str | None]]:
+    def _get_fuzzy_index(self) -> list[tuple[int, str, str | None, int | None, int | None]]:
         if self._fuzzy_index is None or self._fuzzy_dirty:
-            stmt = select(Player.player_id, Player.name_full, Player.position)
+            stmt = select(
+                Player.player_id,
+                Player.name_full,
+                Player.position,
+                Player.rookie_year,
+                Player.last_season,
+            )
             self._fuzzy_index = [
-                (pid, name, pos) for pid, name, pos in self._session.execute(stmt).all()
+                (pid, name, pos, rookie_year, last_season)
+                for pid, name, pos, rookie_year, last_season in self._session.execute(stmt).all()
             ]
             self._fuzzy_dirty = False
         return self._fuzzy_index
@@ -505,6 +533,20 @@ class PlayerResolver:
 def _id_value(identity: PlayerIdentity, kind: str) -> str | None:
     """Extract one external-ID field from a :class:`PlayerIdentity`."""
     return getattr(identity, kind, None)
+
+
+def _career_contains(season: int, rookie_year: int | None, last_season: int | None) -> bool:
+    """Whether a ``season`` observation is consistent with a candidate whose
+    NFL career spans ``[rookie_year, last_season]``.
+
+    Unknown bounds never exclude (we can't disprove a match we lack data
+    for). Nothing before ``rookie_year`` is ever legitimate — you can't be
+    rostered before your NFL debut. A one-season grace past ``last_season``
+    absorbs final-year/transition lineups and minor nflverse end-date drift.
+    """
+    if rookie_year is not None and season < rookie_year:
+        return False
+    return last_season is None or season <= last_season + 1
 
 
 def _is_nfl_com_team_defense(identity: PlayerIdentity) -> bool:

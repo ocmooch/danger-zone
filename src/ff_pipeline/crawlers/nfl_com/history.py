@@ -442,6 +442,10 @@ def _upsert_lineup_side(
                 nfl_com_player_id=entry.player_id,
             ),
             source="nfl_com",
+            # Constrain the fuzzy fallback to players active this season, so an
+            # abbreviated lineup name ("S. Smith") can't fold onto a same-name
+            # player from a different NFL era (see PlayerResolver.try_match).
+            season=season_year,
         )
         rows.append(
             {
@@ -474,9 +478,7 @@ def _upsert_lineup_side(
     )
     # Conflict on (season_year, week, player_id): a player who moved teams gets
     # UPDATEd onto the new team rather than double-rostered across teams.
-    counts = upsert(
-        session, TeamRoster, rows, conflict_cols=("season_year", "week", "player_id")
-    )
+    counts = upsert(session, TeamRoster, rows, conflict_cols=("season_year", "week", "player_id"))
     return (counts.rows_added, counts.rows_updated)
 
 
@@ -668,7 +670,10 @@ def _persist_draft_picks(
         if team_id is None:
             unknown_team += 1
             log.warning(
-                "draft: unknown nfl team_id", year=year, nfl_team_id=pick.team_id, overall=pick.overall_pick
+                "draft: unknown nfl team_id",
+                year=year,
+                nfl_team_id=pick.team_id,
+                overall=pick.overall_pick,
             )
             continue
         if not pick.player_id and not pick.player_name:
@@ -681,6 +686,9 @@ def _persist_draft_picks(
                 nfl_com_player_id=pick.player_id,
             ),
             source="nfl_com",
+            # A draft pick belongs to a player active that season; constrain
+            # the fuzzy fallback to that era (see PlayerResolver.try_match).
+            season=year,
         )
         executed_at = epoch + timedelta(seconds=pick.overall_pick)
         pick_in_round = (
