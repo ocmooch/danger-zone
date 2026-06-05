@@ -248,9 +248,15 @@ def test_runner_records_transactions_idempotently(session: Session) -> None:
     )
     session.commit()
     after_first = len(session.execute(select(Transaction)).all())
-    # Real fixture has 4 drops + 4 adds = 8 transactions (Lineup rows
-    # are skipped at the parser level).
-    assert after_first == 8
+    # Real fixture has 4 drops + 4 adds + 16 lineup moves = 24 rows; the
+    # full league diary now captures lineup changes too. The sweep also
+    # de-dups the boundary overlap (the fixture's "next" link points back at
+    # itself), so the second page adds nothing.
+    assert after_first == 24
+    types = [t.transaction_type for t in session.execute(select(Transaction)).scalars().all()]
+    assert types.count("lineup_change") == 16
+    assert types.count("drop") == 4
+    assert types.count("free_agent_add") == 4
 
     # Re-run: identical fixtures → identical fingerprints → zero new inserts.
     run_nfl_com(

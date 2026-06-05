@@ -121,6 +121,8 @@ One row per (season, team). A single owner shows up in N rows, one per season th
 | `regular_season_points_against` | REAL | |
 | `made_playoffs` | BOOLEAN | |
 | `playoff_finish` | INTEGER | 1=champ, 2=runner-up, 3=3rd place, etc. |
+| `team_avatar_asset_id` | INTEGER FK → assets | Team logo as it appeared THAT season; NULL until the avatar backfill runs |
+| `owner_avatar_asset_id` | INTEGER FK → assets | Owner avatar that season; NULL (NFL.com renders only a team logo per row today) |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
 UNIQUE(`season_id`, `team_name`) — and also UNIQUE(`season_id`, `owner_id`)
@@ -282,26 +284,45 @@ One row per (season, week, team). Two rows make a single head-to-head game.
 UNIQUE(`season_id`, `week`, `team_id`)
 
 ### `transactions`
-Trades, waivers, free agent adds, drops, IR placements.
+The full chronological league diary: trades, waivers, free-agent adds, drops, IR placements — **and** lineup/start-sit moves and commissioner/league-setting changes. The whole season log is swept (every paginated page), not just the most-recent page.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `transaction_id` | INTEGER PK AUTOINCREMENT | |
 | `season_id` | INTEGER FK → seasons | |
-| `transaction_type` | TEXT | `'draft'`, `'trade'`, `'waiver_add'`, `'free_agent_add'`, `'drop'`, `'ir_placement'`, `'ir_activation'` |
+| `transaction_type` | TEXT | `'draft'`, `'trade'`, `'waiver_add'`, `'free_agent_add'`, `'drop'`, `'ir_placement'`, `'ir_activation'`, `'lineup_change'`, `'setting_change'` |
 | `executed_at` | TIMESTAMP | When NFL.com recorded it |
 | `effective_week` | INTEGER | Week the move takes effect |
-| `team_id` | INTEGER FK → teams | The team this row affects |
+| `team_id` | INTEGER FK → teams | The team this row affects (NULL for `lineup_change`/`setting_change` — NFL.com renders no team anchor on those rows) |
 | `counterpart_team_id` | INTEGER FK → teams | For trades; NULL otherwise |
 | `player_id` | INTEGER FK → players | |
-| `direction` | TEXT | `'in'` or `'out'` — relative to `team_id` |
+| `direction` | TEXT | `'in'`/`'out'` — relative to `team_id`; for `lineup_change`, `'in'`=started, `'out'`=benched |
 | `waiver_priority_used` | INTEGER | For waivers, the priority slot consumed |
-| `notes` | TEXT | Free-text scraped from NFL.com (e.g., "Waiver claim awarded") |
+| `notes` | TEXT | Free-text scraped from NFL.com (e.g., the "By" owner) |
+| `extra_data` | TEXT (JSON) | Payload for rows that don't fit the player-move columns: `lineup_change` carries `{"from_slot","to_slot"}`; `setting_change` carries the change detail. NULL for add/drop/trade |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
 INDEX(`season_id`, `team_id`), INDEX(`season_id`, `player_id`)
 
-A trade between teams A and B involving 2 players generates 4 rows (one per player per team).
+A trade between teams A and B involving 2 players generates 4 rows (one per player per team). Cross-page trade legs are stitched into `counterpart_team_id` after the sweep.
+
+### `assets`
+Content-addressed binary blobs — team logos / owner avatars downloaded from NFL.com. Raw bytes live on disk under the assets root (`data/assets/<sha[:2]>/<sha>.<ext>`, gitignored); only metadata lives here so the SQLite file stays small and ports cleanly to Postgres. Identical default avatars across teams dedupe to one row via UNIQUE `sha256`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `asset_id` | INTEGER PK AUTOINCREMENT | |
+| `league_id` | TEXT FK → leagues | NULL allowed |
+| `kind` | TEXT | `'team_avatar'` \| `'user_avatar'` |
+| `source_url` | TEXT | Original NFL.com CDN URL (first one seen for these bytes) |
+| `sha256` | TEXT | Content hash; **UNIQUE** (dedup key) |
+| `content_type` | TEXT | From the download response |
+| `byte_size` | INTEGER | |
+| `storage_path` | TEXT | Path **relative to the assets root** |
+| `fetched_at` | TIMESTAMP | When the bytes were downloaded |
+| `created_at`, `updated_at` | TIMESTAMP | |
+
+UNIQUE(`sha256`), INDEX(`league_id`). Bytes are streamed by the read API at `GET /assets/{asset_id}`.
 
 ### `player_stats_raw`
 The atomic stat record. **One row per (player, season, week, source)**. Multiple rows can exist for the same (player, season, week) — one per source. The normalizer chooses which source's row feeds the scoring engine; the others are preserved for audit and cross-check.
