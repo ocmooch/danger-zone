@@ -208,6 +208,31 @@ def test_parse_transactions_maps_types_and_direction() -> None:
     assert txns[0].executed_at == "Dec 28, 10:01am"
 
 
+def test_parse_transactions_maps_lm_commish_row_to_setting_change() -> None:
+    # NFL.com history pages tag commissioner / league-management actions with
+    # the type text "LM" (row class ``transaction-commish-NNN``). They have no
+    # player or team; the change text lives in ``.playerNameAndInfo`` and the
+    # actor in ``.transactionOwner``. Real shape captured from the 2011 log.
+    html = """
+    <table class="tableType-transaction"><tbody>
+      <tr class="transaction-commish-1660 odd">
+        <td class="transactionDate first">Dec 6, 7:01am</td>
+        <td class="transactionWeek"></td>
+        <td class="transactionType">LM</td>
+        <td class="playerNameAndInfo" colspan="3">harry updated playoff teams</td>
+        <td class="transactionOwner"><div class="teamOwner">
+          <span class="userName userId-102530">harry</span></div></td>
+      </tr>
+    </tbody></table>
+    """
+    (txn,) = parse_transactions(html)
+    assert txn.transaction_type == "setting_change"
+    assert txn.team_id is None and txn.player_id is None and txn.direction is None
+    assert txn.nfl_transaction_id == "1660"
+    assert txn.notes == "harry"
+    assert txn.extra_data == {"raw_type": "lm", "description": "harry updated playoff teams"}
+
+
 def test_parse_transactions_missing_table_raises() -> None:
     with pytest.raises(ParseError, match="tableType-transaction"):
         parse_transactions("<html><body></body></html>")

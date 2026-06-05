@@ -727,7 +727,7 @@ def _upsert_transactions(
     ).all()
     for row in existing:
         fingerprints_seen.add(
-            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _slot_sig(row[5]))
+            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
         )
 
     for t in parsed:
@@ -753,7 +753,7 @@ def _upsert_transactions(
             player_id,
             t.direction,
             _fingerprint_dt(executed_at),
-            _slot_sig(t.extra_data),
+            _extra_sig(t.extra_data),
         )
         if fingerprint in fingerprints_seen:
             skipped += 1
@@ -781,18 +781,31 @@ def _upsert_transactions(
     return _Counts(inserted, skipped)
 
 
-def _slot_sig(extra_data: dict[str, object] | None) -> tuple[object, object] | None:
-    """Slot move (from_slot, to_slot) for lineup rows, else None.
+def _extra_sig(extra_data: dict[str, object] | None) -> tuple[object, ...] | None:
+    """Distinguishing detail from ``extra_data``, folded into the fingerprint.
 
-    Folded into the upsert fingerprint so two distinct lineup moves of the
-    same player in the same minute (same team/direction/timestamp) don't
-    collapse into one — they differ only by their slots.
+    Two row families carry their only distinguishing content in ``extra_data``
+    rather than the team/player/direction columns, so without this they would
+    collapse on the fingerprint when they share a minute:
+
+    * **lineup moves** — differ only by slot (from_slot/to_slot);
+    * **setting/commish rows** — null team/player/direction, so the change
+      description is what makes them distinct. Commish actions cluster heavily
+      (league setup fires dozens in the same minute), so omitting this drops
+      the vast majority of the diary.
     """
     if not extra_data:
         return None
-    if "from_slot" not in extra_data and "to_slot" not in extra_data:
-        return None
-    return (extra_data.get("from_slot"), extra_data.get("to_slot"))
+    if "from_slot" in extra_data or "to_slot" in extra_data:
+        return ("slot", extra_data.get("from_slot"), extra_data.get("to_slot"))
+    if "description" in extra_data or "from" in extra_data or "to" in extra_data:
+        return (
+            "setting",
+            extra_data.get("description"),
+            extra_data.get("from"),
+            extra_data.get("to"),
+        )
+    return None
 
 
 def _fingerprint_dt(value: datetime | None) -> str | None:
