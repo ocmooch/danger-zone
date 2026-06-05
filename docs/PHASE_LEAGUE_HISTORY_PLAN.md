@@ -10,9 +10,11 @@
 >   then check the §5 counts (adds/drops/trades realistic; earliest non-draft
 >   `executed_at` back in Sept/Oct; `lineup_change` + `setting_change` rows
 >   with `extra_data`).
-> - **B:** run `media.backfill_team_avatars(session, client, league_id=…)`
->   (reads the per-season `history/{yr}/owners` page) to populate `assets` +
->   `teams.team_avatar_asset_id`. Not wired into a CLI command yet.
+> - **B:** run `ff-pipeline avatars` (wraps
+>   `media.backfill_team_avatars`, reading the per-season `history/{yr}/owners`
+>   page) to populate `assets` + `teams.team_avatar_asset_id`. Supports
+>   `--start/--end/--season`; exits 77 on auth failure so it resumes after
+>   `cookie set`.
 >
 > Setting/commish (`setting_change`) parsing is best-effort: no fixture row
 > was available, so the row→payload mapping is keyword-driven and stores the

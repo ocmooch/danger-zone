@@ -79,6 +79,13 @@ def test_rescore_command_help_lists_dry_run() -> None:
     assert "--dry-run" in result.stdout
 
 
+def test_avatars_command_help_lists_season_range() -> None:
+    result = runner.invoke(app, ["avatars", "--help"])
+    assert result.exit_code == 0
+    for opt in ("--start", "--end", "--season"):
+        assert opt in result.stdout
+
+
 def test_scoring_load_help_lists_season_override() -> None:
     result = runner.invoke(app, ["scoring", "load", "--help"])
     assert result.exit_code == 0
@@ -138,3 +145,50 @@ def test_run_unknown_source_exits_with_stub_code() -> None:
     # _stub exits EX_USAGE (64); no source helper should have run.
     assert result.exit_code == 64
     assert _sources_run(manager) == []
+
+
+@contextlib.contextmanager
+def _patch_avatars_machinery(backfill: mock.Mock):
+    """Patch out everything `avatars` touches except the backfill itself.
+
+    DB/client machinery is patched at its source modules because `avatars_cmd`
+    imports those names lazily inside the function body.
+    """
+    with (
+        mock.patch("ff_pipeline.cli._bootstrap_settings_and_logging"),
+        mock.patch("ff_pipeline.settings.get_settings"),
+        mock.patch("ff_pipeline.repository.database.create_app_engine"),
+        mock.patch("sqlalchemy.orm.Session"),
+        mock.patch("ff_pipeline.crawlers.nfl_com.client.NflComClient"),
+        mock.patch("ff_pipeline.crawlers.nfl_com.media.backfill_team_avatars", backfill),
+    ):
+        yield
+
+
+def test_avatars_reports_backfill_result() -> None:
+    backfill = mock.Mock(
+        return_value=mock.Mock(seasons_processed=3, assets_stored=12, teams_linked=30)
+    )
+    with _patch_avatars_machinery(backfill):
+        result = runner.invoke(app, ["avatars", "--start", "2018", "--end", "2020"])
+    assert result.exit_code == 0, result.stdout
+    assert backfill.call_args.kwargs["years"] == [2018, 2019, 2020]
+    assert "assets stored=12" in result.stdout
+    assert "teams linked=30" in result.stdout
+
+
+def test_avatars_auth_failure_exits_77() -> None:
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
+
+    backfill = mock.Mock(side_effect=AuthFailureError("dead cookie"))
+    with _patch_avatars_machinery(backfill):
+        result = runner.invoke(app, ["avatars", "--season", "2020"])
+    assert result.exit_code == 77
+
+
+def test_avatars_rejects_inverted_range() -> None:
+    backfill = mock.Mock()
+    with _patch_avatars_machinery(backfill):
+        result = runner.invoke(app, ["avatars", "--start", "2021", "--end", "2019"])
+    assert result.exit_code == 2
+    backfill.assert_not_called()

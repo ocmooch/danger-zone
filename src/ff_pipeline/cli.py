@@ -688,6 +688,90 @@ def draft_cmd(
 
 
 # ---------------------------------------------------------------------------
+# avatars
+# ---------------------------------------------------------------------------
+
+
+@app.command("avatars")
+def avatars_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year - 1)."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Backfill only this season (sets --start and --end)."
+    ),
+) -> None:
+    """Backfill team avatars into the ``assets`` store + ``teams`` FKs.
+
+    Reads each season's NFL.com Managers page, downloads every team logo
+    once (content-addressed under the assets dir, deduped by sha256), and
+    links it onto that season's ``teams.team_avatar_asset_id``. Idempotent:
+    a URL already stored short-circuits before the network and matching
+    bytes reuse the existing row, so re-runs download nothing. Requires a
+    valid NFL_COOKIE; exits 77 on auth failure so it can be resumed after
+    ``cookie set``.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.media import backfill_team_avatars
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        end_year = end if end is not None else datetime.now().year - 1
+
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    years = list(range(start_year, end_year + 1))
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
+    try:
+        with Session(engine) as ss:
+            try:
+                result = backfill_team_avatars(
+                    ss,
+                    client,
+                    league_id=settings.nfl_league_id,
+                    assets_root=settings.assets_dir,
+                    years=years,
+                )
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure during avatar backfill: {exc}. "
+                    "Refresh NFL_COOKIE via `cookie set`, then re-run to resume.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+            ss.commit()
+    finally:
+        client.close()
+        engine.dispose()
+
+    typer.secho(
+        f"Avatars: seasons processed={result.seasons_processed}, "
+        f"assets stored={result.assets_stored}, teams linked={result.teams_linked} "
+        f"(range {start_year}-{end_year}).",
+        fg="green",
+    )
+
+
+# ---------------------------------------------------------------------------
 # rescore
 # ---------------------------------------------------------------------------
 
