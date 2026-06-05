@@ -130,6 +130,26 @@ class NflComClient:
 
         return response.text
 
+    def get_bytes(self, url: str) -> tuple[bytes, str | None]:
+        """Fetch ``url`` and return its raw bytes + ``Content-Type``.
+
+        Used to download binary assets (team logos / owner avatars). Same
+        auth + retry handling as ``get_html``; returns the response body
+        undecoded so the bytes are byte-for-byte what NFL.com served.
+        """
+        self._sleep_for_rate_limit()
+        try:
+            response = self._fetch(url)
+        except RetryError as exc:
+            raise TransientHTTPError(f"GET {url} failed after retries: {exc}") from exc
+
+        self._raise_if_auth_failure(url, response)
+
+        if response.status_code >= 400:
+            raise NflComClientError(f"GET {url} returned HTTP {response.status_code}")
+
+        return response.content, response.headers.get("Content-Type")
+
     def test_auth(self, probe_url: str) -> bool:
         """One-shot "does this cookie work?" check.
 

@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # --- Caches ---
     nflverse_cache_dir: Path = Path("./data/nflverse_cache")
 
+    # --- Media (content-addressed avatar store) ---
+    # Raw avatar bytes land here (gitignored); the ``assets`` table holds the
+    # metadata. The read API streams bytes from this root via /assets/{id}.
+    assets_dir: Path = Path("./data/assets")
+
     # --- Tuning ---
     scoring_verify_tolerance: float = 0.1
     save_raw_html: bool = False
@@ -98,7 +103,7 @@ class Settings(BaseSettings):
             raise ValueError(f"LEAGUE_START_YEAR={v} is outside the supported range (1999..2100)")
         return v
 
-    @field_validator("log_dir", "nflverse_cache_dir")
+    @field_validator("log_dir", "nflverse_cache_dir", "assets_dir")
     @classmethod
     def _resolve_path(cls, v: Path) -> Path:
         if not v.is_absolute():

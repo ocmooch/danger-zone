@@ -93,6 +93,16 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
 | `GET /transactions?team_id={tid}` | All transactions involving a team |
 | `GET /transactions?player_id={pid}` | All transactions involving a player |
 
+Transaction rows carry an `extra_data` object for events that don't fit the player-move columns: `lineup_change` rows carry `{"from_slot","to_slot"}`, `setting_change` rows carry the change detail. It is `null` for add/drop/trade rows.
+
+### Assets (avatars)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /assets/{asset_id}` | Streams the stored bytes of a team logo / owner avatar with its recorded `Content-Type` (immutable, long-cache). 404 if the row is unknown or its bytes aren't present on this host. |
+
+`GET /teams/{team_id}` surfaces `team_avatar_asset_id` / `owner_avatar_asset_id`; reference the bytes as `GET /assets/{id}`. Both are `null` until the avatar backfill has run.
+
 ### Stats (aggregated)
 
 | Endpoint | Description |

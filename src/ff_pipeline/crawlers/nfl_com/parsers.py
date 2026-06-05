@@ -84,6 +84,9 @@ class ParsedOwner:
     display_name: str
     team_id: int | None
     team_name: str | None
+    # CDN URL of the team logo rendered in the row's ``a.teamImg`` (the only
+    # image NFL.com renders per owner row). None when the row has no image.
+    team_logo_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +146,18 @@ class ParsedTransaction:
     player_name: str | None
     direction: str | None  # 'in' | 'out'
     notes: str | None
+    # Free-form payload for events that don't fit the player-move columns:
+    # lineup-slot moves ({"from_slot", "to_slot"}) and league/setting
+    # changes ({"description", ...}). None for ordinary add/drop/trade rows.
+    extra_data: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedTransactionsPage:
+    """One page of the transactions log plus the offset of the next page."""
+
+    rows: tuple[ParsedTransaction, ...]
+    next_offset: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,11 +431,26 @@ def parse_owners(html: str) -> list[ParsedOwner]:
                 display_name=display_name or "(unknown)",
                 team_id=team_id,
                 team_name=team_name,
+                team_logo_url=_team_logo_url(tr),
             )
         )
     if not out:
         raise ParseError("owners: tableType-team had no parseable rows")
     return out
+
+
+def _team_logo_url(tr: Tag) -> str | None:
+    """The team-logo CDN URL from a row's ``a.teamImg img`` (or any img).
+
+    NFL.com renders the per-season team logo in the ``a.teamImg`` anchor;
+    its ``alt`` is the team name and its ``src`` is the CDN image URL we
+    want to preserve. Falls back to the first img in the row.
+    """
+    img = tr.select_one("a.teamImg img[src]") or tr.select_one("img[src]")
+    if img is None:
+        return None
+    src = img.get("src")
+    return src if isinstance(src, str) and src.strip() else None
 
 
 def _user_id_from_node(node: Tag) -> str | None:
@@ -921,10 +951,22 @@ _TXN_TYPE_MAP = {
     "moved to ir": "ir_placement",
     "activated from ir": "ir_activation",
     "ir activation": "ir_activation",
+    # Lineup/start-sit moves and commissioner/league-setting changes are now
+    # captured as part of the full chronological league diary (slot detail and
+    # the change description live in ``extra_data``), not skipped.
+    "lineup": "lineup_change",
+    "starter swap": "lineup_change",
+    "commish": "setting_change",
+    "league change": "setting_change",
+    "setting change": "setting_change",
 }
-# "Lineup" (slot reassignment) is captured by the team_rosters table
-# instead — it has no place in the transactions log.
-_TXN_TYPES_TO_SKIP = {"lineup", "starter swap"}
+# Nothing is dropped on the floor any more — kept as an explicit (empty)
+# allow-skip hook in case a future NFL.com row type needs excluding.
+_TXN_TYPES_TO_SKIP: set[str] = set()
+# Slot labels that mean "not in the starting lineup". A lineup move *into*
+# one of these is a benching (direction "out"); a move *out* of one into a
+# scoring slot is a start (direction "in"). Mirrors ``_NON_STARTER_SLOTS``.
+_BENCH_SLOTS = ("BN", "IR", "RES", "TAXI")
 # Row classes look like ``transaction-{add|drop|roster}-NNN[-N]`` — the
 # inner numeric is the NFL.com transaction id (shared across the legs
 # of a trade or simultaneous add+drop).
@@ -934,6 +976,16 @@ _FREE_AGENT_TEXT_RE = re.compile(r"free\s+agents?", re.IGNORECASE)
 
 
 def parse_transactions(html: str) -> list[ParsedTransaction]:
+    return list(parse_transactions_page(html).rows)
+
+
+def parse_transactions_page(html: str) -> ParsedTransactionsPage:
+    """Parse one page of the transactions log plus its next-page offset.
+
+    The transactions log is paginated by NFL.com's shared ``?offset=``
+    widget — the same one the players page uses — so the sweep reuses
+    ``_extract_next_offset`` to find the following page.
+    """
     soup = BeautifulSoup(html, "lxml")
     table = (
         soup.select_one("table.tableType-transaction")
@@ -948,7 +1000,7 @@ def parse_transactions(html: str) -> list[ParsedTransaction]:
         out.extend(_parse_transaction_row(tr))
     if not out:
         raise ParseError("transactions: tableType-transaction had no parseable rows")
-    return out
+    return ParsedTransactionsPage(rows=tuple(out), next_offset=_extract_next_offset(soup))
 
 
 def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
@@ -971,6 +1023,11 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
     if txn_type is None:
         log.warning("Unknown transaction type", raw_type=raw_type)
         return []
+
+    if txn_type == "lineup_change":
+        return _parse_lineup_row(tr)
+    if txn_type == "setting_change":
+        return _parse_setting_row(tr, raw_type)
 
     from_node = tr.select_one(".transactionFrom")
     to_node = tr.select_one(".transactionTo")
@@ -1048,6 +1105,94 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
             player_name=player_name,
             direction=direction,
             notes=notes,
+        )
+    ]
+
+
+def _lineup_direction(to_slot: str | None) -> str | None:
+    """'in' if the player moved into a scoring slot, 'out' if benched.
+
+    NFL.com's lineup rows are the slot the player left (From) and the slot
+    they landed in (To); a To of BN/IR/RES is a benching.
+    """
+    if not to_slot:
+        return None
+    upper = to_slot.upper()
+    if any(upper.startswith(bench) for bench in _BENCH_SLOTS):
+        return "out"
+    return "in"
+
+
+def _parse_lineup_row(tr: Tag) -> list[ParsedTransaction]:
+    """Map a 'Lineup' row to a ``lineup_change`` with the slot move in extra_data.
+
+    The From/To cells carry slot labels (``RB`` → ``BN``) rather than team
+    anchors, so there is no team to attribute the move to; the owner shows
+    up in ``notes`` instead. Direction encodes start (``in``) vs sit
+    (``out``); the exact slots live in ``extra_data``.
+    """
+    from_slot = _text_or_none(tr.select_one(".transactionFrom"))
+    to_slot = _text_or_none(tr.select_one(".transactionTo"))
+
+    date_node = tr.select_one(".transactionDate")
+    week_node = tr.select_one(".transactionWeek")
+    by_node = tr.select_one(".transactionOwner")
+    player_node = tr.select_one(".playerNameAndInfo")
+    player_anchor = (
+        player_node.select_one("a.playerName") if player_node is not None else None
+    ) or (_first_player_anchor(player_node) if player_node is not None else None)
+
+    return [
+        ParsedTransaction(
+            nfl_transaction_id=_txn_id_from_row_classes(tr),
+            transaction_type="lineup_change",
+            executed_at=date_node.get_text(strip=True) if date_node else None,
+            effective_week=_parse_int(week_node.get_text(strip=True) if week_node else None),
+            team_id=None,
+            counterpart_team_id=None,
+            player_id=_player_id_from_anchor(player_anchor) if player_anchor else None,
+            player_name=player_anchor.get_text(strip=True) if player_anchor else None,
+            direction=_lineup_direction(to_slot),
+            notes=by_node.get_text(" ", strip=True) if by_node else None,
+            extra_data={"from_slot": from_slot, "to_slot": to_slot},
+        )
+    ]
+
+
+def _parse_setting_row(tr: Tag, raw_type: str) -> list[ParsedTransaction]:
+    """Map a commissioner / league-setting row to a ``setting_change``.
+
+    These rows often have no player and no team; the human-readable change
+    is whatever NFL.com renders in the From/To/Player cells, so we preserve
+    all of it in ``extra_data`` rather than forcing it into a fixed column.
+    """
+    date_node = tr.select_one(".transactionDate")
+    week_node = tr.select_one(".transactionWeek")
+    by_node = tr.select_one(".transactionOwner")
+    player_node = tr.select_one(".playerNameAndInfo")
+    player_anchor = (
+        player_node.select_one("a.playerName") if player_node is not None else None
+    ) or (_first_player_anchor(player_node) if player_node is not None else None)
+
+    detail = {
+        "raw_type": raw_type,
+        "from": _text_or_none(tr.select_one(".transactionFrom")),
+        "to": _text_or_none(tr.select_one(".transactionTo")),
+        "description": _text_or_none(player_node) if player_anchor is None else None,
+    }
+    return [
+        ParsedTransaction(
+            nfl_transaction_id=_txn_id_from_row_classes(tr),
+            transaction_type="setting_change",
+            executed_at=date_node.get_text(strip=True) if date_node else None,
+            effective_week=_parse_int(week_node.get_text(strip=True) if week_node else None),
+            team_id=None,
+            counterpart_team_id=None,
+            player_id=_player_id_from_anchor(player_anchor) if player_anchor else None,
+            player_name=player_anchor.get_text(strip=True) if player_anchor else None,
+            direction=None,
+            notes=by_node.get_text(" ", strip=True) if by_node else None,
+            extra_data={k: v for k, v in detail.items() if v is not None},
         )
     ]
 
@@ -1531,6 +1676,7 @@ __all__ = [
     "ParsedStandings",
     "ParsedTeamRoster",
     "ParsedTransaction",
+    "ParsedTransactionsPage",
     "parse_availability_page",
     "parse_draft_picks",
     "parse_draft_round_numbers",
@@ -1541,5 +1687,6 @@ __all__ = [
     "parse_standings",
     "parse_team_roster",
     "parse_transactions",
+    "parse_transactions_page",
     "parse_weekly_matchups",
 ]
