@@ -1,6 +1,8 @@
 # Pre-2016 Scoring & Era-Nuance Distillation Plan
 
-**Status:** proposed · **Owner:** ocmooch · **Drafted:** 2026-06-04 · **Branch:** TBD (`feature/pre-2016-distillation`)
+**Status:** executed (2026-06-05) — scoring + structure + ownership done; dz-dashboard
+wiring is the one open follow-up (§7) · **Owner:** ocmooch · **Drafted:** 2026-06-04 ·
+**Branch:** `feature/pre-2016-distillation`
 
 Closes the largest remaining Phase 1 data gap — **§P1-V1, "2010–2015 seasons
 are unscored (no period rules)"** — and, while the same labeled data is in hand,
@@ -228,19 +230,58 @@ things the data cannot reveal:
   more complete source of truth than any page we could scrape.
 - 2026-06-04 — Tiebreakers explicitly **not** re-derived (defer to reconstructed
   `final_rank`, per dashboard Q5).
+- 2026-06-05 — Added **coordinate-ascent refinement** to the solver: snap by
+  nearest NFL.com value, then pick the candidate maximizing exact-to-cent through
+  the engine. Necessary because long-TD contamination lands some TD estimates on
+  a midpoint (2018 passing_tds = 4.51 → wrongly 5, overscoring 13%); letting the
+  data arbitrate self-corrects it to 4 (92%) and validated the method season-wide.
+- 2026-06-05 — **Bonuses inherited, not solved**: 100/200/300/400 yardage bonuses
+  are too sparse and too long-TD-contaminated to fit reliably; the data shows no
+  evidence they ever changed, so the recovered 2010 ruleset inherits them.
+- 2026-06-05 — B1 correction: the **W/R flex appeared in 2011, not 2013** (the
+  plan's guess); every 2011 week-1 lineup carries it. Confirmed from data.
+- 2026-06-05 — Data **resolved** what the plan reserved for the user (C3): 2010
+  PPR is 0.5 (not 0), the 2010 14-week season is real (not an artifact), and
+  there are no divisions in any era — none needed asking.
+- 2026-06-05 — C1 ownership **re-scoped** from "fill in tenure/aliases" to a full
+  identity reconstruction once the user clarified that human control changed hands
+  while franchises stayed permanent. Built `reconstruct-owners`; see §7.
 
 ## 6. Resumable checklist
 
-- [ ] A1 `scripts/distill_scoring_rules.py` (solve + snap + report)
-- [ ] A2 2011–2015 confirmed, loaded, rescored, verified (closes §P1-V1 for these)
-- [ ] A3 2010 ruleset recovered, loaded, rescored, verified
-- [ ] A4 kicker + DST second-pass fit
-- [ ] B1 roster-construction templates per season
-- [ ] B2 playoff structure/timing + 13↔14 switch confirmed-from-data
-- [ ] B3 conference/division map per era (with confidence)
-- [ ] B4 tiebreaker handling cross-referenced (no re-derivation)
-- [ ] C1–C3 single consolidated questionnaire to the user
-- [ ] D1 rescore + verify 2010–2015
-- [ ] D2 populate seasons/owners/templates
-- [ ] D3 dz-dashboard `_CONFIRMED` switch year set
-- [ ] D4 `10_OPEN_QUESTIONS.md` §P1-V1 updated (resolved/remaining split)
+- [x] A1 `scripts/distill_scoring_rules.py` (solve + snap + **coordinate-ascent
+  refine** on exact-to-cent + report)
+- [x] A2 2011–2015 confirmed, loaded, rescored, verified (closes §P1-V1 for these)
+- [x] A3 2010 ruleset recovered (6-pt pass TD + 0.5 PPR), loaded, rescored, verified
+- [x] A4 kicker (unchanged, 100% all eras) + DST (team-defense **backfilled**
+  2010–2015; ~69% = known DST data-quality tail, not a rule shift)
+- [x] B1 roster-construction templates — **W/R flex appeared 2011, not 2013**
+  (see `PRE2016_STRUCTURAL_REFERENCE.md`)
+- [x] B2 playoff structure/timing + 13↔14 switch (2011 & 2021) confirmed from data
+- [x] B3 conference/division map — **no divisions in any era** (round-robin), high confidence
+- [x] B4 tiebreaker handling cross-referenced (no re-derivation)
+- [x] C1–C3 single consolidated questionnaire — keepers=redraft, 2010 scoring
+  confirmed; **C1 expanded** into a full owner-history reconstruction (below)
+- [x] D1 rescore + verify 2010–2015
+- [x] D2 populate seasons/owners/templates — **`reconstruct-owners`** recovers 20
+  distinct managers (8 historical/inactive) + per-season `teams.owner_id`
+- [ ] D3 dz-dashboard `_CONFIRMED` switch year + active/inactive manager grids
+  (separate repo — see §7)
+- [x] D4 `10_OPEN_QUESTIONS.md` §P1-V1 updated (resolved/remaining split)
+
+## 7. Follow-up: ownership reconstruction + dashboard (dz-dashboard)
+
+C1 became its own sub-project. The 12 teams are permanent franchises; human
+control changed hands cleanly several offseasons. `reconstruct-owners` reads the
+per-season `/history/{year}/owners` pages, derives one owner identity per NFL
+`userId` (tenure, aliases, active/inactive), and re-points `teams.owner_id` per
+season. It recovered 8 historical managers beyond the 12 current — including
+**two distinct Adams and two distinct Ills** (keyed by userId, not name) and the
+**two "Dan"s** (active `Dan` on T5; inactive `dan` on T7, 2014–24). One manager
+(`mike`) moved franchises (T3→T12) in 2018.
+
+Dashboard wiring (separate repo, not done here):
+- `analytics/season_schedule.py`: set the 13↔14 `_CONFIRMED` switch (2011, 2021).
+- Surface historical/inactive managers in the rivalries grid and managers page,
+  **visually distinct** from the active-only grid (the active rivalry grid shows
+  only active managers).

@@ -16,19 +16,36 @@ below were explicitly carried past them.
 These are real limits of the v1.0.0 dataset — not bugs. Each has a clear fix
 path once its input becomes available.
 
-### P1-V1. 2010–2015 seasons are unscored (no period rules)
+### P1-V1. 2010–2015 seasons are unscored (no period rules) — RESOLVED (2026-06-05)
 
-**State**: The current ruleset (`.project-src/dz-rules.csv`, 51 rules) is
-loaded for **2016–2025** and `verify --sweep`-confirmed against NFL.com. We
-have no evidence the same rules held for **2010–2015**, and NFL.com history
-pages expose final points but not the era's rule table. Reconstruction
-populated standings/matchups/lineups for all of 2010–2025, but
-`player_stats_scored` is intentionally empty for 2010–2015. nflverse raw
-stats for those years remain available, so they can be scored retroactively.
+**Resolved.** Rules were *solved from data*, not guessed: every starter-week in
+`team_rosters.extra_data` carries NFL.com's actual `nfl_com_points`, so for each
+season a labeled `(stat_vector → league_points)` matrix recovers the per-unit
+coefficients by least squares, snapped to NFL.com's value vocabulary and
+verified back through the real engine. See `scripts/distill_scoring_rules.py`
+and `PHASE_PRE2016_PLAN.md`.
 
-**Fix path**: source period-correct rules → `scoring load --season <YR>` →
-`rescore --season <YR>` → `verify --sweep --season <YR>`. Rationale in
-`PHASE1_COMPLETION_PLAN.md` §0.2, §5.
+Findings:
+
+* **2011–2015 match the current 51-rule set** — confirmed (the solve recovers
+  the 2016+ coefficients exactly). Rules loaded (`scoring load --season`),
+  rescored, and offline-verified at **89–92% exact-to-cent**, the same long-TD
+  ceiling (§P1-V2) as the verified 2016–2025 seasons.
+* **2010 is the one distinct era**: **6-point passing TDs + 0.5 PPR (half-PPR)**,
+  standardizing to 4-pt / full-PPR from 2011 on. Conclusive (PPR 0 or 1.0 →
+  ~19%; pass-TD 4 or 5 → ~82%; the recovered values → 91.5%) and
+  **user-confirmed**. Recovered ruleset: `.project-src/dz-rules-2010.csv` (a
+  minimal two-line patch of the canonical export). Loaded, rescored, verified.
+* **Kicking** is unchanged across all eras (FG-bracket/XP reproduce
+  `nfl_com_points` at 100% for 2010–2025).
+* **DST**: the real pre-2016 gap was *missing team-defense ingestion*, now
+  backfilled (`team-defense --season 2010..2015`) and scored. DST reproduces at
+  ~69% (2010–15) vs ~83% (2016–25) — the *same* known DST data-quality tail
+  (see the DST re-ingest note), not a rules difference.
+
+**Remaining**: only the long-TD-length bonuses (§P1-V2), which cap *every*
+era's verify at the same ~92% ceiling, and the standing DST data-quality
+re-ingest. No unobserved-stat flags surfaced.
 
 ### P1-V2. Long-TD-length bonuses are unscored (data-source gap)
 
