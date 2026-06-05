@@ -8,6 +8,7 @@ database without polluting global env vars.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,9 @@ from alembic import command
 from alembic.config import Config
 
 if TYPE_CHECKING:
-    from sqlalchemy import Engine
+    from collections.abc import Iterator
+
+    from sqlalchemy import Connection, Engine
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
@@ -29,6 +32,29 @@ def _make_config(database_url: str | None = None) -> Config:
     return cfg
 
 
+@contextmanager
+def _fk_disabled_for_sqlite(connection: Connection) -> Iterator[None]:
+    """Turn off SQLite FK enforcement for the duration of a migration.
+
+    SQLite can't add/drop a column constraint in place, so Alembic's batch
+    mode recreates the whole table (CREATE tmp → copy → DROP original →
+    RENAME). The ``DROP`` of a *referenced* table (e.g. ``teams``) trips the
+    child FKs that the app turns on via ``PRAGMA foreign_keys=ON``.
+    ``foreign_keys`` can't be toggled inside a transaction, so we flip it on
+    the raw DBAPI connection *before* Alembic opens its transaction, then
+    restore it. Non-SQLite backends are untouched.
+    """
+    dbapi = connection.connection.dbapi_connection
+    if connection.dialect.name != "sqlite" or dbapi is None:
+        yield
+        return
+    dbapi.execute("PRAGMA foreign_keys=OFF")
+    try:
+        yield
+    finally:
+        dbapi.execute("PRAGMA foreign_keys=ON")
+
+
 def upgrade_to_head(database_url: str | None = None, *, engine: Engine | None = None) -> None:
     """Run all pending migrations to the latest revision.
 
@@ -37,7 +63,10 @@ def upgrade_to_head(database_url: str | None = None, *, engine: Engine | None = 
     """
     cfg = _make_config(database_url)
     if engine is not None:
-        with engine.begin() as connection:
+        # connect() (not begin()) so FK enforcement can be toggled before
+        # Alembic opens its own transaction; the env's begin_transaction()
+        # commits the migration.
+        with engine.connect() as connection, _fk_disabled_for_sqlite(connection):
             cfg.attributes["connection"] = connection
             command.upgrade(cfg, "head")
         return
@@ -48,7 +77,7 @@ def downgrade_to_base(database_url: str | None = None, *, engine: Engine | None 
     """Reverse all migrations back to the empty schema. Used by tests."""
     cfg = _make_config(database_url)
     if engine is not None:
-        with engine.begin() as connection:
+        with engine.connect() as connection, _fk_disabled_for_sqlite(connection):
             cfg.attributes["connection"] = connection
             command.downgrade(cfg, "base")
         return
