@@ -55,7 +55,8 @@ For league `{LID}` and season `{YR}`:
 | Standings | `/league/{LID}/history/{YR}/standings` | Final regular & playoff standings |
 | Weekly matchups | `/league/{LID}/history/{YR}/schedule?scheduleDetail={WK}` | All matchups for week WK |
 | Gamecenter (lineups + points) | `/league/{LID}/gamecenter?gameId={GID}` | Both teams' lineups for a specific matchup |
-| Transactions | `/league/{LID}/history/{YR}/transactions` | Trades, waivers, drops, adds for a season |
+| Transactions | `/league/{LID}/history/{YR}/transactions[?offset={N}]` | Full season diary: trades, waivers, drops, adds, **lineup/start-sit moves, and league/setting changes**. Paginated by NFL.com's shared `?offset=` widget — swept page-by-page (only page 1 used to be fetched). |
+| Managers (per season) | `/league/{LID}/history/{YR}/owners` | Per-season team logos (the avatar backfill snapshots these onto `teams`). |
 | Team home | `/league/{LID}/team/{TID}` | Roster, schedule, transaction log |
 | **League-wide players (current)** | `/league/{LID}/players?statCategory=stats&statSeason={YR}&statType=weekStats&statWeek={WK}` | **Every player in the league universe** with status (owned by team / free agent / on waivers). Source of truth for `player_availability` table. |
 | **Waiver claim queue** | `/league/{LID}/waivers` | Active claims and their priority/clear-time (current season only — not historical) |

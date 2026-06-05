@@ -171,11 +171,21 @@ def test_parse_weekly_matchups_missing_matchups_raises() -> None:
 
 def test_parse_transactions_maps_types_and_direction() -> None:
     txns = parse_transactions(_read("transactions.html"))
-    # Fixture has 4 Drops + 4 Adds + 16 Lineup rows; Lineup is skipped.
-    assert len(txns) == 8
+    # Fixture has 4 Drops + 4 Adds + 16 Lineup rows. The full league diary
+    # now captures all of them (lineup moves included), not just player moves.
+    assert len(txns) == 24
     types = [t.transaction_type for t in txns]
     assert types.count("drop") == 4
     assert types.count("free_agent_add") == 4
+    assert types.count("lineup_change") == 16
+
+    # Lineup rows carry their slot move in extra_data and an in/out direction
+    # (start vs sit) — but no team anchor, so team_id is None.
+    london = next(t for t in txns if t.player_name == "Drake London")
+    assert london.transaction_type == "lineup_change"
+    assert london.direction == "out"  # R/W/T -> BN is a benching
+    assert london.extra_data == {"from_slot": "R/W/T", "to_slot": "BN"}
+    assert london.team_id is None
 
     # First two rows: drop + add for the same NFL.com txn id 2129
     # (the user's add+drop arrives as two adjacent rows sharing an id).

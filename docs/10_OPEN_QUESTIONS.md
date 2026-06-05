@@ -66,17 +66,78 @@ nflverse storing **legal** first names (Torrey Smith = `James Smith`, Duke
 Johnson = `Randy Johnson`), which defeats first-initial keys — handled by the
 curated map (David **and** Duke Johnson both resolved).
 
-**Remaining**: gamecenter-only skips with no rostered span still surface as
-`our_raw_stats_missing` in `verify`. One rostered stub (J.J. Nelson, ARI
-2016-2017) is **held back** because its obvious canonical row (17322) is
-itself a pre-existing J.J./Jordy Nelson conflation — that row carries a
-2010-2018 span though J.J. debuted in 2015. Untangle 17322 first, then fold.
-Two more (Torry Holt, Vonta Leach) have no nflverse row at all (retired
-before the 2010 window) and are left as honest single-row gaps.
+**Resolved — J.J. / Jordy Nelson (rostered subset now fully closed)**: the
+held-back stub is folded. The blocker was that NFL.com id `1032` — actually
+**Jordy** Nelson's id — had been stamped onto the J.J./Jamarcus canonical row
+(17322), dragging Jordy's whole fantasy history (`team_rosters`,
+`transactions`) onto J.J. and leaving the real Jordy row (17326) with no
+NFL.com side at all. The nflverse stats were never conflated (they split
+cleanly by `gsis_id`); the defect was purely the misplaced NFL.com id.
+`scripts/untangle_nelson_conflation.py` repoints Jordy's NFL.com rows
+17322 → 17326, hands id `1032` back to Jordy, then folds J.J.'s own stub
+(id `2552656`) into 17322 — seeding `player_id_overrides` for both so neither
+re-stubs. Final spans: Jordy 2010-2018, J.J. 2016-2017. `verify` passes to the
+cent for both (J.J. 2017 W1 15.30=15.30, 2016 W15 14.80=14.80; Jordy 2016 W1
+15.20=15.20).
 
-**Owner**: optional manual cleanup. **Fix path**: extend the curated map in
-`merge_roster_name_stubs.py` (or `player_id_overrides`) for the gamecenter
-remainder, then re-run reconstruction for the affected weeks.
+**Accepted source gaps (cannot be merged)**: Torry Holt and Vonta Leach have
+no nflverse row at all (retired before the 2010 window), so there is nothing
+to fold into. Left as honest single-row gaps — *not* pending work; do not
+fabricate a canonical identity for them.
+
+**Remaining (irreducible)**: gamecenter-only skips with **no** rostered span
+still surface as `our_raw_stats_missing` in `verify` — genuinely ambiguous
+abbreviated names (several real players sharing initial+last+position) plus
+non-nflverse names. They do not shadow a real player on the players index.
+**Owner**: optional. **Fix path**: hand-verify individual cases into
+`player_id_overrides` and re-run the affected weeks — no automated guess is safe.
+
+### P1-V4. Misstamped roster identities (the Nelson bug generalized)
+
+**State (RESOLVED)**: the J.J./Jordy Nelson untangle (§P1-V3) turned out to be
+one instance of a recurring class — the resolver's fuzzy fallback folded an
+abbreviated NFL.com lineup name ("S. Smith") onto a same-name + same-position
+player **without checking the lineup's season fell inside that player's NFL
+career**, so the wrong row accreted another player's `nfl_com_player_id` +
+fantasy history (`team_rosters`, `transactions`) while the real player sat
+stranded (stats, but no `nfl_com_player_id`, no roster rows).
+
+A direction-agnostic audit (`scripts/audit_roster_stat_era_mismatch.py` —
+rostered before `rookie_year` / disjoint roster∩stat eras / rostered >2y past
+`last_season`) found the bug is **bounded, not systemic**: 5 real cases among
+1,168 skill players, each with a uniquely-identified stranded owner, all
+confirmed by matching the misplaced rows' weekly `nfl_com_points` to the
+owner's production:
+
+| misattached onto (kept its own stats) | → true owner |
+|---|---|
+| Shi Smith (rookie '21) | Steve Smith Sr |
+| Jon Brown K (rookie '17) | Josh Brown K |
+| Ben Edwards (rookie '15) | Braylon Edwards |
+| John Matthews (last '11) | Jordan Matthews |
+| Tom Crabtree TE (last '13) | Michael Crabtree WR |
+
+Repaired by `scripts/untangle_misstamped_roster_identities.py` (whole-pile
+re-home of the id + NFL.com tables to the owner, override seeded, spans
+recomputed). `verify` passes to the cent for the scored-era owners (Michael
+Crabtree 2017 W1 14.30=14.30, Jordan Matthews 2016 W1 25.40=25.40); pre-2016
+owners are confirmed offline via `nfl_com_points` (no scoring rules <2016).
+
+**Prevention**: `normalizer/player_ids.py` now season-constrains the fuzzy
+fallback (`_career_contains`), so reconstruction can't reproduce this — the
+right same-era namesake wins. Exact override/direct-ID paths are *not*
+constrained (a player legitimately rostered past their career still resolves
+by their own id). Re-run the audit after any reconstruction to catch
+regressions.
+
+**Accepted (benign, surface in the audit)**: Tim Tebow (rostered to 2021) and
+Colin Kaepernick (to 2023) are real players kept on keeper rosters past their
+careers — unique names, no younger namesake to confuse, nothing to repair.
+
+**Known blind spot**: two same-name players whose careers *overlap* (ids
+swapped between contemporaries) are invisible to temporal checks. Catching
+those needs a name-level cross-check (`nfl_com_player_id` → NFL.com display
+name vs canonical name) — deferred to Phase 2.
 
 ---
 

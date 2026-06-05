@@ -310,6 +310,102 @@ class TestResolverFuzzy:
 
 
 # ---------------------------------------------------------------------------
+# PlayerResolver — season era guard on the fuzzy fallback
+# ---------------------------------------------------------------------------
+
+
+class TestResolverEraGuard:
+    """``season`` constrains the fuzzy fallback to era-valid candidates.
+
+    Regression for the misstamped-roster-identity bug: a 2010 "S. Smith"
+    lineup must not fuzzy-fold onto a Smith who debuted in 2021.
+    """
+
+    def test_season_picks_the_era_valid_namesake(self, session: Session) -> None:
+        # Two identical-name, identical-position WRs from different eras, both
+        # stats-bearing (gsis) but neither carrying an nfl_com_player_id yet —
+        # exactly the state that let the wrong one win.
+        old = _seed_player(
+            session,
+            name_full="Mike Williams",
+            position="WR",
+            gsis_id="00-old",
+            rookie_year=2005,
+            last_season=2010,
+        )
+        young = _seed_player(
+            session,
+            name_full="Mike Williams",
+            position="WR",
+            gsis_id="00-young",
+            rookie_year=2017,
+            last_season=2024,
+        )
+        resolver = PlayerResolver(session)
+        incoming = PlayerIdentity(
+            name_full="Mike Williams", position="WR", nfl_com_player_id="nflc-2008"
+        )
+
+        # A 2008 observation can only be the older player.
+        assert resolver.resolve(incoming, source="nfl_com", season=2008) == old
+        # A 2020 observation can only be the younger player.
+        assert (
+            resolver.resolve(
+                PlayerIdentity(
+                    name_full="Mike Williams", position="WR", nfl_com_player_id="nflc-2020"
+                ),
+                source="nfl_com",
+                season=2020,
+            )
+            == young
+        )
+        assert resolver.stats.created == 0
+        assert resolver.stats.matched_by_fuzzy == 2
+
+    def test_season_before_debut_does_not_match(self, session: Session) -> None:
+        # Only a 2021-rookie Smith exists; a 2010 lineup must NOT fold onto it.
+        _seed_player(
+            session,
+            name_full="Shi Smith",
+            position="WR",
+            gsis_id="00-shi",
+            rookie_year=2021,
+            last_season=2023,
+        )
+        resolver = PlayerResolver(session)
+        pid = resolver.resolve(
+            PlayerIdentity(name_full="Shi Smith", position="WR", nfl_com_player_id="nflc-2010"),
+            source="nfl_com",
+            season=2010,
+        )
+        assert resolver.stats.matched_by_fuzzy == 0
+        assert resolver.stats.created == 1
+        assert pid != 0
+
+    def test_exact_id_match_is_not_season_constrained(self, session: Session) -> None:
+        # The era guard only gates the fuzzy fallback; an exact direct-ID hit
+        # still wins regardless of season (a player legitimately rostered past
+        # their last nflverse season must still resolve by their own id).
+        existing = _seed_player(
+            session,
+            name_full="Tim Tebow",
+            position="QB",
+            nfl_com_player_id="tebow",
+            rookie_year=2010,
+            last_season=2012,
+        )
+        resolver = PlayerResolver(session)
+        pid = resolver.resolve(
+            PlayerIdentity(name_full="Tim Tebow", position="QB", nfl_com_player_id="tebow"),
+            source="nfl_com",
+            season=2021,
+        )
+        assert pid == existing
+        assert resolver.stats.matched_by_direct_id == 1
+        assert resolver.stats.created == 0
+
+
+# ---------------------------------------------------------------------------
 # PlayerResolver — overrides
 # ---------------------------------------------------------------------------
 
