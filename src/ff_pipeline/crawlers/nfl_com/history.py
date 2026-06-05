@@ -551,6 +551,210 @@ def derive_team_records(session: Session, *, league_id: str, year: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Owner history → distinct manager identities + per-season team attribution
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class OwnersOutcome:
+    """Result of reconstructing manager identities across all seasons."""
+
+    distinct_owners: int
+    owners_added: int
+    owners_updated: int
+    historical_inactive: int
+    team_attributions_changed: int
+
+
+def reconstruct_owners(
+    session: Session,
+    *,
+    league_id: str,
+    fetcher: _HtmlFetcher,
+    start_year: int,
+    end_year: int,
+) -> OwnersOutcome:
+    """Rebuild manager identities + per-season team ownership from history.
+
+    The year-less ``/owners`` page only ever shows *today's* managers, so the
+    earlier backfill stamped the current owner onto every season — making each
+    franchise look like it had one continuous manager. The per-season
+    ``/history/{year}/owners`` page instead names the human who managed each
+    franchise *that* year. A franchise's NFL ``userId`` changing across seasons
+    is a real ownership handoff; the username travels with the person.
+
+    This reads every season's owners page and:
+
+    1. derives one ``owners`` row per distinct ``userId`` — ``display_name`` is
+       their most recent username, prior usernames become ``aliases``,
+       ``joined_year``/``left_year`` span their tenure, and ``is_active`` is true
+       only if they managed a team in the final season (so retired managers like
+       a one-year fill-in are flagged inactive but preserved);
+    2. **re-points** each season's ``teams.owner_id`` to the manager who actually
+       held that franchise that year, applied as a permutation-safe update so the
+       ``UNIQUE(season_id, owner_id)`` invariant is never transiently violated.
+
+    Two same-named people (e.g. the league's two "Dan"s) stay distinct because
+    the key is ``userId``, not the name. Caller commits.
+    """
+    from ff_pipeline.crawlers.nfl_com.parsers import parse_owners
+    from ff_pipeline.crawlers.nfl_com.urls import history_owners
+    from ff_pipeline.repository.models import Owner
+
+    # 1. Scrape: per_season[year] = {nfl_team_id: (nfl_user_id, username)}
+    per_season: dict[int, dict[int, tuple[str, str]]] = {}
+    for year in range(start_year, end_year + 1):
+        if _resolve_season(session, league_id, year) is None:
+            continue
+        parsed = parse_owners(fetcher.get_html(history_owners(league_id, year)))
+        mapping: dict[int, tuple[str, str]] = {}
+        for o in parsed:
+            if o.team_id is None or o.nfl_user_id is None:
+                continue
+            mapping[o.team_id] = (o.nfl_user_id, o.display_name)
+        if mapping:
+            per_season[year] = mapping
+
+    if not per_season:
+        return OwnersOutcome(0, 0, 0, 0, 0)
+
+    # 2. Identity map: userId -> {username per year, set of years}.
+    names_by_year: dict[str, dict[int, str]] = {}
+    for year in sorted(per_season):
+        for uid, name in per_season[year].values():
+            names_by_year.setdefault(uid, {})[year] = name
+
+    # 3. Upsert one owners row per distinct userId.
+    latest_year = max(per_season)
+    owner_by_uid: dict[str, int] = {}
+    owners_added = owners_updated = inactive = 0
+    for uid, by_year in names_by_year.items():
+        years = sorted(by_year)
+        current_name = by_year[years[-1]]
+        aliases = sorted({n for n in by_year.values() if n != current_name})
+        is_active = latest_year in by_year
+        if not is_active:
+            inactive += 1
+        existing = (
+            session.execute(
+                select(Owner).where(Owner.league_id == league_id, Owner.nfl_user_id == uid)
+            )
+            .scalars()
+            .first()
+        )
+        if existing is not None:
+            existing.display_name = current_name
+            existing.aliases = aliases or None
+            existing.is_active = is_active
+            existing.joined_year = years[0]
+            existing.left_year = None if is_active else years[-1]
+            owner_by_uid[uid] = existing.owner_id
+            owners_updated += 1
+        else:
+            owner = Owner(
+                league_id=league_id,
+                display_name=current_name,
+                nfl_user_id=uid,
+                aliases=aliases or None,
+                is_active=is_active,
+                joined_year=years[0],
+                left_year=None if is_active else years[-1],
+            )
+            session.add(owner)
+            session.flush()
+            owner_by_uid[uid] = owner.owner_id
+            owners_added += 1
+
+    all_owner_ids = set(owner_by_uid.values())
+
+    # 4. Re-point each season's teams.owner_id to the true per-season manager.
+    changed = 0
+    for year, mapping in per_season.items():
+        season = _resolve_season(session, league_id, year)
+        if season is None:
+            continue
+        nfl_to_internal = _internal_team_by_nfl_id(session, season.season_id)
+        desired: dict[int, int] = {}
+        for nfl_tid, (uid, _name) in mapping.items():
+            internal = nfl_to_internal.get(nfl_tid)
+            if internal is not None:
+                desired[internal] = owner_by_uid[uid]
+        changed += _apply_owner_permutation(session, season.season_id, desired, all_owner_ids)
+
+    log.info(
+        "Reconstructed owners",
+        distinct_owners=len(names_by_year),
+        owners_added=owners_added,
+        owners_updated=owners_updated,
+        historical_inactive=inactive,
+        attributions_changed=changed,
+    )
+    return OwnersOutcome(
+        distinct_owners=len(names_by_year),
+        owners_added=owners_added,
+        owners_updated=owners_updated,
+        historical_inactive=inactive,
+        team_attributions_changed=changed,
+    )
+
+
+def _apply_owner_permutation(
+    session: Session,
+    season_id: int,
+    desired: dict[int, int],
+    all_owner_ids: set[int],
+) -> int:
+    """Set each team's ``owner_id`` to ``desired`` without violating uniqueness.
+
+    ``UNIQUE(season_id, owner_id)`` is checked per row, so a naive update can
+    transiently collide (two teams briefly sharing an owner mid-swap). We apply
+    the target as a permutation: repeatedly assign any team whose target owner is
+    currently free, which frees that team's old owner for the next. New
+    historical owners are free by construction, so this always makes progress; a
+    genuine cycle (none occur in practice) is broken by parking one team on an
+    owner absent from the season.
+    """
+    teams = list(
+        session.execute(select(Team).where(Team.season_id == season_id)).scalars().all()
+    )
+    team_by_id = {t.team_id: t for t in teams}
+    todo = [tid for tid in desired if tid in team_by_id and team_by_id[tid].owner_id != desired[tid]]
+    if not todo:
+        return 0
+    occupied = {t.owner_id for t in teams}
+    changed = 0
+
+    while todo:
+        progressed = False
+        for tid in list(todo):
+            target = desired[tid]
+            if target not in occupied:
+                old = team_by_id[tid].owner_id
+                team_by_id[tid].owner_id = target
+                occupied.discard(old)
+                occupied.add(target)
+                session.flush()
+                todo.remove(tid)
+                changed += 1
+                progressed = True
+        if not progressed:
+            # Break a cycle: park the first stuck team on any owner not present
+            # this season, freeing its current owner for the cycle to unwind.
+            parking = next((o for o in all_owner_ids if o not in occupied), None)
+            if parking is None:
+                raise RuntimeError(f"owner permutation stuck for season_id={season_id}")
+            stuck = todo[0]
+            old = team_by_id[stuck].owner_id
+            team_by_id[stuck].owner_id = parking
+            occupied.discard(old)
+            occupied.add(parking)
+            session.flush()
+            # leave `stuck` in todo; its real target is now reachable next pass
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Draft results → draft transactions (+ team_rosters mirror)
 # ---------------------------------------------------------------------------
 
@@ -1007,6 +1211,7 @@ __all__ = [
     "DraftOutcome",
     "LineupsOutcome",
     "MatchupsOutcome",
+    "OwnersOutcome",
     "SeasonReconstruction",
     "StandingsOutcome",
     "capture_draft_season",
@@ -1016,6 +1221,7 @@ __all__ = [
     "reconstruct_draft",
     "reconstruct_lineups",
     "reconstruct_matchups",
+    "reconstruct_owners",
     "reconstruct_season",
     "reconstruct_standings",
     "run_draft_capture",

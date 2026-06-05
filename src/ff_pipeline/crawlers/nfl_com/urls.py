@@ -26,6 +26,16 @@ def owners(league_id: str) -> str:
     return f"{BASE_URL}/league/{league_id}/owners"
 
 
+def history_owners(league_id: str, year: int) -> str:
+    """Per-season owners page — the human manager of each franchise *that year*.
+
+    Unlike the year-less ``/owners`` page (today's managers only), this view is
+    parameterized by season, so it reveals ownership handoffs: a franchise's
+    ``userId`` changing across seasons is a transfer to a different person.
+    """
+    return f"{BASE_URL}/league/{league_id}/history/{year}/owners"
+
+
 def settings(league_id: str) -> str:
     return f"{BASE_URL}/league/{league_id}/settings"
 
@@ -99,6 +109,7 @@ __all__ = [
     "BASE_URL",
     "draft_results",
     "gamecenter",
+    "history_owners",
     "league_history",
     "league_home",
     "league_players",
