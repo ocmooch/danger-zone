@@ -372,6 +372,15 @@ def reconstruct_lineups(
     failures = 0
 
     for week in weeks:
+        # Historical reconstruction owns the entire season/week snapshot. Clear
+        # old current-state/audit rows first so placeholder rosters from an
+        # earlier backfill cannot survive or conflict with real history rows.
+        session.execute(
+            delete(TeamRoster).where(
+                TeamRoster.season_year == year,
+                TeamRoster.week == week,
+            )
+        )
         # Each teamgamecenter page renders both sides, so fetching one
         # team per matchup would suffice — but team→matchup mapping varies
         # by week (byes/playoffs), so we fetch per team and dedupe the
@@ -714,11 +723,11 @@ def _apply_owner_permutation(
     genuine cycle (none occur in practice) is broken by parking one team on an
     owner absent from the season.
     """
-    teams = list(
-        session.execute(select(Team).where(Team.season_id == season_id)).scalars().all()
-    )
+    teams = list(session.execute(select(Team).where(Team.season_id == season_id)).scalars().all())
     team_by_id = {t.team_id: t for t in teams}
-    todo = [tid for tid in desired if tid in team_by_id and team_by_id[tid].owner_id != desired[tid]]
+    todo = [
+        tid for tid in desired if tid in team_by_id and team_by_id[tid].owner_id != desired[tid]
+    ]
     if not todo:
         return 0
     occupied = {t.owner_id for t in teams}
