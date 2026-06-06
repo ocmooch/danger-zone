@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ff_pipeline.crawlers.nfl_com.history import (
     derive_team_records,
     reconstruct_draft,
+    reconstruct_lineups,
     reconstruct_owners,
     reconstruct_standings,
 )
@@ -32,6 +33,7 @@ from ff_pipeline.repository.models import (
     League,
     Matchup,
     Owner,
+    Player,
     Season,
     Team,
     TeamRoster,
@@ -205,6 +207,79 @@ class _DraftStub:
         return "<html><body></body></html>"
 
 
+def _minimal_gamecenter_html() -> str:
+    def side(team_id: int, player_id: int, player_name: str) -> str:
+        return f"""
+        <div class="teamWrap teamWrap-{team_id}">
+          <a class="teamName" href="/league/36271/history/2024/teamhome?teamId={team_id}">Team {team_id}</a>
+          <span class="teamTotal">10.0</span>
+          <table class="tableType-player"><tbody>
+            <tr>
+              <td class="teamPosition">QB</td>
+              <td><a class="playerName" href="/players/card?playerId={player_id}">{player_name}</a><em>QB - BUF</em></td>
+              <td><span class="playerTotal">10.0</span></td>
+            </tr>
+          </tbody></table>
+        </div>
+        """
+
+    return f"<html><body>{side(1, 1001, 'Week One A')}{side(2, 1002, 'Week One B')}</body></html>"
+
+
+class _LineupsStub:
+    def get_html(self, url: str) -> str:
+        assert "teamgamecenter" in url
+        return _minimal_gamecenter_html()
+
+
+@pytest.mark.integration
+def test_reconstruct_lineups_clears_stale_week_snapshot_before_writing(
+    session: Session,
+) -> None:
+    season_id = _seed_league_and_teams(session, n_teams=3)
+    stale = Player(name_full="Modern Placeholder", nfl_com_player_id="9001")
+    session.add(stale)
+    session.flush()
+    orphan_team = session.execute(
+        select(Team).where(Team.season_id == season_id, Team.team_abbrev == "3")
+    ).scalar_one()
+    session.add(
+        TeamRoster(
+            team_id=orphan_team.team_id,
+            player_id=stale.player_id,
+            season_year=2024,
+            week=1,
+            roster_slot="QB",
+            is_starter=True,
+            was_locked_at_kickoff=False,
+            extra_data={"snapshot_kind": "audit"},
+        )
+    )
+    session.flush()
+
+    outcome = reconstruct_lineups(
+        session,
+        league_id="36271",
+        year=2024,
+        fetcher=_LineupsStub(),
+        weeks=[1],
+    )
+    session.commit()
+
+    assert outcome.fetch_failures == 0
+    rows = (
+        session.execute(
+            select(TeamRoster).where(TeamRoster.season_year == 2024, TeamRoster.week == 1)
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 2
+    assert orphan_team.team_id not in {row.team_id for row in rows}
+    assert stale.player_id not in {row.player_id for row in rows}
+    assert {(row.extra_data or {}).get("snapshot_kind") for row in rows} == {"history"}
+
+
 @pytest.mark.integration
 def test_reconstruct_draft_writes_ordered_picks(session: Session) -> None:
     season_id = _seed_league_and_teams(session)
@@ -239,9 +314,7 @@ def test_reconstruct_draft_writes_ordered_picks(session: Session) -> None:
 
     # Each pick is mirrored onto team_rosters at week 0 with the draft
     # provenance, and the explicit overall/round live in extra_data.
-    roster = (
-        session.execute(select(TeamRoster).where(TeamRoster.week == 0)).scalars().all()
-    )
+    roster = session.execute(select(TeamRoster).where(TeamRoster.week == 0)).scalars().all()
     assert len(roster) == 24
     assert all(r.acquisition_type == "draft" and r.acquisition_week == 0 for r in roster)
     overalls = sorted((r.extra_data or {}).get("draft_overall") for r in roster)
@@ -260,9 +333,11 @@ def test_reconstruct_draft_is_idempotent(session: Session) -> None:
     assert again.txns_added == 0
     assert again.txns_skipped == 24
 
-    total = session.execute(
-        select(Transaction).where(Transaction.transaction_type == "draft")
-    ).scalars().all()
+    total = (
+        session.execute(select(Transaction).where(Transaction.transaction_type == "draft"))
+        .scalars()
+        .all()
+    )
     assert len(total) == 24
 
 
@@ -304,9 +379,7 @@ def _owners_html(managers: dict[int, tuple[str, str]]) -> str:
             f'<span class="userName userId-{user_id}">{name}</span></li></ul></td>'
             f'<td class="teamCoManagerName"></td></tr>'
         )
-    return (
-        '<table class="tableType-team"><tbody>' + "".join(rows) + "</tbody></table>"
-    )
+    return '<table class="tableType-team"><tbody>' + "".join(rows) + "</tbody></table>"
 
 
 class _OwnersStub:
@@ -384,15 +457,15 @@ def test_reconstruct_owners_identities_tenure_and_safe_repointing(session: Sessi
     assert owner_of(2024, 3).display_name == "carol"
 
     # dave is the inactive one-season manager; tenure recorded.
-    dave = session.execute(
-        select(Owner).where(Owner.nfl_user_id == "400")
-    ).scalar_one()
+    dave = session.execute(select(Owner).where(Owner.nfl_user_id == "400")).scalar_one()
     assert dave.is_active is False
     assert (dave.joined_year, dave.left_year) == (2023, 2023)
 
     # Each season still has exactly 3 distinct owners (bijection preserved).
     for year in (2023, 2024):
-        owners = session.execute(
-            select(Team.owner_id).where(Team.season_id == season_ids[year])
-        ).scalars().all()
+        owners = (
+            session.execute(select(Team.owner_id).where(Team.season_id == season_ids[year]))
+            .scalars()
+            .all()
+        )
         assert len(set(owners)) == 3
