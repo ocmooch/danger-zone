@@ -77,6 +77,10 @@ ff-pipeline reconstruct           # Rebuild real history from NFL.com /history p
 ff-pipeline reconstruct --start 2010 --end 2025  # Explicit range (--end defaults to current year-1)
 ff-pipeline reconstruct --season 2018 --force    # Redo one already-completed season
 
+ff-pipeline avatars               # Backfill team avatars -> assets store + teams FKs (idempotent)
+ff-pipeline avatars --start 2018 --end 2020      # Explicit range (--end defaults to current year-1)
+ff-pipeline avatars --season 2018                # Single season only
+
 ff-pipeline rescore               # Recompute scoring from raw stats
 ff-pipeline rescore --season 2024 # For one season
 ff-pipeline rescore --dry-run     # Report diffs, don't write

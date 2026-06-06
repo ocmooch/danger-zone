@@ -1,22 +1,28 @@
 # League-History Media & Event-Log Plan
 
-**Status:** code complete (tests green) · backfill not yet run on live data · **Owner:** ocmooch · **Drafted:** 2026-06-05 · **Branch:** `feature/league-history-media-and-event-log` (cut from `dev`)
+**Status:** complete · backfill run + validated on live data (2026-06-05) · **Owner:** ocmooch · **Drafted:** 2026-06-05 · **Branch:** `feature/wire-avatar-backfill-cli` (cut from `dev`)
 
 > **Implementation note (2026-06-05).** Both workstreams are built, tested,
-> and migrated (single Alembic head `b2c3d4e5f6a7`). What remains is running
-> the scrapers against live NFL.com (needs the cookie in `.env`):
-> - **A:** the per-season scrape now uses `sweep_transactions`, so a normal
->   `run_nfl_com` per season backfills the full diary. Re-run all seasons,
->   then check the §5 counts (adds/drops/trades realistic; earliest non-draft
->   `executed_at` back in Sept/Oct; `lineup_change` + `setting_change` rows
->   with `extra_data`).
-> - **B:** run `media.backfill_team_avatars(session, client, league_id=…)`
->   (reads the per-season `history/{yr}/owners` page) to populate `assets` +
->   `teams.team_avatar_asset_id`. Not wired into a CLI command yet.
+> migrated (single Alembic head `b2c3d4e5f6a7`), and now **run against live
+> NFL.com** — the whole §5 checklist passes (see below). Running the live
+> backfill surfaced three bugs that the offline tests couldn't, all fixed:
+> - **Migration** `b2c3d4e5f6a7` had never actually applied: adding the avatar
+>   FKs makes SQLite batch-recreate `teams`, and `DROP TABLE teams` tripped
+>   child FKs. The in-process runner now disables FK enforcement around
+>   migrations (`repository.migrations._fk_disabled_for_sqlite`).
+> - **`setting_change`** rows are tagged `LM` (League Management) on NFL.com,
+>   not `commish` — unmapped, they were dropped, and an all-`LM` page aborted
+>   the whole backfill. Now mapped; the live row confirmed the payload shape.
+> - **Fingerprint** dedupe collapsed ~83% of commish rows (null
+>   team/player/direction + clustered timestamps). `_extra_sig` now folds the
+>   setting description in, like it already did for lineup slots.
 >
-> Setting/commish (`setting_change`) parsing is best-effort: no fixture row
-> was available, so the row→payload mapping is keyword-driven and stores the
-> raw From/To/description in `extra_data`. Confirm against a live commish row.
+> **A** is driven by `ff-pipeline backfill --source nfl_com --force` (per-season
+> `run_nfl_com` → `sweep_transactions`). **B** is `ff-pipeline avatars` (wraps
+> `media.backfill_team_avatars`; `--start/--end/--season`, exits 77 on auth
+> failure). Both are idempotent. Note: `backfill` defaults `--end` to the
+> current calendar year, whose season has no history yet and 302-redirects —
+> pass `--end <last completed year>` or ignore the trailing-year abort.
 
 Single source of truth for two pieces of league history that the pipeline does
 **not** currently preserve in full: the complete chronological transaction/event
@@ -157,18 +163,20 @@ Dependency: A is independent of B. Do A first (smaller, higher value).
 
 ## 5. Verification checklist
 
-- [ ] `sweep_transactions` unit test passes over a canned multi-page fixture.
-- [ ] Trade legs stitch `counterpart_team_id` correctly across page boundaries.
-- [ ] Post-backfill: realistic per-season add/drop/trade counts; earliest
-      non-draft `executed_at` lands in Sept/Oct, not late December.
-- [ ] `lineup_change` + `setting_change` rows present with payload in
-      `extra_data`.
-- [ ] `assets` rows exist; `data/assets/` holds the bytes; identical default
-      avatars dedupe to one row by `sha256`.
-- [ ] `teams.team_avatar_asset_id` / `owner_avatar_asset_id` populated per
-      season; read API surfaces them.
-- [ ] Re-runs are idempotent (no duplicate transactions, no re-downloaded
-      assets).
+- [x] `sweep_transactions` unit test passes over a canned multi-page fixture.
+- [x] Trade legs stitch `counterpart_team_id` correctly across page boundaries.
+- [x] Post-backfill: realistic per-season add/drop/trade counts (adds 326–504,
+      drops 320–496, trades present every season — was 2–8 adds / 0 trades);
+      earliest non-draft `executed_at` spread across the year (preseason
+      onward), no longer clustered in weeks 16–17. (2010–2025; 2026 in-progress.)
+- [x] `lineup_change` (25,037) + `setting_change` (267) rows all carry payload
+      in `extra_data`.
+- [x] `assets` rows exist (171); `data/assets/` holds the bytes; identical
+      avatars dedupe by `sha256` (191 team links → 171 unique assets).
+- [x] `teams.team_avatar_asset_id` populated per season (191 linked; 2026 +
+      one CDN 404 unlinked); read API tested.
+- [x] Re-runs are idempotent (2011 re-run: `transactions +0~2215`; assets
+      short-circuit on stored `source_url`).
 
 ## 6. Handoff prompt (paste into a fresh session)
 
