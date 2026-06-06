@@ -171,11 +171,21 @@ def test_parse_weekly_matchups_missing_matchups_raises() -> None:
 
 def test_parse_transactions_maps_types_and_direction() -> None:
     txns = parse_transactions(_read("transactions.html"))
-    # Fixture has 4 Drops + 4 Adds + 16 Lineup rows; Lineup is skipped.
-    assert len(txns) == 8
+    # Fixture has 4 Drops + 4 Adds + 16 Lineup rows. The full league diary
+    # now captures all of them (lineup moves included), not just player moves.
+    assert len(txns) == 24
     types = [t.transaction_type for t in txns]
     assert types.count("drop") == 4
     assert types.count("free_agent_add") == 4
+    assert types.count("lineup_change") == 16
+
+    # Lineup rows carry their slot move in extra_data and an in/out direction
+    # (start vs sit) — but no team anchor, so team_id is None.
+    london = next(t for t in txns if t.player_name == "Drake London")
+    assert london.transaction_type == "lineup_change"
+    assert london.direction == "out"  # R/W/T -> BN is a benching
+    assert london.extra_data == {"from_slot": "R/W/T", "to_slot": "BN"}
+    assert london.team_id is None
 
     # First two rows: drop + add for the same NFL.com txn id 2129
     # (the user's add+drop arrives as two adjacent rows sharing an id).
@@ -196,6 +206,31 @@ def test_parse_transactions_maps_types_and_direction() -> None:
     # Date text is left raw for the runner to coerce to datetime —
     # the parser doesn't know the season year.
     assert txns[0].executed_at == "Dec 28, 10:01am"
+
+
+def test_parse_transactions_maps_lm_commish_row_to_setting_change() -> None:
+    # NFL.com history pages tag commissioner / league-management actions with
+    # the type text "LM" (row class ``transaction-commish-NNN``). They have no
+    # player or team; the change text lives in ``.playerNameAndInfo`` and the
+    # actor in ``.transactionOwner``. Real shape captured from the 2011 log.
+    html = """
+    <table class="tableType-transaction"><tbody>
+      <tr class="transaction-commish-1660 odd">
+        <td class="transactionDate first">Dec 6, 7:01am</td>
+        <td class="transactionWeek"></td>
+        <td class="transactionType">LM</td>
+        <td class="playerNameAndInfo" colspan="3">harry updated playoff teams</td>
+        <td class="transactionOwner"><div class="teamOwner">
+          <span class="userName userId-102530">harry</span></div></td>
+      </tr>
+    </tbody></table>
+    """
+    (txn,) = parse_transactions(html)
+    assert txn.transaction_type == "setting_change"
+    assert txn.team_id is None and txn.player_id is None and txn.direction is None
+    assert txn.nfl_transaction_id == "1660"
+    assert txn.notes == "harry"
+    assert txn.extra_data == {"raw_type": "lm", "description": "harry updated playoff teams"}
 
 
 def test_parse_transactions_missing_table_raises() -> None:

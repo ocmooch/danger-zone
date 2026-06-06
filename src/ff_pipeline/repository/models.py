@@ -161,11 +161,52 @@ class Team(Base):
     regular_season_points_against: Mapped[float | None] = mapped_column(Float)
     made_playoffs: Mapped[bool | None] = mapped_column(Boolean)
     playoff_finish: Mapped[int | None] = mapped_column(Integer)
+    # Per-season avatar snapshots — ``teams`` is already a per-season row, so
+    # these capture the team logo + owner avatar as they appeared that season.
+    # FK into the content-addressed ``assets`` table (bytes live on disk).
+    team_avatar_asset_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("assets.asset_id", name="fk_teams_team_avatar")
+    )
+    owner_avatar_asset_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("assets.asset_id", name="fk_teams_owner_avatar")
+    )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
     season: Mapped[Season] = relationship(back_populates="teams", foreign_keys=[season_id])
     owner: Mapped[Owner] = relationship(back_populates="teams")
+
+
+class Asset(Base):
+    """A downloaded binary asset (team logo / owner avatar), content-addressed.
+
+    Raw bytes live on disk under ``storage_path`` (a content-addressed path
+    derived from ``sha256``); only the metadata lives in the DB so the
+    SQLite file stays small and the table ports cleanly to Postgres. NFL.com
+    CDN assets for a legacy league eventually rot, so we capture the bytes —
+    a URL alone preserves nothing. Identical default avatars across teams
+    dedupe to a single row via the UNIQUE ``sha256``.
+    """
+
+    __tablename__ = "assets"
+    __table_args__ = (
+        UniqueConstraint("sha256", name="uq_assets_sha256"),
+        Index("ix_assets_league", "league_id"),
+    )
+
+    asset_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("leagues.league_id", name="fk_assets_league")
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # team_avatar | user_avatar
+    source_url: Mapped[str] = mapped_column(String, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(64))
+    byte_size: Mapped[int | None] = mapped_column(Integer)
+    storage_path: Mapped[str] = mapped_column(String, nullable=False)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +475,10 @@ class Transaction(Base):
     direction: Mapped[str | None] = mapped_column(String(8))
     waiver_priority_used: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Free-form payload for events that don't fit the player-move columns:
+    # lineup-slot moves ({"from_slot", "to_slot"}) and commissioner/league
+    # setting changes ({"description", ...}). NULL for add/drop/trade rows.
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

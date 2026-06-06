@@ -27,11 +27,13 @@ def owners(league_id: str) -> str:
 
 
 def history_owners(league_id: str, year: int) -> str:
-    """Per-season owners page — the human manager of each franchise *that year*.
+    """Per-season "Managers" page — each franchise's manager *that year*.
 
-    Unlike the year-less ``/owners`` page (today's managers only), this view is
-    parameterized by season, so it reveals ownership handoffs: a franchise's
-    ``userId`` changing across seasons is a transfer to a different person.
+    Unlike the param-less ``/owners`` page (today's managers only), this view
+    is year-scoped, which makes it the source for two season-specific facts:
+    ownership handoffs (a franchise's ``userId`` changing across seasons is a
+    transfer to a different person) and the team logo as it stood that season
+    — what the avatar backfill snapshots onto each ``teams`` row.
     """
     return f"{BASE_URL}/league/{league_id}/history/{year}/owners"
 
@@ -80,8 +82,18 @@ def team_gamecenter(league_id: str, year: int, team_id: int | str, week: int) ->
     )
 
 
-def transactions(league_id: str, year: int) -> str:
-    return f"{BASE_URL}/league/{league_id}/history/{year}/transactions"
+def transactions(league_id: str, year: int, offset: int = 0) -> str:
+    """Season-long transactions log. Drives the ``transactions`` table.
+
+    ``offset`` is the row offset for NFL.com's shared pagination widget
+    (the same ``?offset=`` param the players page uses). The first page is
+    param-less (offset 0); the "next" link on each page carries the offset
+    for the following page, so the sweep walks them in turn.
+    """
+    base = f"{BASE_URL}/league/{league_id}/history/{year}/transactions"
+    if offset:
+        return f"{base}?offset={offset}"
+    return base
 
 
 def team_home(league_id: str, team_id: int | str) -> str:

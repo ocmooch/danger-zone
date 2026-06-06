@@ -178,6 +178,10 @@ class TeamOut(BaseModel):
     regular_season_points_against: float | None = None
     made_playoffs: bool | None = None
     playoff_finish: int | None = None
+    # Per-season avatar snapshots — FK into ``assets``. Stream the bytes from
+    # ``GET /assets/{asset_id}``; ``None`` until the avatar backfill has run.
+    team_avatar_asset_id: int | None = None
+    owner_avatar_asset_id: int | None = None
 
 
 class StandingsRow(BaseModel):
@@ -295,6 +299,9 @@ class TransactionOut(BaseModel):
     direction: str | None = None
     waiver_priority_used: int | None = None
     notes: str | None = None
+    # Slot move for lineup_change rows ({"from_slot", "to_slot"}) and the
+    # change detail for setting_change rows; null for add/drop/trade.
+    extra_data: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

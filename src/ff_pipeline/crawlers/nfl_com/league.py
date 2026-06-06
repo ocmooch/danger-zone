@@ -54,14 +54,13 @@ from ff_pipeline.crawlers.nfl_com.parsers import (
     parse_league_home,
     parse_owners,
     parse_team_roster,
-    parse_transactions,
     parse_weekly_matchups,
 )
+from ff_pipeline.crawlers.nfl_com.transactions import sweep_transactions
 from ff_pipeline.crawlers.nfl_com.urls import (
     league_home,
     owners,
     team_home,
-    transactions,
     weekly_matchups,
 )
 from ff_pipeline.logging_config import get_logger
@@ -205,14 +204,13 @@ def run_nfl_com(
             warnings=warnings,
         )
 
-        # --- Transactions (whole season log) ---
-        txn_html = fetcher.get_html(transactions(league_id, year))
-        parsed_txns = parse_transactions(txn_html)
+        # --- Transactions (whole season log, every page) ---
+        txn_sweep = sweep_transactions(fetcher, league_id=league_id, year=year)
         txn_counts = _upsert_transactions(
             session,
             season_id=season_id,
             season_year=year,
-            parsed=parsed_txns,
+            parsed=txn_sweep.rows,
             team_id_by_nfl_team_id=team_id_by_nfl_team_id,
             warnings=warnings,
             resolver=resolver,
@@ -724,10 +722,13 @@ def _upsert_transactions(
             Transaction.player_id,
             Transaction.direction,
             Transaction.executed_at,
+            Transaction.extra_data,
         ).where(Transaction.season_id == season_id)
     ).all()
     for row in existing:
-        fingerprints_seen.add((row[0], row[1], row[2], row[3], _fingerprint_dt(row[4])))
+        fingerprints_seen.add(
+            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
+        )
 
     for t in parsed:
         team_id = team_id_by_nfl_team_id.get(t.team_id) if t.team_id is not None else None
@@ -741,12 +742,18 @@ def _upsert_transactions(
             else None
         )
         executed_at = _parse_iso_datetime(t.executed_at, season_year=season_year)
+        counterpart_team_id = (
+            team_id_by_nfl_team_id.get(t.counterpart_team_id)
+            if t.counterpart_team_id is not None
+            else None
+        )
         fingerprint = (
             t.transaction_type,
             team_id,
             player_id,
             t.direction,
             _fingerprint_dt(executed_at),
+            _extra_sig(t.extra_data),
         )
         if fingerprint in fingerprints_seen:
             skipped += 1
@@ -759,10 +766,11 @@ def _upsert_transactions(
                 "executed_at": executed_at,
                 "effective_week": t.effective_week,
                 "team_id": team_id,
-                "counterpart_team_id": None,
+                "counterpart_team_id": counterpart_team_id,
                 "player_id": player_id,
                 "direction": t.direction,
                 "notes": t.notes,
+                "extra_data": t.extra_data,
             }
         )
     if rows_to_insert:
@@ -771,6 +779,33 @@ def _upsert_transactions(
         inserted = len(rows_to_insert)
     _ = warnings  # reserved hook
     return _Counts(inserted, skipped)
+
+
+def _extra_sig(extra_data: dict[str, object] | None) -> tuple[object, ...] | None:
+    """Distinguishing detail from ``extra_data``, folded into the fingerprint.
+
+    Two row families carry their only distinguishing content in ``extra_data``
+    rather than the team/player/direction columns, so without this they would
+    collapse on the fingerprint when they share a minute:
+
+    * **lineup moves** — differ only by slot (from_slot/to_slot);
+    * **setting/commish rows** — null team/player/direction, so the change
+      description is what makes them distinct. Commish actions cluster heavily
+      (league setup fires dozens in the same minute), so omitting this drops
+      the vast majority of the diary.
+    """
+    if not extra_data:
+        return None
+    if "from_slot" in extra_data or "to_slot" in extra_data:
+        return ("slot", extra_data.get("from_slot"), extra_data.get("to_slot"))
+    if "description" in extra_data or "from" in extra_data or "to" in extra_data:
+        return (
+            "setting",
+            extra_data.get("description"),
+            extra_data.get("from"),
+            extra_data.get("to"),
+        )
+    return None
 
 
 def _fingerprint_dt(value: datetime | None) -> str | None:
