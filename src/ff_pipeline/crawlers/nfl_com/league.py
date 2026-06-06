@@ -388,11 +388,17 @@ def _upsert_league(session: Session, parsed: object) -> None:
 
 
 def _upsert_season(session: Session, league_id: str, year: int) -> int:
+    # Seed a freshly-created season as ``in_progress``; never touch the
+    # status of an existing row. ``reconstruct_standings`` is the sole
+    # authority that promotes a season to ``completed``, and a re-sync of
+    # a finished season must not regress it (update_cols=() → DO NOTHING
+    # on conflict).
     upsert(
         session,
         Season,
         [{"league_id": league_id, "year": year, "status": "in_progress"}],
         conflict_cols=("league_id", "year"),
+        update_cols=(),
     )
     session.flush()
     season_id = session.execute(

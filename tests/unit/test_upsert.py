@@ -78,6 +78,35 @@ def test_upsert_explicit_update_cols(session: Session) -> None:
     assert row.position == "RB"
 
 
+def test_upsert_empty_update_cols_does_nothing_on_conflict(session: Session) -> None:
+    """An explicit empty update_cols seeds on insert but never clobbers.
+
+    Regression guard: ``_upsert_season`` relies on this to seed a new
+    season as ``in_progress`` without regressing a reconstructed
+    ``completed`` season on a later re-sync.
+    """
+
+    upsert(
+        session,
+        Player,
+        [{"gsis_id": "00-Y", "name_full": "Seeded", "position": "QB", "is_active": True}],
+        conflict_cols=("gsis_id",),
+        update_cols=(),
+    )
+    # Conflicting re-upsert with different values must be ignored entirely.
+    upsert(
+        session,
+        Player,
+        [{"gsis_id": "00-Y", "name_full": "Clobber", "position": "RB", "is_active": False}],
+        conflict_cols=("gsis_id",),
+        update_cols=(),
+    )
+    row = session.execute(select(Player).where(Player.gsis_id == "00-Y")).scalar_one()
+    assert row.name_full == "Seeded"
+    assert row.position == "QB"
+    assert row.is_active is True
+
+
 def test_upsert_into_league_table_uses_string_pk(session: Session) -> None:
     """Conflict key can be a primary key, not just a UNIQUE constraint."""
 
