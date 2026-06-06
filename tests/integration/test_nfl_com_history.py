@@ -14,7 +14,7 @@ Covers the two pieces of logic that the parser unit tests can't reach:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 from sqlalchemy import select
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ff_pipeline.crawlers.nfl_com.history import (
     derive_team_records,
     reconstruct_draft,
+    reconstruct_owners,
     reconstruct_standings,
 )
 from ff_pipeline.repository.database import create_app_engine
@@ -285,3 +286,113 @@ def test_reconstruct_draft_records_nothing_when_unobtainable(session: Session) -
         .first()
         is None
     )
+
+
+def _owners_html(managers: dict[int, tuple[str, str]]) -> str:
+    """Build a minimal /history/{year}/owners page.
+
+    ``managers`` maps NFL team id -> (userId, username), mirroring the real
+    ``table.tableType-team`` markup parse_owners consumes.
+    """
+    rows = []
+    for team_id, (user_id, name) in sorted(managers.items()):
+        rows.append(
+            f'<tr class="team-{team_id}">'
+            f'<td class="teamImageAndName first">'
+            f'<a class="teamName teamId-{team_id}" href="/league/36271/history/2024/teamhome?teamId={team_id}">Team {team_id}</a></td>'
+            f'<td class="teamOwnerName"><ul><li class="first last">'
+            f'<span class="userName userId-{user_id}">{name}</span></li></ul></td>'
+            f'<td class="teamCoManagerName"></td></tr>'
+        )
+    return (
+        '<table class="tableType-team"><tbody>' + "".join(rows) + "</tbody></table>"
+    )
+
+
+class _OwnersStub:
+    """Returns per-year owners HTML; T1/T2 swap managers and T3 changes hands."""
+
+    _BY_YEAR: ClassVar[dict[int, dict[int, tuple[str, str]]]] = {
+        2023: {1: ("100", "bob"), 2: ("200", "alice"), 3: ("400", "dave")},
+        2024: {1: ("200", "alice"), 2: ("100", "bob"), 3: ("300", "carol")},
+    }
+
+    def get_html(self, url: str) -> str:
+        year = 2023 if "/2023/" in url else 2024
+        return _owners_html(self._BY_YEAR[year])
+
+
+def _seed_two_seasons_stamped_current(session: Session) -> dict[int, int]:
+    """Seed 2023+2024 with the backfill artifact: every season shows the 2024
+    owner, each owner carrying its 2024 NFL userId. Returns season_id by year."""
+    session.add(League(league_id="36271", name="The Danger Zone", platform="nfl_com"))
+    # 2024 (latest) managers, stamped onto BOTH seasons.
+    stamped = {1: ("200", "alice"), 2: ("100", "bob"), 3: ("300", "carol")}
+    owner_by_uid: dict[str, int] = {}
+    for uid, name in dict(stamped.values()).items():
+        owner = Owner(league_id="36271", display_name=name, nfl_user_id=uid, is_active=True)
+        session.add(owner)
+        session.flush()
+        owner_by_uid[uid] = owner.owner_id
+    season_ids: dict[int, int] = {}
+    for year in (2023, 2024):
+        season = Season(league_id="36271", year=year, status="completed")
+        session.add(season)
+        session.flush()
+        season_ids[year] = season.season_id
+        for nfl_team_id, (uid, _name) in stamped.items():
+            session.add(
+                Team(
+                    season_id=season.season_id,
+                    owner_id=owner_by_uid[uid],
+                    team_name=f"Team {nfl_team_id}",
+                    team_abbrev=str(nfl_team_id),
+                )
+            )
+    session.flush()
+    return season_ids
+
+
+@pytest.mark.integration
+def test_reconstruct_owners_identities_tenure_and_safe_repointing(session: Session) -> None:
+    season_ids = _seed_two_seasons_stamped_current(session)
+    outcome = reconstruct_owners(
+        session, league_id="36271", fetcher=_OwnersStub(), start_year=2023, end_year=2024
+    )
+    session.commit()
+
+    # alice/bob/carol (active) updated in place; dave added as a new identity.
+    assert outcome.distinct_owners == 4
+    assert outcome.owners_added == 1
+    assert outcome.historical_inactive == 1
+
+    def owner_of(year: int, nfl_team_id: int) -> Owner:
+        team = session.execute(
+            select(Team).where(
+                Team.season_id == season_ids[year], Team.team_abbrev == str(nfl_team_id)
+            )
+        ).scalar_one()
+        return session.get(Owner, team.owner_id)
+
+    # 2024 already correct; 2023 required the A<->B swap + C->dave (a cycle the
+    # permutation must resolve without violating UNIQUE(season_id, owner_id)).
+    assert owner_of(2023, 1).display_name == "bob"
+    assert owner_of(2023, 2).display_name == "alice"
+    assert owner_of(2023, 3).display_name == "dave"
+    assert owner_of(2024, 1).display_name == "alice"
+    assert owner_of(2024, 2).display_name == "bob"
+    assert owner_of(2024, 3).display_name == "carol"
+
+    # dave is the inactive one-season manager; tenure recorded.
+    dave = session.execute(
+        select(Owner).where(Owner.nfl_user_id == "400")
+    ).scalar_one()
+    assert dave.is_active is False
+    assert (dave.joined_year, dave.left_year) == (2023, 2023)
+
+    # Each season still has exactly 3 distinct owners (bijection preserved).
+    for year in (2023, 2024):
+        owners = session.execute(
+            select(Team.owner_id).where(Team.season_id == season_ids[year])
+        ).scalars().all()
+        assert len(set(owners)) == 3

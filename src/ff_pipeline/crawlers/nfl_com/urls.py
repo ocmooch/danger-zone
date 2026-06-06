@@ -27,11 +27,13 @@ def owners(league_id: str) -> str:
 
 
 def history_owners(league_id: str, year: int) -> str:
-    """Per-season "Managers" page. Renders that season's team logos.
+    """Per-season "Managers" page — each franchise's manager *that year*.
 
-    Unlike the param-less ``owners`` page (always the current roster of
-    managers), this is year-scoped, so the team logo it carries is the one
-    that season — what the avatar backfill snapshots onto each ``teams`` row.
+    Unlike the param-less ``/owners`` page (today's managers only), this view
+    is year-scoped, which makes it the source for two season-specific facts:
+    ownership handoffs (a franchise's ``userId`` changing across seasons is a
+    transfer to a different person) and the team logo as it stood that season
+    — what the avatar backfill snapshots onto each ``teams`` row.
     """
     return f"{BASE_URL}/league/{league_id}/history/{year}/owners"
 

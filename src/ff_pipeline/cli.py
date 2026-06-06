@@ -590,6 +590,75 @@ def reconstruct_cmd(
     typer.echo(f"Reconstruct: seasons processed={len(results)} (range {start_year}-{end_year}).")
 
 
+@app.command("reconstruct-owners")
+def reconstruct_owners_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year)."
+    ),
+) -> None:
+    """Reconstruct manager identities + per-season team ownership from history.
+
+    Reads every ``/history/{year}/owners`` page to recover the human who managed
+    each franchise each year, derives one owner identity per NFL ``userId``
+    (with tenure, aliases, and active/inactive status), and re-points each
+    season's ``teams.owner_id`` to the true per-season manager. Fixes the
+    backfill artifact where every season showed the *current* owner. Idempotent;
+    requires a valid NFL_COOKIE (exit 77 on auth failure).
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.history import reconstruct_owners
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    start_year = start if start is not None else settings.league_start_year
+    end_year = end if end is not None else datetime.now().year
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(cookie=settings.nfl_cookie.get_secret_value(), delay_seconds=settings.nfl_com_delay_seconds)
+    try:
+        with Session(engine) as ss:
+            try:
+                outcome = reconstruct_owners(
+                    ss,
+                    league_id=settings.nfl_league_id,
+                    fetcher=client,
+                    start_year=start_year,
+                    end_year=end_year,
+                )
+                ss.commit()
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure: {exc}. Refresh NFL_COOKIE via `cookie set`, then re-run.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+    finally:
+        client.close()
+        engine.dispose()
+
+    typer.secho(
+        f"Owners: {outcome.distinct_owners} distinct managers "
+        f"(+{outcome.owners_added} new, ~{outcome.owners_updated} updated, "
+        f"{outcome.historical_inactive} inactive); "
+        f"{outcome.team_attributions_changed} team-season attributions corrected.",
+        fg="green",
+    )
+
+
 # ---------------------------------------------------------------------------
 # draft
 # ---------------------------------------------------------------------------
