@@ -83,8 +83,12 @@ def test_download_and_store_is_content_addressed(session: Session, tmp_path: Pat
     stub = _Stub({"https://cdn/a.jpg": b"\x89PNGdata"})
 
     asset_id = download_and_store(
-        session, stub, league_id="36271", kind="team_avatar",
-        source_url="https://cdn/a.jpg", assets_root=root,
+        session,
+        stub,
+        league_id="36271",
+        kind="team_avatar",
+        source_url="https://cdn/a.jpg",
+        assets_root=root,
     )
     assert asset_id is not None
     asset = session.get(Asset, asset_id)
@@ -98,14 +102,20 @@ def test_download_and_store_is_content_addressed(session: Session, tmp_path: Pat
 
     # Same URL again → no second network call, same row.
     again = download_and_store(
-        session, stub, league_id="36271", kind="team_avatar",
-        source_url="https://cdn/a.jpg", assets_root=root,
+        session,
+        stub,
+        league_id="36271",
+        kind="team_avatar",
+        source_url="https://cdn/a.jpg",
+        assets_root=root,
     )
     assert again == asset_id
     assert stub.bytes_calls == ["https://cdn/a.jpg"]  # fetched exactly once
 
 
-def test_download_and_store_dedupes_identical_bytes_by_sha(session: Session, tmp_path: Path) -> None:
+def test_download_and_store_dedupes_identical_bytes_by_sha(
+    session: Session, tmp_path: Path
+) -> None:
     session.add(League(league_id="36271", name="x", platform="nfl_com"))
     session.flush()
     root = tmp_path / "assets"
@@ -113,12 +123,20 @@ def test_download_and_store_dedupes_identical_bytes_by_sha(session: Session, tmp
     stub = _Stub({"https://cdn/a.jpg": b"DEFAULT", "https://cdn/b.jpg": b"DEFAULT"})
 
     a = download_and_store(
-        session, stub, league_id="36271", kind="team_avatar",
-        source_url="https://cdn/a.jpg", assets_root=root,
+        session,
+        stub,
+        league_id="36271",
+        kind="team_avatar",
+        source_url="https://cdn/a.jpg",
+        assets_root=root,
     )
     b = download_and_store(
-        session, stub, league_id="36271", kind="team_avatar",
-        source_url="https://cdn/b.jpg", assets_root=root,
+        session,
+        stub,
+        league_id="36271",
+        kind="team_avatar",
+        source_url="https://cdn/b.jpg",
+        assets_root=root,
     )
     assert a == b  # deduped onto a single content-addressed row
     assert (session.scalar(select(func.count()).select_from(Asset))) == 1

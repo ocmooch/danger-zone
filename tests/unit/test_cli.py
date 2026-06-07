@@ -68,7 +68,7 @@ def test_backfill_command_help_lists_start_end_source() -> None:
 def test_verify_command_help_lists_sweep_mode() -> None:
     result = runner.invoke(app, ["verify", "--help"])
     assert result.exit_code == 0
-    for flag in ("--player", "--season", "--week", "--sweep"):
+    for flag in ("--player", "--season", "--week", "--sweep", "--reconcile"):
         assert flag in result.stdout, f"missing flag in verify --help: {flag}"
 
 

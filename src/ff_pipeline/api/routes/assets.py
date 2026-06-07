@@ -21,9 +21,7 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 
 
 @router.get("/{asset_id}")
-def get_asset_bytes_endpoint(
-    asset_id: int, session: SessionDep, request: Request
-) -> FileResponse:
+def get_asset_bytes_endpoint(asset_id: int, session: SessionDep, request: Request) -> FileResponse:
     """Stream a stored asset's raw bytes (its team logo / owner avatar)."""
     asset = session.get(Asset, asset_id)
     if asset is None:

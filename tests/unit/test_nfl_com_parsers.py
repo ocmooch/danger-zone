@@ -22,6 +22,7 @@ from ff_pipeline.crawlers.nfl_com.parsers import (
     parse_gamecenter,
     parse_league_home,
     parse_owners,
+    parse_playoff_bracket,
     parse_standings,
     parse_team_roster,
     parse_transactions,
@@ -63,6 +64,22 @@ def test_parse_league_home_missing_links_raises() -> None:
     html = "<html><body><h1 class='title'>Lonely</h1></body></html>"
     with pytest.raises(ParseError, match="league_id"):
         parse_league_home(html)
+
+
+# ---------------------------------------------------------------------------
+# parse_playoff_bracket
+# ---------------------------------------------------------------------------
+
+
+def test_parse_playoff_bracket_extracts_championship_team_ids() -> None:
+    bracket = parse_playoff_bracket(_read("league_home.html"))
+    assert bracket.declared_team_count == 8
+    assert bracket.team_ids == frozenset({1, 5, 8, 9, 11, 12})
+
+
+def test_parse_playoff_bracket_missing_championship_raises() -> None:
+    with pytest.raises(ParseError, match="playoffType-championship"):
+        parse_playoff_bracket("<html><body></body></html>")
 
 
 # ---------------------------------------------------------------------------

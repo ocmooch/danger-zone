@@ -80,8 +80,8 @@ ff-pipeline reconstruct --start 2010 --end 2025
 **Defaults & gotchas**:
 
 - `--end` defaults to **current year − 1**: an in-progress season has no final standings to reconstruct. Pass `--end` explicitly to dodge the off-by-one and the nflverse 404 on the unplayed current year.
-- `made_playoffs` is left unset: NFL.com's static history HTML does not distinguish the championship bracket from the consolation bracket.
-- 2010–2015 are reconstructed (standings/matchups/lineups) but **not scored** — see the scoring-rules gap in `10_OPEN_QUESTIONS.md` §P1-V1.
+- Matchup reconstruction reads the playoff bracket page to classify postseason rows as championship vs consolation. Re-run `reconstruct --force` for already-built seasons before expecting `matchups.is_consolation` to be populated in an existing DB.
+- 2010–2015 now have reconstructed player scoring, but `verify --reconcile` remains the trust gate; current real-DB checks still show team-total drift that must be investigated before treating every reconstructed score as final.
 
 **Verify**: after a run, `ff-pipeline status` shows the latest reconstruct run `success`; spot-check with the API (`/seasons`, `/matchups`, lineups) or SQL (`seasons.status='completed'`, `team_rosters` has multiple weeks per season). Then `rescore` + `verify --sweep` the scored seasons (2016–2025) since real lineups now carry `nfl_com_player_id`.
 

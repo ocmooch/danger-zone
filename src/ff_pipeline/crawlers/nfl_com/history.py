@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ff_pipeline.crawlers.nfl_com.client import AuthFailureError
 from ff_pipeline.crawlers.nfl_com.parsers import (
@@ -37,11 +37,15 @@ from ff_pipeline.crawlers.nfl_com.parsers import (
     parse_draft_picks,
     parse_draft_round_numbers,
     parse_gamecenter,
+    parse_playoff_bracket,
     parse_standings,
     parse_weekly_matchups,
 )
 from ff_pipeline.crawlers.nfl_com.urls import (
     draft_results as draft_results_url,
+)
+from ff_pipeline.crawlers.nfl_com.urls import (
+    playoffs as playoffs_url,
 )
 from ff_pipeline.crawlers.nfl_com.urls import (
     standings as standings_url,
@@ -128,17 +132,34 @@ def _resolve_season(session: Session, league_id: str, year: int) -> Season | Non
 
 def _internal_team_by_nfl_id(session: Session, season_id: int) -> dict[int, int]:
     """Map NFL.com team_id (stashed in ``teams.team_abbrev``) → internal id."""
-    out: dict[int, int] = {}
+    candidates: dict[int, list[int]] = {}
     for team_id, abbrev in session.execute(
         select(Team.team_id, Team.team_abbrev).where(Team.season_id == season_id)
     ).all():
         if not abbrev:
             continue
         try:
-            out[int(abbrev)] = team_id
+            candidates.setdefault(int(abbrev), []).append(team_id)
         except (TypeError, ValueError):
             continue
-    return out
+    return {
+        nfl_id: _preferred_team_id(session, team_ids) for nfl_id, team_ids in candidates.items()
+    }
+
+
+def _preferred_team_id(session: Session, team_ids: list[int]) -> int:
+    if len(team_ids) == 1:
+        return team_ids[0]
+    scored: list[tuple[int, int]] = []
+    for team_id in team_ids:
+        roster_refs = session.scalar(
+            select(func.count()).select_from(TeamRoster).where(TeamRoster.team_id == team_id)
+        )
+        matchup_refs = session.scalar(
+            select(func.count()).select_from(Matchup).where(Matchup.team_id == team_id)
+        )
+        scored.append((int(roster_refs or 0) + int(matchup_refs or 0), team_id))
+    return max(scored)[1]
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +275,7 @@ def reconstruct_matchups(
     # records (run standings first). A week beyond that boundary is a
     # postseason week (championship + consolation brackets).
     reg_weeks = season.regular_season_weeks
+    playoff_team_ids = _championship_playoff_team_ids(fetcher, league_id=league_id, year=year)
     candidate_weeks = list(weeks) if weeks is not None else list(range(1, MAX_FANTASY_WEEK + 1))
     scraped: list[int] = []
     playoff_weeks: list[int] = []
@@ -292,7 +314,13 @@ def reconstruct_matchups(
                     # Override the (always-False) parsed flag with the
                     # boundary-derived classification.
                     "is_playoff": is_postseason or m.is_playoff,
-                    "is_consolation": m.is_consolation,
+                    "is_consolation": _is_consolation_matchup(
+                        is_postseason=is_postseason,
+                        parsed_is_consolation=m.is_consolation,
+                        playoff_team_ids=playoff_team_ids,
+                        team_nfl_id=m.team_id,
+                        opponent_nfl_id=m.opponent_team_id,
+                    ),
                     "nfl_com_game_id": m.game_id,
                 }
             )
@@ -330,6 +358,33 @@ def reconstruct_matchups(
         rows_added=added,
         rows_updated=updated,
     )
+
+
+def _championship_playoff_team_ids(
+    fetcher: _HtmlFetcher, *, league_id: str, year: int
+) -> frozenset[int] | None:
+    """Return NFL.com team IDs in the championship bracket, if parseable."""
+    try:
+        bracket = parse_playoff_bracket(fetcher.get_html(playoffs_url(league_id, year)))
+    except ParseError as exc:
+        log.warning("matchups: playoff bracket unavailable", year=year, error=str(exc))
+        return None
+    return bracket.team_ids
+
+
+def _is_consolation_matchup(
+    *,
+    is_postseason: bool,
+    parsed_is_consolation: bool,
+    playoff_team_ids: frozenset[int] | None,
+    team_nfl_id: int,
+    opponent_nfl_id: int | None,
+) -> bool:
+    if parsed_is_consolation:
+        return True
+    if not is_postseason or playoff_team_ids is None or opponent_nfl_id is None:
+        return False
+    return team_nfl_id not in playoff_team_ids or opponent_nfl_id not in playoff_team_ids
 
 
 def _is_win(score: float | None, opp: float | None) -> bool | None:
@@ -609,72 +664,113 @@ def reconstruct_owners(
     from ff_pipeline.crawlers.nfl_com.parsers import parse_owners
     from ff_pipeline.crawlers.nfl_com.urls import history_owners
     from ff_pipeline.repository.models import Owner
+    from ff_pipeline.repository.owner_identities import canonicalize_owner_identity
 
-    # 1. Scrape: per_season[year] = {nfl_team_id: (nfl_user_id, username)}
-    per_season: dict[int, dict[int, tuple[str, str]]] = {}
+    # 1. Scrape: per_season[year] = {nfl_team_id: (identity_key, nfl_user_id, canonical, observed)}
+    per_season: dict[int, dict[int, tuple[str, str | None, str, str]]] = {}
     for year in range(start_year, end_year + 1):
         if _resolve_season(session, league_id, year) is None:
             continue
         parsed = parse_owners(fetcher.get_html(history_owners(league_id, year)))
-        mapping: dict[int, tuple[str, str]] = {}
+        mapping: dict[int, tuple[str, str | None, str, str]] = {}
         for o in parsed:
             if o.team_id is None or o.nfl_user_id is None:
                 continue
-            mapping[o.team_id] = (o.nfl_user_id, o.display_name)
+            identity = canonicalize_owner_identity(
+                session,
+                league_id=league_id,
+                display_name=o.display_name,
+                nfl_user_id=o.nfl_user_id,
+            )
+            mapping[o.team_id] = (
+                identity.key,
+                identity.nfl_user_id,
+                identity.display_name,
+                identity.observed_display_name,
+            )
         if mapping:
             per_season[year] = mapping
 
     if not per_season:
         return OwnersOutcome(0, 0, 0, 0, 0)
 
-    # 2. Identity map: userId -> {username per year, set of years}.
+    # 2. Identity map: canonical identity key -> {username per year, set of years}.
     names_by_year: dict[str, dict[int, str]] = {}
+    user_ids_by_key: dict[str, set[str]] = {}
     for year in sorted(per_season):
-        for uid, name in per_season[year].values():
-            names_by_year.setdefault(uid, {})[year] = name
+        for key, uid, name, observed_name in per_season[year].values():
+            names_by_year.setdefault(key, {})[year] = name
+            if observed_name != name:
+                names_by_year[key][year] = name
+            if uid:
+                user_ids_by_key.setdefault(key, set()).add(uid)
 
-    # 3. Upsert one owners row per distinct userId.
+    # 3. Upsert one owners row per distinct canonical identity.
     latest_year = max(per_season)
-    owner_by_uid: dict[str, int] = {}
+    owner_by_key: dict[str, int] = {}
     owners_added = owners_updated = inactive = 0
-    for uid, by_year in names_by_year.items():
+    for key, by_year in names_by_year.items():
         years = sorted(by_year)
         current_name = by_year[years[-1]]
         aliases = sorted({n for n in by_year.values() if n != current_name})
+        for values in per_season.values():
+            for parsed_key, _uid, canonical_name, observed_name in values.values():
+                if parsed_key == key and observed_name != canonical_name:
+                    aliases.append(observed_name)
+        aliases = sorted(set(aliases))
         is_active = latest_year in by_year
         if not is_active:
             inactive += 1
-        existing = (
-            session.execute(
-                select(Owner).where(Owner.league_id == league_id, Owner.nfl_user_id == uid)
+        user_ids = sorted(user_ids_by_key.get(key, set()))
+        primary_user_id = user_ids[0] if len(user_ids) == 1 else None
+        existing = None
+        if key.startswith("canonical_display_name:"):
+            existing = (
+                session.execute(
+                    select(Owner).where(
+                        Owner.league_id == league_id,
+                        func.lower(Owner.display_name) == current_name.casefold(),
+                    )
+                )
+                .scalars()
+                .first()
             )
-            .scalars()
-            .first()
-        )
+        if existing is None and primary_user_id is not None:
+            existing = (
+                session.execute(
+                    select(Owner).where(
+                        Owner.league_id == league_id,
+                        Owner.nfl_user_id == primary_user_id,
+                    )
+                )
+                .scalars()
+                .first()
+            )
         if existing is not None:
             existing.display_name = current_name
-            existing.aliases = aliases or None
+            existing.aliases = _merged_owner_aliases(None, aliases, user_ids)
             existing.is_active = is_active
             existing.joined_year = years[0]
             existing.left_year = None if is_active else years[-1]
-            owner_by_uid[uid] = existing.owner_id
+            existing.nfl_user_id = primary_user_id
+            owner_by_key[key] = existing.owner_id
             owners_updated += 1
         else:
             owner = Owner(
                 league_id=league_id,
                 display_name=current_name,
-                nfl_user_id=uid,
-                aliases=aliases or None,
+                nfl_user_id=primary_user_id,
+                aliases=_merged_owner_aliases(None, aliases, user_ids),
                 is_active=is_active,
                 joined_year=years[0],
                 left_year=None if is_active else years[-1],
             )
             session.add(owner)
             session.flush()
-            owner_by_uid[uid] = owner.owner_id
+            owner_by_key[key] = owner.owner_id
             owners_added += 1
 
-    all_owner_ids = set(owner_by_uid.values())
+    all_owner_ids = set(owner_by_key.values())
 
     # 4. Re-point each season's teams.owner_id to the true per-season manager.
     changed = 0
@@ -684,10 +780,10 @@ def reconstruct_owners(
             continue
         nfl_to_internal = _internal_team_by_nfl_id(session, season.season_id)
         desired: dict[int, int] = {}
-        for nfl_tid, (uid, _name) in mapping.items():
+        for nfl_tid, (key, _uid, _name, _observed_name) in mapping.items():
             internal = nfl_to_internal.get(nfl_tid)
             if internal is not None:
-                desired[internal] = owner_by_uid[uid]
+                desired[internal] = owner_by_key[key]
         changed += _apply_owner_permutation(session, season.season_id, desired, all_owner_ids)
 
     log.info(
@@ -713,54 +809,47 @@ def _apply_owner_permutation(
     desired: dict[int, int],
     all_owner_ids: set[int],
 ) -> int:
-    """Set each team's ``owner_id`` to ``desired`` without violating uniqueness.
-
-    ``UNIQUE(season_id, owner_id)`` is checked per row, so a naive update can
-    transiently collide (two teams briefly sharing an owner mid-swap). We apply
-    the target as a permutation: repeatedly assign any team whose target owner is
-    currently free, which frees that team's old owner for the next. New
-    historical owners are free by construction, so this always makes progress; a
-    genuine cycle (none occur in practice) is broken by parking one team on an
-    owner absent from the season.
-    """
+    """Set each team's ``owner_id`` to the reconstructed historical manager."""
+    _ = all_owner_ids
     teams = list(session.execute(select(Team).where(Team.season_id == season_id)).scalars().all())
     team_by_id = {t.team_id: t for t in teams}
-    todo = [
-        tid for tid in desired if tid in team_by_id and team_by_id[tid].owner_id != desired[tid]
-    ]
-    if not todo:
-        return 0
-    occupied = {t.owner_id for t in teams}
     changed = 0
 
-    while todo:
-        progressed = False
-        for tid in list(todo):
-            target = desired[tid]
-            if target not in occupied:
-                old = team_by_id[tid].owner_id
-                team_by_id[tid].owner_id = target
-                occupied.discard(old)
-                occupied.add(target)
-                session.flush()
-                todo.remove(tid)
-                changed += 1
-                progressed = True
-        if not progressed:
-            # Break a cycle: park the first stuck team on any owner not present
-            # this season, freeing its current owner for the cycle to unwind.
-            parking = next((o for o in all_owner_ids if o not in occupied), None)
-            if parking is None:
-                raise RuntimeError(f"owner permutation stuck for season_id={season_id}")
-            stuck = todo[0]
-            old = team_by_id[stuck].owner_id
-            team_by_id[stuck].owner_id = parking
-            occupied.discard(old)
-            occupied.add(parking)
-            session.flush()
-            # leave `stuck` in todo; its real target is now reachable next pass
+    for team_id, owner_id in desired.items():
+        team = team_by_id.get(team_id)
+        if team is None or team.owner_id == owner_id:
+            continue
+        team.owner_id = owner_id
+        changed += 1
+    if changed:
+        session.flush()
 
     return changed
+
+
+def _merged_owner_aliases(
+    existing: object,
+    display_aliases: list[str],
+    nfl_user_ids: list[str],
+) -> dict[str, list[str]] | list[str] | None:
+    if isinstance(existing, dict):
+        names = {str(v) for v in existing.get("display_names", [])}
+        ids = {str(v) for v in existing.get("nfl_user_ids", [])}
+    elif isinstance(existing, list):
+        names = {str(v) for v in existing}
+        ids = set()
+    else:
+        names = set()
+        ids = set()
+
+    names.update(display_aliases)
+    ids.update(nfl_user_ids)
+    if len(ids) <= 1:
+        return sorted(names) or None
+    data: dict[str, list[str]] = {"nfl_user_ids": sorted(ids)}
+    if names:
+        data["display_names"] = sorted(names)
+    return data
 
 
 # ---------------------------------------------------------------------------

@@ -627,7 +627,9 @@ def reconstruct_owners_cmd(
         raise typer.Exit(code=2)
 
     engine = create_app_engine(settings.database_url)
-    client = NflComClient(cookie=settings.nfl_cookie.get_secret_value(), delay_seconds=settings.nfl_com_delay_seconds)
+    client = NflComClient(
+        cookie=settings.nfl_cookie.get_secret_value(), delay_seconds=settings.nfl_com_delay_seconds
+    )
     try:
         with Session(engine) as ss:
             try:
