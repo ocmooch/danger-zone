@@ -204,9 +204,7 @@ def build_team_defense_stats(
                 opp_key = (season_year, week, opponent)
                 opp_row = team_row_index.get(opp_key)
                 if opp_row is not None:
-                    stats["sacks"] = sum(
-                        _as_float(opp_row.get(c)) for c in _OPPONENT_SACKS
-                    )
+                    stats["sacks"] = sum(_as_float(opp_row.get(c)) for c in _OPPONENT_SACKS)
                 opp_yards = offense_yards.get(opp_key)
                 if opp_yards is not None:
                     stats["total_yards_allowed"] = opp_yards

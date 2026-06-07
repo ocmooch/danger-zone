@@ -47,6 +47,14 @@ Findings:
 era's verify at the same ~92% ceiling, and the standing DST data-quality
 re-ingest. No unobserved-stat flags surfaced.
 
+**Trust-check status (2026-06-07)**: keep the reconstruction marked **not
+final** until the offline team-total sanity check is investigated.
+`ff-pipeline verify --season 2010 --reconcile` compared 183 team-weeks and
+failed 134; `ff-pipeline verify --season 2024 --week 1 --reconcile` failed 9
+of 13 rows, including one no-starters artifact. The per-player scored rows
+remain useful, but the summed-starters → NFL.com team-total invariant is not
+yet reliable enough to close the UP/F27 trust gate.
+
 ### P1-V2. Long-TD-length bonuses are unscored (data-source gap)
 
 **State**: Residual non-DST `verify` deltas are a steady ~12–18/season of
@@ -150,6 +158,8 @@ regressions.
 **Accepted (benign, surface in the audit)**: Tim Tebow (rostered to 2021) and
 Colin Kaepernick (to 2023) are real players kept on keeper rosters past their
 careers — unique names, no younger namesake to confuse, nothing to repair.
+Re-run on 2026-06-07 against `data/fantasy.db` found exactly those two
+suspects and no new temporal mismatch candidates.
 
 **Known blind spot**: two same-name players whose careers *overlap* (ids
 swapped between contemporaries) are invisible to temporal checks. Catching
@@ -209,10 +219,13 @@ instead of trusting the "Next" href; verify against a mid-season capture.
 
 ### M5-V5. Pages not yet parsed — capture fixtures before building
 
-**State**: Reconstruction parses standings; still **unparsed** and needed for
-fuller history:
+**State**: Reconstruction parses standings and draft pages; remaining history
+follow-ups:
 - `/league/{id}/history/{year}/draftresults` — draft picks
-- `/league/{id}/history/{year}/playoffs` — playoff bracket
+- `/league/{id}/history/{year}/playoffs` — playoff bracket. Parser and
+  reconstruction support now consume the championship-bracket team set to
+  classify postseason schedule rows as championship vs consolation; regenerate
+  affected seasons before expecting `matchups.is_consolation` in the DB.
 - `/league/{id}/gamecenter?gameId={N}` — game-ID-keyed gamecenter
   (distinct from the `teamgamecenter` URL we do parse)
 - `playerStatus=owned` / `playerStatus=waivers` players-page variants (M5-V1)

@@ -62,6 +62,10 @@ def standings(league_id: str, year: int) -> str:
     return f"{BASE_URL}/league/{league_id}/history/{year}/standings"
 
 
+def playoffs(league_id: str, year: int) -> str:
+    return f"{BASE_URL}/league/{league_id}/history/{year}/playoffs"
+
+
 def weekly_matchups(league_id: str, year: int, week: int) -> str:
     return f"{BASE_URL}/league/{league_id}/history/{year}/schedule?scheduleDetail={week}"
 
@@ -126,6 +130,7 @@ __all__ = [
     "league_home",
     "league_players",
     "owners",
+    "playoffs",
     "season_home",
     "settings",
     "standings",

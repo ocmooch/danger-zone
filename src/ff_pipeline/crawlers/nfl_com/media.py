@@ -166,9 +166,7 @@ def backfill_team_avatars(
     onto that season's ``teams.team_avatar_asset_id``. Caller commits.
     """
     season_rows = (
-        session.execute(
-            select(Season).where(Season.league_id == league_id).order_by(Season.year)
-        )
+        session.execute(select(Season).where(Season.league_id == league_id).order_by(Season.year))
         .scalars()
         .all()
     )

@@ -78,6 +78,7 @@ from ff_pipeline.repository.models import (
     TeamRoster,
     Transaction,
 )
+from ff_pipeline.repository.owner_identities import canonicalize_owner_identity
 from ff_pipeline.repository.upsert import upsert
 
 if TYPE_CHECKING:
@@ -423,34 +424,51 @@ def _upsert_owners_and_teams(
     owner_id_by_team_id: dict[int, int] = {}
 
     existing = {
-        row.display_name: row
+        row.display_name.casefold() if row.display_name else "": row
         for row in session.execute(select(Owner).where(Owner.league_id == league_id)).scalars()
     }
     for parsed_owner in parsed:
-        owner = existing.get(parsed_owner.display_name)
+        identity = canonicalize_owner_identity(
+            session,
+            league_id=league_id,
+            display_name=parsed_owner.display_name,
+            nfl_user_id=parsed_owner.nfl_user_id,
+        )
+        owner = existing.get(identity.display_name.casefold())
         if owner is None:
             owner = Owner(
                 league_id=league_id,
-                display_name=parsed_owner.display_name,
-                nfl_user_id=parsed_owner.nfl_user_id,
+                display_name=identity.display_name,
+                nfl_user_id=identity.nfl_user_id,
+                aliases=_owner_aliases(None, identity.observed_display_name, identity.display_name),
                 is_active=True,
             )
             session.add(owner)
             session.flush()
+            existing[identity.display_name.casefold()] = owner
             owners_added += 1
         else:
             changed = False
-            if parsed_owner.nfl_user_id and owner.nfl_user_id != parsed_owner.nfl_user_id:
-                owner.nfl_user_id = parsed_owner.nfl_user_id
+            if owner.display_name != identity.display_name:
+                owner.display_name = identity.display_name
+                changed = True
+            aliases = _owner_aliases(
+                owner.aliases, identity.observed_display_name, identity.display_name
+            )
+            if aliases != owner.aliases:
+                owner.aliases = aliases
+                changed = True
+            if identity.nfl_user_id and owner.nfl_user_id != identity.nfl_user_id:
+                owner.nfl_user_id = identity.nfl_user_id
                 changed = True
             if changed:
                 owners_updated += 1
         if parsed_owner.team_id is not None:
             owner_id_by_team_id[parsed_owner.team_id] = owner.owner_id
 
-    # Teams: one row per (season_id, owner_id). The NFL.com team_id is
-    # not part of the table — we stash it in team_abbrev only as a hint
-    # when present.
+    # Teams are keyed by their season-scoped rendered name. ``owner_id`` can
+    # repeat when a manually canonicalized manager controlled multiple teams in
+    # one season.
     team_counts = _upsert_teams(
         session,
         season_id=season_id,
@@ -462,6 +480,17 @@ def _upsert_owners_and_teams(
         _Counts(owners_added, owners_updated),
         team_counts,
     )
+
+
+def _owner_aliases(
+    existing: object,
+    observed_display_name: str,
+    canonical_display_name: str,
+) -> list[str] | None:
+    aliases = set(existing if isinstance(existing, list) else [])
+    if observed_display_name != canonical_display_name:
+        aliases.add(observed_display_name)
+    return sorted(str(a) for a in aliases) or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,10 +506,31 @@ def _upsert_teams(
     parsed: list[ParsedOwner],
     owner_id_by_team_id: dict[int, int],
 ) -> _Counts:
+    existing_by_nfl_team_id = _team_id_lookup(session, season_id)
+    added = 0
+    updated = 0
     rows = []
     for p in parsed:
         owner_id = owner_id_by_team_id.get(p.team_id) if p.team_id is not None else None
         if owner_id is None:
+            continue
+        if p.team_id is not None and p.team_id in existing_by_nfl_team_id:
+            team = session.get(Team, existing_by_nfl_team_id[p.team_id])
+            if team is None:
+                continue
+            changed = False
+            if team.owner_id != owner_id:
+                team.owner_id = owner_id
+                changed = True
+            if team.team_name != p.team_name:
+                team.team_name = p.team_name
+                changed = True
+            abbrev = str(p.team_id)
+            if team.team_abbrev != abbrev:
+                team.team_abbrev = abbrev
+                changed = True
+            if changed:
+                updated += 1
             continue
         rows.append(
             {
@@ -491,9 +541,9 @@ def _upsert_teams(
             }
         )
     if not rows:
-        return _Counts(0, 0)
-    counts = upsert(session, Team, rows, conflict_cols=("season_id", "owner_id"))
-    return _Counts(counts.rows_added, counts.rows_updated)
+        return _Counts(added, updated)
+    counts = upsert(session, Team, rows, conflict_cols=("season_id", "team_name"))
+    return _Counts(added + counts.rows_added, updated + counts.rows_updated)
 
 
 def _team_id_lookup(session: Session, season_id: int) -> dict[int, int]:

@@ -125,9 +125,7 @@ def _offset_player_ids(html: str, url: str) -> str:
     m = _TEAM_ID_IN_URL.search(url)
     team_no = int(m.group(1)) if m else 0
     offset = team_no * 100_000_000
-    return _PLAYER_ID_TOKEN.sub(
-        lambda mm: f"{mm.group(1)}{int(mm.group(2)) + offset}", html
-    )
+    return _PLAYER_ID_TOKEN.sub(lambda mm: f"{mm.group(1)}{int(mm.group(2)) + offset}", html)
 
 
 @pytest.fixture

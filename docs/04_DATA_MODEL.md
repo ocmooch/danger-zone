@@ -96,11 +96,26 @@ A persistent person — one human, even if they had different team names across 
 | `league_id` | TEXT FK → leagues | |
 | `display_name` | TEXT | Their NFL.com display name |
 | `nfl_user_id` | TEXT | Their NFL.com user ID, if scrapeable |
-| `aliases` | TEXT (JSON array) | Other names they've gone by — manual cleanup possible |
+| `aliases` | TEXT (JSON array/object) | Other names they've gone by; may include structured `display_names` / `nfl_user_ids` for manually merged identities |
 | `is_active` | BOOLEAN | Still in the league this season? |
 | `joined_year` | INTEGER | First season in this league |
 | `left_year` | INTEGER | NULL if active |
 | `created_at`, `updated_at` | TIMESTAMP | |
+
+### `owner_identity_overrides`
+Manual pins that force multiple NFL.com owner identities to resolve to one canonical manager before owner rows are upserted. Used for known same-person aliases such as the two Adam user IDs and the two Ill user IDs; reconstruction still keeps different managers distinct unless an override exists.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `override_id` | INTEGER PK AUTOINCREMENT | |
+| `league_id` | TEXT FK → leagues | |
+| `external_id_kind` | TEXT | `display_name` or `nfl_user_id` |
+| `external_id_value` | TEXT | Observed NFL.com display/user value |
+| `canonical_display_name` | TEXT | Canonical owner display name to use |
+| `notes` | TEXT | Manual-review context |
+| `created_at`, `updated_at` | TIMESTAMP | |
+
+UNIQUE(`league_id`, `external_id_kind`, `external_id_value`)
 
 ### `teams`
 One row per (season, team). A single owner shows up in N rows, one per season they were in.
@@ -125,7 +140,9 @@ One row per (season, team). A single owner shows up in N rows, one per season th
 | `owner_avatar_asset_id` | INTEGER FK → assets | Owner avatar that season; NULL (NFL.com renders only a team logo per row today) |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
-UNIQUE(`season_id`, `team_name`) — and also UNIQUE(`season_id`, `owner_id`)
+UNIQUE(`season_id`, `team_name`). `owner_id` is intentionally not unique within
+a season because historical/manual identity cleanup can prove that one person
+managed multiple NFL.com teams in the same year.
 
 ### `scoring_rules`
 One row per (season, rule). Scraped from the league settings page each season.
@@ -277,7 +294,7 @@ One row per (season, week, team). Two rows make a single head-to-head game.
 | `opponent_score` | REAL | Cached for query convenience |
 | `is_win` | BOOLEAN | NULL if not yet completed |
 | `is_playoff` | BOOLEAN | |
-| `is_consolation` | BOOLEAN | For losers-bracket games |
+| `is_consolation` | BOOLEAN | For losers-bracket games; history reconstruction derives this from the NFL.com playoff bracket's championship-team set |
 | `nfl_com_game_id` | TEXT | The `gameId` in NFL.com URLs — for re-fetching |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
