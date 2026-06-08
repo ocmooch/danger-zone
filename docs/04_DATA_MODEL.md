@@ -178,8 +178,21 @@ Both passes preview first (`--dry-run` shows the position breakdown and the casc
 **League relevance vs. NFL facts.** Two different questions get asked of a player row, and they have two different answer columns. *Is this player currently an NFL thing?* is a **current-NFL fact** sourced from nflverse — `is_active`, `nfl_team`, `last_season`. *Was this player ever part of THIS league?* is a **historical league fact** derived from `team_rosters` — the `first_rostered_season` / `last_rostered_season` span. These do not agree, and shouldn't: nflverse ships the entire NFL universe, so thousands of rows are current-NFL-active but never touched this league (the "ghost" players). A consumer that wants "players in this league's history" must filter on a non-NULL rostered span (`league_relevant` on the players API), **not** on `is_active`. A consumer that wants an active/retired-in-league badge should read the rostered span, not `is_active`.
 
 - `is_active` is the **raw nflverse status snapshot** as of the last metadata crawl (`status == 'ACT'`, or unknown/`NULL` status treated as active). It is deliberately *not* overloaded into a league-relevance signal — a player can be NFL-active yet never have been in this league, or league-historical yet now NFL-retired. Treat it as "nflverse's current view of the player," nothing more. (Historical reason it reads as unreliable in a league index: the `status is None → active` fallback, plus `nfl_team` being a single mutable "latest team" that nflverse keeps populated even for retired players.)
-- `last_season` is likewise a current-NFL fact (the last NFL season nflverse saw the player). It powers the ingestion **era filter** (drop metadata for players whose career ended before `LEAGUE_START_YEAR`). It is NULL only for rows nflverse can't identify — players first seen on NFL.com with no `gsis_id`, and team-DEF rows (which are synthetic and have no nflverse player record). That NULL is an honest source gap, not a population bug.
+- `last_season` is likewise a current-NFL fact (the last NFL season nflverse saw the player). It powers the ingestion **era filter** (drop metadata for players whose career ended before `LEAGUE_START_YEAR`). It is NULL only for rows nflverse can't identify — players first seen on NFL.com with no `gsis_id`, team-DEF rows (which are synthetic and have no nflverse player record), and rare stale `gsis_id`s no longer returned by `load_players()`. That NULL is an honest source gap, not a population bug.
 - `first_rostered_season` / `last_rostered_season` are **materialized** from `team_rosters` (`MIN`/`MAX` `season_year`; NULL ⇒ never rostered here). They are recomputed at the end of every NFL.com roster sync (`recompute_rostered_spans`) and backfilled by their migration, so a fresh DB and an incrementally-synced DB agree.
+
+**Operational audit (2026-06-07, `data/fantasy.db`).** The D1/D2 refresh path is
+idempotent and already populated every player that current nflverse can match:
+`scripts/refresh_player_metadata.py` dry-run matched 2,771 existing `gsis_id`s,
+updated through `_upsert_players`, inserted 0 rows, and left the populated
+`last_season` count unchanged at 2,771 / 3,048. The remaining 277
+`last_season IS NULL` rows break down as 276 rows with no `gsis_id` plus one
+stale `gsis_id` (`M. Wilson`, `00-0034703`) absent from current
+`load_players()`. Among league-rostered players, the 38 `rookie_year IS NULL`
+rows are 32 synthetic team DEF rows, 5 NFL.com-only historical aliases, and the
+same stale `M. Wilson` nflverse miss. Never-rostered / never-scored ghost rows
+are currently 400 (242 active per raw nflverse status, 158 inactive). Duplicate
+same-player / same-season / same-week roster rows are 0.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -217,7 +230,9 @@ are kept current by any `ff-pipeline run --source nflverse`. To refresh metadata
 on the players already in the DB *without* re-ingesting a season's weekly stats
 or regrowing the ghost set, run `scripts/refresh_player_metadata.py` (dry-run by
 default; `--apply` commits after a backup). It re-runs the production upsert path
-restricted to existing `gsis_id`s, then recomputes the rostered spans.
+restricted to existing `gsis_id`s, then recomputes the rostered spans. It does
+not fabricate values for NFL.com-only rows, team DEF rows, or stale `gsis_id`s
+that nflverse no longer returns.
 
 ### `team_rosters`
 A **game-time snapshot** of a team's roster. Captured once per week, at the moment NFL.com locks rosters for game day (typically Sunday 12:55 PM ET for most slots; Thursday 8:15 PM ET for the TNF slot if pulled forward). This is the authoritative record of "who was on whose team when the game started."

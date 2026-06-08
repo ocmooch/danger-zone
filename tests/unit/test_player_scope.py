@@ -21,6 +21,7 @@ from ff_pipeline.crawlers.nflverse.client import NflversePlayerMeta, NflversePla
 from ff_pipeline.crawlers.nflverse.runner import (
     _create_stub_players,
     _filter_relevant_players,
+    _upsert_players,
 )
 from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
@@ -120,6 +121,69 @@ def test_filter_noop_when_both_unset() -> None:
     metas = [_meta("6", name="Old DB", position="DB", last_season=2001)]
     kept = _filter_relevant_players(metas, league_start_year=None, relevant_positions=None)
     assert kept == metas
+
+
+def test_metadata_upsert_refreshes_existing_stub_d1_d2_fields(session: Session) -> None:
+    player = Player(
+        gsis_id="00-TEST",
+        name_full="Old Stub",
+        position="WR",
+        is_active=True,
+    )
+    session.add(player)
+    session.flush()
+
+    counts = _upsert_players(
+        session,
+        [
+            NflversePlayerMeta(
+                gsis_id="00-TEST",
+                name_full="Updated Player",
+                name_first="Updated",
+                name_last="Player",
+                position="WR",
+                nfl_team="KC",
+                birth_date=None,
+                rookie_year=2021,
+                last_season=2025,
+                espn_id="12345",
+                status="ACT",
+            )
+        ],
+    )
+    session.flush()
+    session.refresh(player)
+
+    assert counts.rows_added == 0
+    assert counts.rows_updated == 1
+    assert player.name_full == "Updated Player"
+    assert player.rookie_year == 2021
+    assert player.last_season == 2025
+    assert player.nfl_team == "KC"
+
+    second_counts = _upsert_players(
+        session,
+        [
+            NflversePlayerMeta(
+                gsis_id="00-TEST",
+                name_full="Updated Player",
+                name_first="Updated",
+                name_last="Player",
+                position="WR",
+                nfl_team="KC",
+                birth_date=None,
+                rookie_year=2021,
+                last_season=2025,
+                espn_id="12345",
+                status="ACT",
+            )
+        ],
+    )
+    session.flush()
+
+    assert second_counts.rows_added == 0
+    assert second_counts.rows_updated == 1
+    assert session.query(Player).count() == 1
 
 
 # ---------------------------------------------------------------------------
