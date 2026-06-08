@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import date
 from unittest import mock
 
 from typer.testing import CliRunner
 
 from ff_pipeline import __version__
-from ff_pipeline.cli import app
+from ff_pipeline.cli import _default_run_season, app
 
 runner = CliRunner()
 
@@ -129,6 +130,38 @@ def test_run_no_source_sequences_all_three_in_order() -> None:
     # team_defense runs last: it matches against the DEF players the NFL.com
     # roster sync creates earlier in the sequence.
     assert _sources_run(manager) == ["nflverse", "nfl_com", "sleeper", "team_defense"]
+
+
+def test_run_no_source_defaults_to_previous_season_before_september() -> None:
+    with (
+        mock.patch("ff_pipeline.cli._default_run_season", return_value=2025),
+        _patch_run_machinery() as manager,
+    ):
+        result = runner.invoke(app, ["run"])
+
+    assert result.exit_code == 0, result.stdout
+    for call in manager.mock_calls:
+        assert call.kwargs.get("target_year") == 2025 or call.kwargs.get("seasons") == [2025]
+
+
+def test_run_explicit_season_overrides_safe_default() -> None:
+    with (
+        mock.patch("ff_pipeline.cli._default_run_season", return_value=2025),
+        _patch_run_machinery() as manager,
+    ):
+        result = runner.invoke(app, ["run", "--season", "2026"])
+
+    assert result.exit_code == 0, result.stdout
+    for call in manager.mock_calls:
+        assert call.kwargs.get("target_year") == 2026 or call.kwargs.get("seasons") == [2026]
+
+
+def test_default_run_season_before_september_uses_completed_prior_year() -> None:
+    assert _default_run_season(date(2026, 6, 8)) == 2025
+
+
+def test_default_run_season_from_september_uses_current_year() -> None:
+    assert _default_run_season(date(2026, 9, 1)) == 2026
 
 
 def test_run_single_source_runs_only_that_source() -> None:
