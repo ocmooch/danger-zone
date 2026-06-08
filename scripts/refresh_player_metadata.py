@@ -2,13 +2,10 @@
 
 Background
 ----------
-``players.last_season`` was added (migration ``b3e1d9f4c2a7``) after the last
-nflverse metadata crawl ran, so every row landed with ``last_season = NULL``
-even though the crawler now maps it. Older metadata (``rookie_year``,
-``birth_date``, ``espn_id``) is populated because the metadata crawl *did*
-run once — it just predates the column. The fix is operational, not a code
-change: re-pull ``nflverse.load_players()`` and update the rows we already
-have.
+``players.last_season`` was added (migration ``b3e1d9f4c2a7``) after an older
+nflverse metadata crawl ran, so existing DBs can have stale or missing
+``last_season`` even though the crawler now maps it. The fix is operational:
+re-pull ``nflverse.load_players()`` and update the rows we already have.
 
 What it does
 ------------
@@ -20,8 +17,9 @@ inserts *nothing* new. It deliberately does not pull the whole 25k-row NFL
 universe back in (that is what the league-scope filter + ``prune-players``
 exist to keep out); a metadata refresh must not regrow the ghost set.
 
-Players with no ``gsis_id`` (NFL.com-only rows nflverse can't identify) are
-left as-is — an honest source gap, not a bug.
+Players with no ``gsis_id`` (NFL.com-only rows nflverse can't identify), team
+DEF rows, and stale ``gsis_id`` values no longer returned by nflverse are left
+as-is — honest source gaps, not population bugs.
 
 Finally it recomputes the league-relevance span
 (``first/last_rostered_season``) so a fresh DB and this script agree.
