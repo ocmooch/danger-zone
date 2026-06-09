@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ff_pipeline.crawlers.nfl_com.availability import sweep_availability
 from ff_pipeline.crawlers.nfl_com.client import (
@@ -550,20 +550,41 @@ def _team_id_lookup(session: Session, season_id: int) -> dict[int, int]:
     """Map NFL.com team_id (stashed in team_abbrev) → internal teams.team_id.
 
     Returns an empty dict if no abbrevs were populated (e.g., owners
-    page didn't expose /team/{id} hrefs).
+    page didn't expose /team/{id} hrefs). When more than one row shares an
+    abbrev (a legacy franchise-duplicate artifact), the row with the most
+    roster/matchup references wins, so re-runs deterministically update the
+    real franchise row and never resurrect a phantom duplicate.
     """
     rows = session.execute(
         select(Team.team_id, Team.team_abbrev).where(Team.season_id == season_id)
     ).all()
-    out: dict[int, int] = {}
+    candidates: dict[int, list[int]] = {}
     for team_id, abbrev in rows:
         if not abbrev:
             continue
         try:
-            out[int(abbrev)] = team_id
+            candidates.setdefault(int(abbrev), []).append(team_id)
         except ValueError:
             continue
-    return out
+    return {
+        nfl_id: _preferred_team_id(session, team_ids) for nfl_id, team_ids in candidates.items()
+    }
+
+
+def _preferred_team_id(session: Session, team_ids: list[int]) -> int:
+    """Among rows sharing an abbrev, prefer the one with the most child rows."""
+    if len(team_ids) == 1:
+        return team_ids[0]
+    scored: list[tuple[int, int]] = []
+    for team_id in team_ids:
+        roster_refs = session.scalar(
+            select(func.count()).select_from(TeamRoster).where(TeamRoster.team_id == team_id)
+        )
+        matchup_refs = session.scalar(
+            select(func.count()).select_from(Matchup).where(Matchup.team_id == team_id)
+        )
+        scored.append((int(roster_refs or 0) + int(matchup_refs or 0), team_id))
+    return max(scored)[1]
 
 
 # ---------------------------------------------------------------------------
