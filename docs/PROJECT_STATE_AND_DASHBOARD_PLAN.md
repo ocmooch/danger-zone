@@ -202,3 +202,55 @@ Keep the next commit scoped to:
 
 Do not include a live DB repair in the same commit. The repair should be its own
 audited operation with a backup and a before/after reconciliation report.
+
+## Owner-identity & Phantom-team Repair (executed 2026-06-09)
+
+Run via `scripts/repair_owner_identity_and_phantom_teams.py --apply` (dry-run by
+default; backs up the SQLite file before committing). Addresses the dashboard
+handoff `ff-pipeline-owner-identity.md`. **Per-season NFL.com
+`/history/{year}/owners` was used as source of truth and corrected three of the
+handoff's premises:**
+
+- **mike (user 167650) did not play 2016-2017.** He held franchise 3 in
+  2010-2015, sat out 2016 (Adam) and 2017 (ill), and returned as franchise 12 in
+  2018+. His empty 2016/2017 rows were back-projection phantoms and were removed,
+  not reconstructed.
+- **The two "Dan"s have distinct logins**, not one shared `179898`: DJ
+  (`179898`, franchise 5) and Cheese (`7655244`, franchise 7). Owner 17 was
+  mis-stamped with DJ's id, which is why the 2025 re-point misassigned DJ's team.
+- **DJ played 2025** (franchise 5, "The Princess McBride"); the mis-ownership was
+  a symptom of the shared-id bug, not DJ's absence.
+
+What the repair did:
+
+- Renamed owner 5 -> `DJ`, owner 17 -> `Cheese`; corrected owner 17's
+  `nfl_user_id` to `7655244`; seeded durable `owner_identity_overrides`
+  (`179898`->DJ, `7655244`->Cheese) so the names survive `reconstruct-owners`.
+- Re-owned 2015 "Batesohardithurts" (owner 18 -> 3) and 2025 "The Princess
+  McBride" (owner 17 -> 5).
+- Merged 26 `final_rank IS NULL` franchise-duplicate phantom rows (`team_id`
+  193-222). 14 carried the franchise's real week-1 roster snapshot, which was
+  moved onto the ranked survivor (opponent/transaction refs re-pointed, the
+  duplicate week-1 matchup dropped); the 12 childless orphans were deleted.
+
+Durable code fix: `_team_id_lookup` now prefers the ref-rich row when an abbrev
+is duplicated, so a re-run resolves to the real franchise row instead of a
+phantom (covered by `tests/unit/test_team_id_lookup.py`).
+
+Before / after (`data/fantasy.db`), all handoff acceptance checks pass:
+
+| Check | Before | After |
+| --- | --- | --- |
+| Played seasons not having exactly 12 ranked teams | 15 | 0 |
+| `final_rank IS NULL` rows in played seasons | 26 | 0 |
+| Distinct managed (owner, season) pairs | 194 | 192 |
+| Owners named `Dan` | 2 | 0 (DJ + Cheese, distinct) |
+| 2025 "The Princess McBride" owner | 17 (Cheese) | 5 (DJ) |
+
+Backups: `data/backups/fantasy.db.pre-phantom-owner-repair-*.bak` and
+`data/backups/fantasy-pre-identity-phantom-repair-*.db`. Foreign-key integrity
+(`PRAGMA foreign_key_check`) is clean and the repair script is idempotent.
+
+Once `dz-dashboard` confirms, its temporary presentation overrides
+(`analytics/owner_identity.py`, the phantom filters in `analytics/standings.py`,
+`tests/test_owner_identity.py`) become no-ops and can be removed.
