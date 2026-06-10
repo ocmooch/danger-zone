@@ -127,6 +127,11 @@ Full design docs under `docs/`:
 - `10_OPEN_QUESTIONS.md` — defaults and deferred decisions
 - `RUNBOOK.md` — day-2 operational scenarios
 
+These numbered docs are canonical. Completed plan documents and resolved
+questions are kept for provenance under `docs/archive/` and
+`docs/10_OPEN_QUESTIONS_ARCHIVE.md`; applied one-off repair scripts live in
+`scripts/archive/`. None of the archived material is maintained.
+
 Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Attribution

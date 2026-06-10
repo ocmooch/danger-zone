@@ -187,7 +187,8 @@ A 10-year fresh backfill takes ~45–75 minutes (NFL.com rate-limited at `NFL_CO
 
 | Location | Bound | How to reclaim |
 |----------|-------|----------------|
-| `data/backups/` | grows daily via cron | `ff-pipeline backup --keep-days 7` (rerun once with a smaller window prunes immediately) |
+| `data/backups/` (dated dailies) | grows daily via cron | `ff-pipeline backup --keep-days 7` (rerun once with a smaller window prunes immediately) |
+| `data/backups/` (`fantasy-pre-*.db` milestones) | written by repair scripts; **not** pruned by `--keep-days`, so they pile up unbounded | `ff-pipeline backup --keep-milestones 3` keeps the 3 newest and prunes the rest |
 | `data/logs/` | rotated daily, 14 days kept | rotation is automatic — if it isn't, check `LOG_FILE_RETENTION_DAYS` |
 | `data/raw_pages/` | unbounded when `SAVE_RAW_HTML=true` | flip the flag back to `false` and `rm -rf data/raw_pages/` |
 | `data/nflverse_cache/` | grows with backfill scope | safe to delete — next run repopulates |

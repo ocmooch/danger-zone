@@ -41,6 +41,12 @@ changes here can affect downstream consumers.
 - `docs/08_OPERATIONS.md` and `docs/RUNBOOK.md` - day-2 operations.
 - `docs/10_OPEN_QUESTIONS.md` - unresolved decisions and deferred work.
 
+The numbered docs above are canonical and maintained. Historical material is
+kept separately and is **not** maintained: `docs/archive/` (completed plan
+documents), `docs/10_OPEN_QUESTIONS_ARCHIVE.md` (resolved questions), and
+`scripts/archive/` (applied, non-reusable one-off repairs). Use the archives
+for provenance only — do not re-run archived scripts or revive archived plans.
+
 Read docs by the section needed for the task. Grep for symbols before opening large spans.
 
 ## Commands

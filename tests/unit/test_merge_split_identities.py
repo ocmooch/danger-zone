@@ -11,10 +11,7 @@ import importlib.util
 from pathlib import Path
 
 _SCRIPT = (
-    Path(__file__).resolve().parents[2]
-    / "scripts"
-    / "archive"
-    / "merge_split_player_identities.py"
+    Path(__file__).resolve().parents[2] / "scripts" / "archive" / "merge_split_player_identities.py"
 )
 _spec = importlib.util.spec_from_file_location("_merge_split", _SCRIPT)
 assert _spec and _spec.loader

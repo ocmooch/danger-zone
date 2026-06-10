@@ -16,44 +16,14 @@ below were explicitly carried past them.
 These are real limits of the v1.0.0 dataset — not bugs. Each has a clear fix
 path once its input becomes available.
 
-### P1-V1. 2010–2015 seasons are unscored (no period rules) — RESOLVED (2026-06-05)
+### P1-V1. 2010–2015 scoring rules — RESOLVED (2026-06-05)
 
-**Resolved.** Rules were *solved from data*, not guessed: every starter-week in
-`team_rosters.extra_data` carries NFL.com's actual `nfl_com_points`, so for each
-season a labeled `(stat_vector → league_points)` matrix recovers the per-unit
-coefficients by least squares, snapped to NFL.com's value vocabulary and
-verified back through the real engine. See `scripts/distill_scoring_rules.py`
-and `PHASE_PRE2016_PLAN.md`.
-
-Findings:
-
-* **2011–2015 match the current 51-rule set** — confirmed (the solve recovers
-  the 2016+ coefficients exactly). Rules loaded (`scoring load --season`),
-  rescored, and offline-verified at **89–92% exact-to-cent**, the same long-TD
-  ceiling (§P1-V2) as the verified 2016–2025 seasons.
-* **2010 is the one distinct era**: **6-point passing TDs + 0.5 PPR (half-PPR)**,
-  standardizing to 4-pt / full-PPR from 2011 on. Conclusive (PPR 0 or 1.0 →
-  ~19%; pass-TD 4 or 5 → ~82%; the recovered values → 91.5%) and
-  **user-confirmed**. Recovered ruleset: `.project-src/dz-rules-2010.csv` (a
-  minimal two-line patch of the canonical export). Loaded, rescored, verified.
-* **Kicking** is unchanged across all eras (FG-bracket/XP reproduce
-  `nfl_com_points` at 100% for 2010–2025).
-* **DST**: the real pre-2016 gap was *missing team-defense ingestion*, now
-  backfilled (`team-defense --season 2010..2015`) and scored. DST reproduces at
-  ~69% (2010–15) vs ~83% (2016–25) — the *same* known DST data-quality tail
-  (see the DST re-ingest note), not a rules difference.
-
-**Remaining**: only the long-TD-length bonuses (§P1-V2), which cap *every*
-era's verify at the same ~92% ceiling, and the standing DST data-quality
-re-ingest. No unobserved-stat flags surfaced.
-
-**Trust-check status (2026-06-07)**: keep the reconstruction marked **not
-final** until the offline team-total sanity check is investigated.
-`ff-pipeline verify --season 2010 --reconcile` compared 183 team-weeks and
-failed 134; `ff-pipeline verify --season 2024 --week 1 --reconcile` failed 9
-of 13 rows, including one no-starters artifact. The per-player scored rows
-remain useful, but the summed-starters → NFL.com team-total invariant is not
-yet reliable enough to close the UP/F27 trust gate.
+The rules were solved from labeled NFL.com data: 2011–2015 match the current
+51-rule set; 2010 is a distinct era (6-pt passing TDs + 0.5 PPR). Loaded,
+rescored, and verified. Full decision record moved to
+`10_OPEN_QUESTIONS_ARCHIVE.md`. Two residual limits it surfaced remain open
+below: the long-TD-length bonuses (§P1-V2) and the reconstruction team-total
+trust-check (§P1-V5).
 
 ### P1-V2. Long-TD-length bonuses are unscored (data-source gap)
 
@@ -73,14 +43,14 @@ the keys; only the input values are missing.
 ### P1-V3. Ambiguous abbreviated names can't be auto-merged
 
 **State**: Gamecenter lineups render abbreviated names ("E. Pineiro").
-`scripts/merge_split_player_identities.py` folds stubs onto the nflverse row
+`scripts/archive/merge_split_player_identities.py` folds stubs onto the nflverse row
 by (first-initial, last-token, position) — 539 merges applied — but
 **deliberately skips** when two real players share that key, because a wrong
 fold would mis-attribute another player's stats.
 
 The **league-rostered** subset of these skips (stubs that hold a
 `first/last_rostered_season` span, so they shadow a real player on the
-players index) is now resolved: `scripts/merge_roster_name_stubs.py` carries
+players index) is now resolved: `scripts/archive/merge_roster_name_stubs.py` carries
 a hand-verified `nfl_com_player_id` → canonical map, applies it through the
 same FK-repoint / stamp path, and **seeds `player_id_overrides`** so future
 roster syncs resolve directly and never re-stub (48 merges). Two root causes
@@ -98,7 +68,7 @@ held-back stub is folded. The blocker was that NFL.com id `1032` — actually
 `transactions`) onto J.J. and leaving the real Jordy row (17326) with no
 NFL.com side at all. The nflverse stats were never conflated (they split
 cleanly by `gsis_id`); the defect was purely the misplaced NFL.com id.
-`scripts/untangle_nelson_conflation.py` repoints Jordy's NFL.com rows
+`scripts/archive/untangle_nelson_conflation.py` repoints Jordy's NFL.com rows
 17322 → 17326, hands id `1032` back to Jordy, then folds J.J.'s own stub
 (id `2552656`) into 17322 — seeding `player_id_overrides` for both so neither
 re-stubs. Final spans: Jordy 2010-2018, J.J. 2016-2017. `verify` passes to the
@@ -127,7 +97,7 @@ career**, so the wrong row accreted another player's `nfl_com_player_id` +
 fantasy history (`team_rosters`, `transactions`) while the real player sat
 stranded (stats, but no `nfl_com_player_id`, no roster rows).
 
-A direction-agnostic audit (`scripts/audit_roster_stat_era_mismatch.py` —
+A direction-agnostic audit (`scripts/archive/audit_roster_stat_era_mismatch.py` —
 rostered before `rookie_year` / disjoint roster∩stat eras / rostered >2y past
 `last_season`) found the bug is **bounded, not systemic**: 5 real cases among
 1,168 skill players, each with a uniquely-identified stranded owner, all
@@ -142,7 +112,7 @@ owner's production:
 | John Matthews (last '11) | Jordan Matthews |
 | Tom Crabtree TE (last '13) | Michael Crabtree WR |
 
-Repaired by `scripts/untangle_misstamped_roster_identities.py` (whole-pile
+Repaired by `scripts/archive/untangle_misstamped_roster_identities.py` (whole-pile
 re-home of the id + NFL.com tables to the owner, override seeded, spans
 recomputed). `verify` passes to the cent for the scored-era owners (Michael
 Crabtree 2017 W1 14.30=14.30, Jordan Matthews 2016 W1 25.40=25.40); pre-2016
@@ -165,6 +135,20 @@ suspects and no new temporal mismatch candidates.
 swapped between contemporaries) are invisible to temporal checks. Catching
 those needs a name-level cross-check (`nfl_com_player_id` → NFL.com display
 name vs canonical name) — deferred to Phase 2.
+
+### P1-V5. Reconstruction team-total trust-check not closed
+
+**State (open, 2026-06-07)**: per-player scored rows are useful, but the
+summed-starters → NFL.com team-total invariant is not yet reliable enough to
+close the UP/F27 trust gate, so the reconstruction stays marked **not final**.
+`ff-pipeline verify --season 2010 --reconcile` compared 183 team-weeks and
+failed 134; `ff-pipeline verify --season 2024 --week 1 --reconcile` failed 9 of
+13 rows, including one no-starters artifact.
+
+**Owner**: Phase 2. **Fix path**: investigate the offline team-total sanity
+check (starters set, bench exclusion, DST/long-TD deltas) before any downstream
+consumer treats historical team totals as final. Tracks alongside §P1-V2
+(long-TD bonuses) and the DST data-quality re-ingest.
 
 ---
 
