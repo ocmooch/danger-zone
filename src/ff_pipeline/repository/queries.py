@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
+from ff_pipeline.crawlers.nflverse.franchises import historical_team_code
 from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
     League,
@@ -392,12 +393,15 @@ def player_season_teams(
     """Map each player to their season-correct NFL team for ``season_year``.
 
     Read from the stored per-week ``player_stats_raw.nfl_team`` (the team a
-    player was actually on that season, as the source abbreviated it for the
-    year — a 2015 Raider reads "OAK", not "LV"). The team of record is the one
-    the player appears with in the most primary stat weeks, ties broken by the
+    player was actually on that season). The team of record is the one the
+    player appears with in the most primary stat weeks, ties broken by the
     latest week, so a mid-season trade resolves to where they spent most of the
     season. Players with no stored per-week team that season are absent from
     the map — callers fall back to the current snapshot on ``players.nfl_team``.
+
+    The stored value is nflverse's current franchise code (nflverse normalizes
+    all of history to it), so it's run through :func:`historical_team_code` to
+    render the code in use that season — a 2015 Raider reads "OAK", not "LV".
 
     Batched so the stats leaderboard can resolve a whole page of players in one
     query instead of N+1.
@@ -426,7 +430,7 @@ def player_season_teams(
         rank = (int(row.weeks), int(row.last_week))
         if row.player_id not in best or rank > best[row.player_id]:
             best[row.player_id] = rank
-            result[row.player_id] = row.nfl_team
+            result[row.player_id] = historical_team_code(row.nfl_team, season_year)
     return result
 
 
@@ -559,7 +563,9 @@ def _player_week_teams(
     """Map ``(player_id, week)`` to the player's NFL team that exact week.
 
     Reads the primary per-week ``player_stats_raw.nfl_team`` for the players in
-    ``keys``; pairs with no stored team are absent (caller falls back).
+    ``keys``; pairs with no stored team are absent (caller falls back). The
+    stored current code is rendered as the season-era one via
+    :func:`historical_team_code` (a 2015 Raider reads "OAK", not "LV").
     """
     if not keys:
         return {}
@@ -574,7 +580,10 @@ def _player_week_teams(
         PlayerStatsRaw.nfl_team.isnot(None),
         PlayerStatsRaw.is_primary.is_(True),
     )
-    return {(row.player_id, row.week): row.nfl_team for row in session.execute(stmt).all()}
+    return {
+        (row.player_id, row.week): historical_team_code(row.nfl_team, season_year)
+        for row in session.execute(stmt).all()
+    }
 
 
 def season_totals(session: Session, season_year: int) -> list[dict[str, Any]]:

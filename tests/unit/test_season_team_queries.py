@@ -87,8 +87,9 @@ def _add_week(
 def seeded(session: Session) -> tuple[Season, Player, Player, Player]:
     """Three players in a 2015 season:
 
-    * ``traded`` — weeks 1-3 on "NYG", weeks 4-6 on "DAL" (modal → NYG).
-    * ``raider`` — every week on relocation-era "OAK".
+    * ``traded`` — weeks 1-3 on "NYG", weeks 4-6 on "DAL" (3-3 tie → latest-week "DAL").
+    * ``raider`` — every week stored as nflverse's current "LV"; the helpers
+      render it as the season-era "OAK" (the Raiders moved in 2020).
     * ``snapshot_only`` — a scored row whose raw row stored no team, so the
       helpers fall back to the current ``players.nfl_team`` snapshot.
     """
@@ -105,7 +106,7 @@ def seeded(session: Session) -> tuple[Season, Player, Player, Player]:
     for wk in (4, 5, 6):
         _add_week(session, player=traded, season=season, week=wk, nfl_team="DAL", points=20.0)
     for wk in (1, 2, 3, 4):
-        _add_week(session, player=raider, season=season, week=wk, nfl_team="OAK", points=15.0)
+        _add_week(session, player=raider, season=season, week=wk, nfl_team="LV", points=15.0)
     # Stored team is NULL → leaderboard must fall back to the snapshot.
     _add_week(session, player=snapshot_only, season=season, week=1, nfl_team=None, points=30.0)
 
@@ -122,6 +123,7 @@ def test_player_season_teams_picks_modal_team(
     )
     # traded played 3 weeks on NYG vs 3 on DAL → tie broken by latest week (DAL).
     assert teams[traded.player_id] == "DAL"
+    # Stored as current "LV"; rendered as the 2015-era "OAK".
     assert teams[raider.player_id] == "OAK"
     # snapshot_only has no stored team that season → absent from the map.
     assert snapshot_only.player_id not in teams

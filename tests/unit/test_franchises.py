@@ -14,7 +14,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from ff_pipeline.crawlers.nflverse.franchises import resolve_def_team_abbrev
+from ff_pipeline.crawlers.nflverse.franchises import (
+    historical_team_code,
+    resolve_def_team_abbrev,
+)
 
 
 def _player(*, name_full: str, nfl_team: str | None) -> SimpleNamespace:
@@ -72,3 +75,20 @@ def test_rams_stored_lar_folds_to_nflverse_la() -> None:
 def test_unresolvable_returns_none() -> None:
     p = _player(name_full="", nfl_team=None)
     assert resolve_def_team_abbrev(p, 2024) is None
+
+
+@pytest.mark.parametrize(
+    ("current", "season", "expected"),
+    [
+        ("LV", 2019, "OAK"),  # Raiders moved to Las Vegas in 2020
+        ("LV", 2020, "LV"),
+        ("LAC", 2016, "SD"),  # Chargers moved to LA in 2017
+        ("LAC", 2017, "LAC"),
+        ("LA", 2015, "STL"),  # Rams moved to LA in 2016
+        ("LA", 2016, "LA"),
+        ("SF", 2010, "SF"),  # non-relocated → passthrough
+        ("lv", 2019, "OAK"),  # case-insensitive
+    ],
+)
+def test_historical_team_code(current: str, season: int, expected: str) -> None:
+    assert historical_team_code(current, season) == expected

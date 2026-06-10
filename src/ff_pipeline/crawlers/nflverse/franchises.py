@@ -86,6 +86,24 @@ _STORED_ABBREV_ALIASES: dict[str, str] = {
 }
 
 
+def historical_team_code(current_code: str, season_year: int) -> str:
+    """Render a current franchise code as the one used in ``season_year``.
+
+    nflverse normalizes relocated franchises to their *current* code across all
+    of history (a 2015 Raider is coded ``LV``, not ``OAK``), so the team stored
+    on a stat row is the current code regardless of season. This reverses that
+    for display: a season strictly before a franchise's relocation cutover gets
+    the old code (``LV``→``OAK`` pre-2020, ``LAC``→``SD`` pre-2017, ``LA``→``STL``
+    pre-2016). Non-relocated codes pass through unchanged.
+    """
+    reloc = _RELOCATIONS.get(current_code.strip().upper())
+    if reloc is not None:
+        cutover_year, old_abbrev = reloc
+        if season_year < cutover_year:
+            return old_abbrev
+    return current_code
+
+
 def resolve_def_team_abbrev(player: Player, season_year: int) -> str | None:
     """Return the nflverse team abbreviation for ``player`` in ``season_year``.
 
@@ -126,4 +144,4 @@ def _current_abbrev(player: Player) -> str | None:
     return _NICKNAME_TO_ABBREV.get(last_word)
 
 
-__all__ = ["resolve_def_team_abbrev"]
+__all__ = ["historical_team_code", "resolve_def_team_abbrev"]
