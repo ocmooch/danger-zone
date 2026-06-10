@@ -80,8 +80,8 @@ ff-pipeline reconstruct --start 2010 --end 2025
 **Defaults & gotchas**:
 
 - `--end` defaults to **current year − 1**: an in-progress season has no final standings to reconstruct. Pass `--end` explicitly to dodge the off-by-one and the nflverse 404 on the unplayed current year.
-- `made_playoffs` is left unset: NFL.com's static history HTML does not distinguish the championship bracket from the consolation bracket.
-- 2010–2015 are reconstructed (standings/matchups/lineups) but **not scored** — see the scoring-rules gap in `10_OPEN_QUESTIONS.md` §P1-V1.
+- Matchup reconstruction reads the playoff bracket page to classify postseason rows as championship vs consolation. Re-run `reconstruct --force` for already-built seasons before expecting `matchups.is_consolation` to be populated in an existing DB.
+- 2010–2015 now have reconstructed player scoring, but `verify --reconcile` remains the trust gate; current real-DB checks still show team-total drift that must be investigated before treating every reconstructed score as final.
 
 **Verify**: after a run, `ff-pipeline status` shows the latest reconstruct run `success`; spot-check with the API (`/seasons`, `/matchups`, lineups) or SQL (`seasons.status='completed'`, `team_rosters` has multiple weeks per season). Then `rescore` + `verify --sweep` the scored seasons (2016–2025) since real lineups now carry `nfl_com_player_id`.
 
@@ -187,7 +187,8 @@ A 10-year fresh backfill takes ~45–75 minutes (NFL.com rate-limited at `NFL_CO
 
 | Location | Bound | How to reclaim |
 |----------|-------|----------------|
-| `data/backups/` | grows daily via cron | `ff-pipeline backup --keep-days 7` (rerun once with a smaller window prunes immediately) |
+| `data/backups/` (dated dailies) | grows daily via cron | `ff-pipeline backup --keep-days 7` (rerun once with a smaller window prunes immediately) |
+| `data/backups/` (`fantasy-pre-*.db` milestones) | written by repair scripts; **not** pruned by `--keep-days`, so they pile up unbounded | `ff-pipeline backup --keep-milestones 3` keeps the 3 newest and prunes the rest |
 | `data/logs/` | rotated daily, 14 days kept | rotation is automatic — if it isn't, check `LOG_FILE_RETENTION_DAYS` |
 | `data/raw_pages/` | unbounded when `SAVE_RAW_HTML=true` | flip the flag back to `false` and `rm -rf data/raw_pages/` |
 | `data/nflverse_cache/` | grows with backfill scope | safe to delete — next run repopulates |

@@ -133,6 +133,14 @@ class ParsedMatchup:
 
 
 @dataclass(frozen=True, slots=True)
+class ParsedPlayoffBracket:
+    """Championship-bracket team IDs from NFL.com's playoff page."""
+
+    team_ids: frozenset[int]
+    declared_team_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedTransaction:
     """One transaction row from the transactions log."""
 
@@ -717,6 +725,61 @@ def _player_id_from_anchor(anchor: Tag) -> str | None:
 
 _GAME_ID_FROM_HREF = re.compile(r"gameId=(\d+)")
 _FLOAT_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_PLAYOFF_TEAMS_CLASS = re.compile(r"playoffTeams-(\d+)")
+
+
+def parse_playoff_bracket(html: str) -> ParsedPlayoffBracket:
+    """Parse the championship playoff bracket.
+
+    NFL.com's schedule history marks every post-regular-season row as
+    postseason, but it does not distinguish the championship bracket from
+    consolation. The playoff page does: the championship bracket's team seeds
+    are rendered in ``#leagueHomePlayoffs.playoffType-championship``. We return
+    that set so reconstruction can classify schedule rows without guessing from
+    final rank alone.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    root = soup.select_one("#leagueHomePlayoffs.playoffType-championship")
+    if root is None:
+        root = soup.select_one(".playoffType-championship")
+    if root is None:
+        raise ParseError("playoff_bracket: .playoffType-championship")
+
+    declared: int | None = None
+    for cls in root.get("class") or []:
+        if not isinstance(cls, str):
+            continue
+        match = _PLAYOFF_TEAMS_CLASS.fullmatch(cls)
+        if match:
+            declared = int(match.group(1))
+            break
+    if declared is None:
+        content = root.select_one(".content")
+        if content is not None:
+            for cls in content.get("class") or []:
+                if not isinstance(cls, str):
+                    continue
+                match = _PLAYOFF_TEAMS_CLASS.fullmatch(cls)
+                if match:
+                    declared = int(match.group(1))
+                    break
+
+    team_ids: set[int] = set()
+    for anchor in root.select("a.teamName[href]"):
+        team_id = _id_from_anchor(anchor, _TEAM_ID_FROM_HREF)
+        if team_id is not None:
+            team_ids.add(team_id)
+    for node in root.select(".teamRank"):
+        for cls in node.get("class") or []:
+            if not isinstance(cls, str):
+                continue
+            match = re.fullmatch(r"teamId-(\d+)", cls)
+            if match:
+                team_ids.add(int(match.group(1)))
+
+    if not team_ids:
+        raise ParseError("playoff_bracket: team ids")
+    return ParsedPlayoffBracket(team_ids=frozenset(team_ids), declared_team_count=declared)
 
 
 def parse_weekly_matchups(html: str) -> list[ParsedMatchup]:
@@ -956,6 +1019,11 @@ _TXN_TYPE_MAP = {
     # the change description live in ``extra_data``), not skipped.
     "lineup": "lineup_change",
     "starter swap": "lineup_change",
+    # NFL.com history pages tag commissioner / league-management actions with
+    # the cryptic type text "LM" (row class ``transaction-commish-NNN``), e.g.
+    # "harry updated playoff teams". This is the live form of the commish diary
+    # rows; the human-readable change is preserved in ``extra_data``.
+    "lm": "setting_change",
     "commish": "setting_change",
     "league change": "setting_change",
     "setting change": "setting_change",
@@ -1671,6 +1739,7 @@ __all__ = [
     "ParsedLeagueHome",
     "ParsedMatchup",
     "ParsedOwner",
+    "ParsedPlayoffBracket",
     "ParsedRosterEntry",
     "ParsedStandingEntry",
     "ParsedStandings",
@@ -1683,6 +1752,7 @@ __all__ = [
     "parse_gamecenter",
     "parse_league_home",
     "parse_owners",
+    "parse_playoff_bracket",
     "parse_settings_scoring",
     "parse_standings",
     "parse_team_roster",

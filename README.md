@@ -68,7 +68,7 @@ See `docs/` for the full design package.
 
 ```bash
 ff-pipeline init                  # Set up DB + run migrations
-ff-pipeline run                   # Full sync (current season)
+ff-pipeline run                   # Full sync (latest nflverse-ready season by default)
 ff-pipeline run --source nflverse # Sync only one source
 ff-pipeline run --source nfl_com --snapshot-kind pre_kickoff  # Game-day snapshot
 ff-pipeline backfill              # Pull historical seasons (resumable, idempotent)
@@ -126,6 +126,11 @@ Full design docs under `docs/`:
 - `09_ROADMAP.md` — implementation milestones
 - `10_OPEN_QUESTIONS.md` — defaults and deferred decisions
 - `RUNBOOK.md` — day-2 operational scenarios
+
+These numbered docs are canonical. Completed plan documents and resolved
+questions are kept for provenance under `docs/archive/` and
+`docs/10_OPEN_QUESTIONS_ARCHIVE.md`; applied one-off repair scripts live in
+`scripts/archive/`. None of the archived material is maintained.
 
 Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

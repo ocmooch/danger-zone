@@ -25,6 +25,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # NOTE: adding the avatar FKs forces SQLite's batch backfill to recreate
+    # the ``teams`` table (CREATE tmp → copy → DROP teams → RENAME), whose
+    # ``DROP`` trips child FKs unless enforcement is off. The migration runner
+    # disables ``PRAGMA foreign_keys`` for the connection (it can't be toggled
+    # mid-transaction); see ``repository.migrations.upgrade_to_head``.
     op.create_table(
         "assets",
         sa.Column("asset_id", sa.Integer(), autoincrement=True, nullable=False),

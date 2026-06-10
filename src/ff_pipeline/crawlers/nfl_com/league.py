@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ff_pipeline.crawlers.nfl_com.availability import sweep_availability
 from ff_pipeline.crawlers.nfl_com.client import (
@@ -78,6 +78,7 @@ from ff_pipeline.repository.models import (
     TeamRoster,
     Transaction,
 )
+from ff_pipeline.repository.owner_identities import canonicalize_owner_identity
 from ff_pipeline.repository.upsert import upsert
 
 if TYPE_CHECKING:
@@ -388,11 +389,17 @@ def _upsert_league(session: Session, parsed: object) -> None:
 
 
 def _upsert_season(session: Session, league_id: str, year: int) -> int:
+    # Seed a freshly-created season as ``in_progress``; never touch the
+    # status of an existing row. ``reconstruct_standings`` is the sole
+    # authority that promotes a season to ``completed``, and a re-sync of
+    # a finished season must not regress it (update_cols=() → DO NOTHING
+    # on conflict).
     upsert(
         session,
         Season,
         [{"league_id": league_id, "year": year, "status": "in_progress"}],
         conflict_cols=("league_id", "year"),
+        update_cols=(),
     )
     session.flush()
     season_id = session.execute(
@@ -417,34 +424,51 @@ def _upsert_owners_and_teams(
     owner_id_by_team_id: dict[int, int] = {}
 
     existing = {
-        row.display_name: row
+        row.display_name.casefold() if row.display_name else "": row
         for row in session.execute(select(Owner).where(Owner.league_id == league_id)).scalars()
     }
     for parsed_owner in parsed:
-        owner = existing.get(parsed_owner.display_name)
+        identity = canonicalize_owner_identity(
+            session,
+            league_id=league_id,
+            display_name=parsed_owner.display_name,
+            nfl_user_id=parsed_owner.nfl_user_id,
+        )
+        owner = existing.get(identity.display_name.casefold())
         if owner is None:
             owner = Owner(
                 league_id=league_id,
-                display_name=parsed_owner.display_name,
-                nfl_user_id=parsed_owner.nfl_user_id,
+                display_name=identity.display_name,
+                nfl_user_id=identity.nfl_user_id,
+                aliases=_owner_aliases(None, identity.observed_display_name, identity.display_name),
                 is_active=True,
             )
             session.add(owner)
             session.flush()
+            existing[identity.display_name.casefold()] = owner
             owners_added += 1
         else:
             changed = False
-            if parsed_owner.nfl_user_id and owner.nfl_user_id != parsed_owner.nfl_user_id:
-                owner.nfl_user_id = parsed_owner.nfl_user_id
+            if owner.display_name != identity.display_name:
+                owner.display_name = identity.display_name
+                changed = True
+            aliases = _owner_aliases(
+                owner.aliases, identity.observed_display_name, identity.display_name
+            )
+            if aliases != owner.aliases:
+                owner.aliases = aliases
+                changed = True
+            if identity.nfl_user_id and owner.nfl_user_id != identity.nfl_user_id:
+                owner.nfl_user_id = identity.nfl_user_id
                 changed = True
             if changed:
                 owners_updated += 1
         if parsed_owner.team_id is not None:
             owner_id_by_team_id[parsed_owner.team_id] = owner.owner_id
 
-    # Teams: one row per (season_id, owner_id). The NFL.com team_id is
-    # not part of the table — we stash it in team_abbrev only as a hint
-    # when present.
+    # Teams are keyed by their season-scoped rendered name. ``owner_id`` can
+    # repeat when a manually canonicalized manager controlled multiple teams in
+    # one season.
     team_counts = _upsert_teams(
         session,
         season_id=season_id,
@@ -456,6 +480,17 @@ def _upsert_owners_and_teams(
         _Counts(owners_added, owners_updated),
         team_counts,
     )
+
+
+def _owner_aliases(
+    existing: object,
+    observed_display_name: str,
+    canonical_display_name: str,
+) -> list[str] | None:
+    aliases = set(existing if isinstance(existing, list) else [])
+    if observed_display_name != canonical_display_name:
+        aliases.add(observed_display_name)
+    return sorted(str(a) for a in aliases) or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -471,10 +506,31 @@ def _upsert_teams(
     parsed: list[ParsedOwner],
     owner_id_by_team_id: dict[int, int],
 ) -> _Counts:
+    existing_by_nfl_team_id = _team_id_lookup(session, season_id)
+    added = 0
+    updated = 0
     rows = []
     for p in parsed:
         owner_id = owner_id_by_team_id.get(p.team_id) if p.team_id is not None else None
         if owner_id is None:
+            continue
+        if p.team_id is not None and p.team_id in existing_by_nfl_team_id:
+            team = session.get(Team, existing_by_nfl_team_id[p.team_id])
+            if team is None:
+                continue
+            changed = False
+            if team.owner_id != owner_id:
+                team.owner_id = owner_id
+                changed = True
+            if team.team_name != p.team_name:
+                team.team_name = p.team_name
+                changed = True
+            abbrev = str(p.team_id)
+            if team.team_abbrev != abbrev:
+                team.team_abbrev = abbrev
+                changed = True
+            if changed:
+                updated += 1
             continue
         rows.append(
             {
@@ -485,29 +541,50 @@ def _upsert_teams(
             }
         )
     if not rows:
-        return _Counts(0, 0)
-    counts = upsert(session, Team, rows, conflict_cols=("season_id", "owner_id"))
-    return _Counts(counts.rows_added, counts.rows_updated)
+        return _Counts(added, updated)
+    counts = upsert(session, Team, rows, conflict_cols=("season_id", "team_name"))
+    return _Counts(added + counts.rows_added, updated + counts.rows_updated)
 
 
 def _team_id_lookup(session: Session, season_id: int) -> dict[int, int]:
     """Map NFL.com team_id (stashed in team_abbrev) → internal teams.team_id.
 
     Returns an empty dict if no abbrevs were populated (e.g., owners
-    page didn't expose /team/{id} hrefs).
+    page didn't expose /team/{id} hrefs). When more than one row shares an
+    abbrev (a legacy franchise-duplicate artifact), the row with the most
+    roster/matchup references wins, so re-runs deterministically update the
+    real franchise row and never resurrect a phantom duplicate.
     """
     rows = session.execute(
         select(Team.team_id, Team.team_abbrev).where(Team.season_id == season_id)
     ).all()
-    out: dict[int, int] = {}
+    candidates: dict[int, list[int]] = {}
     for team_id, abbrev in rows:
         if not abbrev:
             continue
         try:
-            out[int(abbrev)] = team_id
+            candidates.setdefault(int(abbrev), []).append(team_id)
         except ValueError:
             continue
-    return out
+    return {
+        nfl_id: _preferred_team_id(session, team_ids) for nfl_id, team_ids in candidates.items()
+    }
+
+
+def _preferred_team_id(session: Session, team_ids: list[int]) -> int:
+    """Among rows sharing an abbrev, prefer the one with the most child rows."""
+    if len(team_ids) == 1:
+        return team_ids[0]
+    scored: list[tuple[int, int]] = []
+    for team_id in team_ids:
+        roster_refs = session.scalar(
+            select(func.count()).select_from(TeamRoster).where(TeamRoster.team_id == team_id)
+        )
+        matchup_refs = session.scalar(
+            select(func.count()).select_from(Matchup).where(Matchup.team_id == team_id)
+        )
+        scored.append((int(roster_refs or 0) + int(matchup_refs or 0), team_id))
+    return max(scored)[1]
 
 
 # ---------------------------------------------------------------------------
@@ -727,7 +804,7 @@ def _upsert_transactions(
     ).all()
     for row in existing:
         fingerprints_seen.add(
-            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _slot_sig(row[5]))
+            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
         )
 
     for t in parsed:
@@ -753,7 +830,7 @@ def _upsert_transactions(
             player_id,
             t.direction,
             _fingerprint_dt(executed_at),
-            _slot_sig(t.extra_data),
+            _extra_sig(t.extra_data),
         )
         if fingerprint in fingerprints_seen:
             skipped += 1
@@ -781,18 +858,31 @@ def _upsert_transactions(
     return _Counts(inserted, skipped)
 
 
-def _slot_sig(extra_data: dict[str, object] | None) -> tuple[object, object] | None:
-    """Slot move (from_slot, to_slot) for lineup rows, else None.
+def _extra_sig(extra_data: dict[str, object] | None) -> tuple[object, ...] | None:
+    """Distinguishing detail from ``extra_data``, folded into the fingerprint.
 
-    Folded into the upsert fingerprint so two distinct lineup moves of the
-    same player in the same minute (same team/direction/timestamp) don't
-    collapse into one — they differ only by their slots.
+    Two row families carry their only distinguishing content in ``extra_data``
+    rather than the team/player/direction columns, so without this they would
+    collapse on the fingerprint when they share a minute:
+
+    * **lineup moves** — differ only by slot (from_slot/to_slot);
+    * **setting/commish rows** — null team/player/direction, so the change
+      description is what makes them distinct. Commish actions cluster heavily
+      (league setup fires dozens in the same minute), so omitting this drops
+      the vast majority of the diary.
     """
     if not extra_data:
         return None
-    if "from_slot" not in extra_data and "to_slot" not in extra_data:
-        return None
-    return (extra_data.get("from_slot"), extra_data.get("to_slot"))
+    if "from_slot" in extra_data or "to_slot" in extra_data:
+        return ("slot", extra_data.get("from_slot"), extra_data.get("to_slot"))
+    if "description" in extra_data or "from" in extra_data or "to" in extra_data:
+        return (
+            "setting",
+            extra_data.get("description"),
+            extra_data.get("from"),
+            extra_data.get("to"),
+        )
+    return None
 
 
 def _fingerprint_dt(value: datetime | None) -> str | None:

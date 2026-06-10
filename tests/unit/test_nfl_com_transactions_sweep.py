@@ -145,7 +145,14 @@ def test_sweep_respects_max_pages() -> None:
             self.calls += 1
             offset = int(url.rsplit("offset=", 1)[1]) if "offset=" in url else 0
             return _page(
-                _row(str(self.calls), "add", str(self.calls), "P", from_cell="Free Agents", to_cell=_team(1)),
+                _row(
+                    str(self.calls),
+                    "add",
+                    str(self.calls),
+                    "P",
+                    from_cell="Free Agents",
+                    to_cell=_team(1),
+                ),
                 next_offset=offset + 21,
             )
 

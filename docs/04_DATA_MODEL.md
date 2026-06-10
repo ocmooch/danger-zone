@@ -96,11 +96,26 @@ A persistent person — one human, even if they had different team names across 
 | `league_id` | TEXT FK → leagues | |
 | `display_name` | TEXT | Their NFL.com display name |
 | `nfl_user_id` | TEXT | Their NFL.com user ID, if scrapeable |
-| `aliases` | TEXT (JSON array) | Other names they've gone by — manual cleanup possible |
+| `aliases` | TEXT (JSON array/object) | Other names they've gone by; may include structured `display_names` / `nfl_user_ids` for manually merged identities |
 | `is_active` | BOOLEAN | Still in the league this season? |
 | `joined_year` | INTEGER | First season in this league |
 | `left_year` | INTEGER | NULL if active |
 | `created_at`, `updated_at` | TIMESTAMP | |
+
+### `owner_identity_overrides`
+Manual pins that force multiple NFL.com owner identities to resolve to one canonical manager before owner rows are upserted. Used for known same-person aliases such as the two Adam user IDs and the two Ill user IDs; reconstruction still keeps different managers distinct unless an override exists.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `override_id` | INTEGER PK AUTOINCREMENT | |
+| `league_id` | TEXT FK → leagues | |
+| `external_id_kind` | TEXT | `display_name` or `nfl_user_id` |
+| `external_id_value` | TEXT | Observed NFL.com display/user value |
+| `canonical_display_name` | TEXT | Canonical owner display name to use |
+| `notes` | TEXT | Manual-review context |
+| `created_at`, `updated_at` | TIMESTAMP | |
+
+UNIQUE(`league_id`, `external_id_kind`, `external_id_value`)
 
 ### `teams`
 One row per (season, team). A single owner shows up in N rows, one per season they were in.
@@ -125,7 +140,9 @@ One row per (season, team). A single owner shows up in N rows, one per season th
 | `owner_avatar_asset_id` | INTEGER FK → assets | Owner avatar that season; NULL (NFL.com renders only a team logo per row today) |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
-UNIQUE(`season_id`, `team_name`) — and also UNIQUE(`season_id`, `owner_id`)
+UNIQUE(`season_id`, `team_name`). `owner_id` is intentionally not unique within
+a season because historical/manual identity cleanup can prove that one person
+managed multiple NFL.com teams in the same year.
 
 ### `scoring_rules`
 One row per (season, rule). Scraped from the league settings page each season.
@@ -161,8 +178,21 @@ Both passes preview first (`--dry-run` shows the position breakdown and the casc
 **League relevance vs. NFL facts.** Two different questions get asked of a player row, and they have two different answer columns. *Is this player currently an NFL thing?* is a **current-NFL fact** sourced from nflverse — `is_active`, `nfl_team`, `last_season`. *Was this player ever part of THIS league?* is a **historical league fact** derived from `team_rosters` — the `first_rostered_season` / `last_rostered_season` span. These do not agree, and shouldn't: nflverse ships the entire NFL universe, so thousands of rows are current-NFL-active but never touched this league (the "ghost" players). A consumer that wants "players in this league's history" must filter on a non-NULL rostered span (`league_relevant` on the players API), **not** on `is_active`. A consumer that wants an active/retired-in-league badge should read the rostered span, not `is_active`.
 
 - `is_active` is the **raw nflverse status snapshot** as of the last metadata crawl (`status == 'ACT'`, or unknown/`NULL` status treated as active). It is deliberately *not* overloaded into a league-relevance signal — a player can be NFL-active yet never have been in this league, or league-historical yet now NFL-retired. Treat it as "nflverse's current view of the player," nothing more. (Historical reason it reads as unreliable in a league index: the `status is None → active` fallback, plus `nfl_team` being a single mutable "latest team" that nflverse keeps populated even for retired players.)
-- `last_season` is likewise a current-NFL fact (the last NFL season nflverse saw the player). It powers the ingestion **era filter** (drop metadata for players whose career ended before `LEAGUE_START_YEAR`). It is NULL only for rows nflverse can't identify — players first seen on NFL.com with no `gsis_id`, and team-DEF rows (which are synthetic and have no nflverse player record). That NULL is an honest source gap, not a population bug.
+- `last_season` is likewise a current-NFL fact (the last NFL season nflverse saw the player). It powers the ingestion **era filter** (drop metadata for players whose career ended before `LEAGUE_START_YEAR`). It is NULL only for rows nflverse can't identify — players first seen on NFL.com with no `gsis_id`, team-DEF rows (which are synthetic and have no nflverse player record), and rare stale `gsis_id`s no longer returned by `load_players()`. That NULL is an honest source gap, not a population bug.
 - `first_rostered_season` / `last_rostered_season` are **materialized** from `team_rosters` (`MIN`/`MAX` `season_year`; NULL ⇒ never rostered here). They are recomputed at the end of every NFL.com roster sync (`recompute_rostered_spans`) and backfilled by their migration, so a fresh DB and an incrementally-synced DB agree.
+
+**Operational audit (2026-06-07, `data/fantasy.db`).** The D1/D2 refresh path is
+idempotent and already populated every player that current nflverse can match:
+`scripts/refresh_player_metadata.py` dry-run matched 2,771 existing `gsis_id`s,
+updated through `_upsert_players`, inserted 0 rows, and left the populated
+`last_season` count unchanged at 2,771 / 3,048. The remaining 277
+`last_season IS NULL` rows break down as 276 rows with no `gsis_id` plus one
+stale `gsis_id` (`M. Wilson`, `00-0034703`) absent from current
+`load_players()`. Among league-rostered players, the 38 `rookie_year IS NULL`
+rows are 32 synthetic team DEF rows, 5 NFL.com-only historical aliases, and the
+same stale `M. Wilson` nflverse miss. Never-rostered / never-scored ghost rows
+are currently 400 (242 active per raw nflverse status, 158 inactive). Duplicate
+same-player / same-season / same-week roster rows are 0.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -200,7 +230,9 @@ are kept current by any `ff-pipeline run --source nflverse`. To refresh metadata
 on the players already in the DB *without* re-ingesting a season's weekly stats
 or regrowing the ghost set, run `scripts/refresh_player_metadata.py` (dry-run by
 default; `--apply` commits after a backup). It re-runs the production upsert path
-restricted to existing `gsis_id`s, then recomputes the rostered spans.
+restricted to existing `gsis_id`s, then recomputes the rostered spans. It does
+not fabricate values for NFL.com-only rows, team DEF rows, or stale `gsis_id`s
+that nflverse no longer returns.
 
 ### `team_rosters`
 A **game-time snapshot** of a team's roster. Captured once per week, at the moment NFL.com locks rosters for game day (typically Sunday 12:55 PM ET for most slots; Thursday 8:15 PM ET for the TNF slot if pulled forward). This is the authoritative record of "who was on whose team when the game started."
@@ -277,7 +309,7 @@ One row per (season, week, team). Two rows make a single head-to-head game.
 | `opponent_score` | REAL | Cached for query convenience |
 | `is_win` | BOOLEAN | NULL if not yet completed |
 | `is_playoff` | BOOLEAN | |
-| `is_consolation` | BOOLEAN | For losers-bracket games |
+| `is_consolation` | BOOLEAN | For losers-bracket games; history reconstruction derives this from the NFL.com playoff bracket's championship-team set |
 | `nfl_com_game_id` | TEXT | The `gameId` in NFL.com URLs — for re-fetching |
 | `created_at`, `updated_at` | TIMESTAMP | |
 

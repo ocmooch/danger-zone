@@ -12,6 +12,7 @@ from __future__ import annotations
 # typer reads parameter annotations at runtime (via get_type_hints) to
 # resolve option types, so Path must be imported eagerly — not inside
 # TYPE_CHECKING.
+from datetime import date
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
@@ -127,7 +128,11 @@ def run_cmd(
     season: int | None = typer.Option(
         None,
         "--season",
-        help="Restrict to a single season year (default: current calendar year).",
+        help=(
+            "Restrict to a single season year. Default: latest season with nflverse "
+            "stats likely published (current year from September onward, otherwise "
+            "previous year)."
+        ),
     ),
     week: int | None = typer.Option(
         None,
@@ -168,15 +173,13 @@ def run_cmd(
     if source is not None and source not in {"nflverse", "nfl_com", "sleeper", "team_defense"}:
         _stub(f"run --source {source}", "unknown source")
 
-    from datetime import datetime
-
     from sqlalchemy.orm import Session
 
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.settings import get_settings
 
     settings = get_settings()
-    target_year = season or datetime.now().year
+    target_year = season or _default_run_season()
     # No --source = the full sequence; nflverse first so player rows exist
     # before nfl_com / sleeper try to resolve against them. team_defense
     # runs last because it matches against the DEF players that the NFL.com
@@ -357,6 +360,20 @@ def _resolve_current_week(year: int) -> int:
     sept_first = date(year, 9, 1)
     delta_weeks = ((today - sept_first).days // 7) + 1
     return max(1, min(18, delta_weeks))
+
+
+def _default_run_season(today: date | None = None) -> int:
+    """Return the season a bare ``ff-pipeline run`` should target.
+
+    nflverse does not publish current-season weekly stat parquet until the
+    season is underway. During the offseason, default to the last completed
+    season so the all-source sync remains a useful, non-404 operational
+    command. Callers can still pass ``--season`` to force a specific year.
+    """
+    resolved_today = today or date.today()
+    if resolved_today.month < 9:
+        return resolved_today.year - 1
+    return resolved_today.year
 
 
 # ---------------------------------------------------------------------------
@@ -590,6 +607,77 @@ def reconstruct_cmd(
     typer.echo(f"Reconstruct: seasons processed={len(results)} (range {start_year}-{end_year}).")
 
 
+@app.command("reconstruct-owners")
+def reconstruct_owners_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year)."
+    ),
+) -> None:
+    """Reconstruct manager identities + per-season team ownership from history.
+
+    Reads every ``/history/{year}/owners`` page to recover the human who managed
+    each franchise each year, derives one owner identity per NFL ``userId``
+    (with tenure, aliases, and active/inactive status), and re-points each
+    season's ``teams.owner_id`` to the true per-season manager. Fixes the
+    backfill artifact where every season showed the *current* owner. Idempotent;
+    requires a valid NFL_COOKIE (exit 77 on auth failure).
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.history import reconstruct_owners
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    start_year = start if start is not None else settings.league_start_year
+    end_year = end if end is not None else datetime.now().year
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(
+        cookie=settings.nfl_cookie.get_secret_value(), delay_seconds=settings.nfl_com_delay_seconds
+    )
+    try:
+        with Session(engine) as ss:
+            try:
+                outcome = reconstruct_owners(
+                    ss,
+                    league_id=settings.nfl_league_id,
+                    fetcher=client,
+                    start_year=start_year,
+                    end_year=end_year,
+                )
+                ss.commit()
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure: {exc}. Refresh NFL_COOKIE via `cookie set`, then re-run.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+    finally:
+        client.close()
+        engine.dispose()
+
+    typer.secho(
+        f"Owners: {outcome.distinct_owners} distinct managers "
+        f"(+{outcome.owners_added} new, ~{outcome.owners_updated} updated, "
+        f"{outcome.historical_inactive} inactive); "
+        f"{outcome.team_attributions_changed} team-season attributions corrected.",
+        fg="green",
+    )
+
+
 # ---------------------------------------------------------------------------
 # draft
 # ---------------------------------------------------------------------------
@@ -684,6 +772,90 @@ def draft_cmd(
     typer.echo(
         f"Draft: seasons processed={len(results)} "
         f"(captured {captured}, range {start_year}-{end_year})."
+    )
+
+
+# ---------------------------------------------------------------------------
+# avatars
+# ---------------------------------------------------------------------------
+
+
+@app.command("avatars")
+def avatars_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year, inclusive (default: current year - 1)."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Backfill only this season (sets --start and --end)."
+    ),
+) -> None:
+    """Backfill team avatars into the ``assets`` store + ``teams`` FKs.
+
+    Reads each season's NFL.com Managers page, downloads every team logo
+    once (content-addressed under the assets dir, deduped by sha256), and
+    links it onto that season's ``teams.team_avatar_asset_id``. Idempotent:
+    a URL already stored short-circuits before the network and matching
+    bytes reuse the existing row, so re-runs download nothing. Requires a
+    valid NFL_COOKIE; exits 77 on auth failure so it can be resumed after
+    ``cookie set``.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nfl_com.client import AuthFailureError, NflComClient
+    from ff_pipeline.crawlers.nfl_com.media import backfill_team_avatars
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        end_year = end if end is not None else datetime.now().year - 1
+
+    if start_year > end_year:
+        typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
+        raise typer.Exit(code=2)
+
+    years = list(range(start_year, end_year + 1))
+    cookie_value = settings.nfl_cookie.get_secret_value()
+    engine = create_app_engine(settings.database_url)
+    client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
+    try:
+        with Session(engine) as ss:
+            try:
+                result = backfill_team_avatars(
+                    ss,
+                    client,
+                    league_id=settings.nfl_league_id,
+                    assets_root=settings.assets_dir,
+                    years=years,
+                )
+            except AuthFailureError as exc:
+                typer.secho(
+                    f"Auth failure during avatar backfill: {exc}. "
+                    "Refresh NFL_COOKIE via `cookie set`, then re-run to resume.",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=77) from exc
+            ss.commit()
+    finally:
+        client.close()
+        engine.dispose()
+
+    typer.secho(
+        f"Avatars: seasons processed={result.seasons_processed}, "
+        f"assets stored={result.assets_stored}, teams linked={result.teams_linked} "
+        f"(range {start_year}-{end_year}).",
+        fg="green",
     )
 
 
@@ -1082,7 +1254,16 @@ def backup_cmd(
     keep_days: int = typer.Option(
         30,
         "--keep-days",
-        help="Delete backups older than this many days (0 = keep all).",
+        help="Delete dated daily backups older than this many days (0 = keep all).",
+        min=0,
+    ),
+    keep_milestones: int = typer.Option(
+        0,
+        "--keep-milestones",
+        help=(
+            "Keep only the N most recent named milestone backups "
+            "(fantasy-pre-*.db); delete older ones (0 = keep all)."
+        ),
         min=0,
     ),
 ) -> None:
@@ -1099,6 +1280,7 @@ def backup_cmd(
             database_url=settings.database_url,
             backup_dir=target_dir,
             keep_days=keep_days if keep_days > 0 else None,
+            keep_milestones=keep_milestones if keep_milestones > 0 else None,
         )
     except BackupError as exc:
         typer.secho(str(exc), fg="red", err=True)

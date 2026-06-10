@@ -132,12 +132,36 @@ class Owner(Base):
     teams: Mapped[list[Team]] = relationship(back_populates="owner")
 
 
+class OwnerIdentityOverride(Base):
+    """Manual pin from an owner display/user identity to one canonical owner name."""
+
+    __tablename__ = "owner_identity_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "league_id",
+            "external_id_kind",
+            "external_id_value",
+            name="uq_owner_identity_overrides_league_kind_value",
+        ),
+    )
+
+    override_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("leagues.league_id", name="fk_owner_identity_overrides_league"),
+        nullable=False,
+    )
+    external_id_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_id_value: Mapped[str] = mapped_column(String, nullable=False)
+    canonical_display_name: Mapped[str] = mapped_column(String, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class Team(Base):
     __tablename__ = "teams"
-    __table_args__ = (
-        UniqueConstraint("season_id", "team_name", name="uq_teams_season_team_name"),
-        UniqueConstraint("season_id", "owner_id", name="uq_teams_season_owner"),
-    )
+    __table_args__ = (UniqueConstraint("season_id", "team_name", name="uq_teams_season_team_name"),)
 
     team_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     season_id: Mapped[int] = mapped_column(

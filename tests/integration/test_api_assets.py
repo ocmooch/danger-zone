@@ -39,14 +39,22 @@ def client(tmp_path: Path) -> TestClient:
         (assets_root / sha[:2]).mkdir(parents=True, exist_ok=True)
         (assets_root / rel).write_bytes(b"LOGOBYTES")
         asset = Asset(
-            league_id="L1", kind="team_avatar", source_url="https://cdn/x.jpg",
-            sha256=sha, content_type="image/jpeg", byte_size=9, storage_path=rel,
+            league_id="L1",
+            kind="team_avatar",
+            source_url="https://cdn/x.jpg",
+            sha256=sha,
+            content_type="image/jpeg",
+            byte_size=9,
+            storage_path=rel,
         )
         ss.add(asset)
         ss.flush()
         team = Team(
-            season_id=season.season_id, owner_id=owner.owner_id,
-            team_name="T", team_abbrev="1", team_avatar_asset_id=asset.asset_id,
+            season_id=season.season_id,
+            owner_id=owner.owner_id,
+            team_name="T",
+            team_abbrev="1",
+            team_avatar_asset_id=asset.asset_id,
         )
         ss.add(team)
         ss.commit()

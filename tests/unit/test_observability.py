@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -304,6 +305,65 @@ def test_perform_backup_prunes_old_files(tmp_path: Path) -> None:
     assert unrelated.exists()
 
 
+def test_perform_backup_prunes_milestone_backups_by_count(tmp_path: Path) -> None:
+    db_path = tmp_path / "fantasy.db"
+    engine = create_app_engine(f"sqlite:///{db_path}")
+    upgrade_to_head(engine=engine)
+    engine.dispose()
+
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    # Three milestone snapshots with increasing mtimes + a dated daily that
+    # must be left to the day-based sweep, not the milestone sweep.
+    milestones = [
+        backup_dir / "fantasy-premerge-20260101T000000Z.db",
+        backup_dir / "fantasy-prenelson-20260201T000000Z.db",
+        backup_dir / "fantasy-pre-identity-repair-20260301T000000Z.db",
+    ]
+    for i, path in enumerate(milestones):
+        path.write_bytes(b"placeholder")
+        os.utime(path, (1_700_000_000 + i, 1_700_000_000 + i))
+    daily = backup_dir / "fantasy-2026-01-15.db"
+    daily.write_bytes(b"placeholder")
+
+    result = perform_backup(
+        database_url=f"sqlite:///{db_path}",
+        backup_dir=backup_dir,
+        today=date(2026, 5, 28),
+        keep_days=None,
+        keep_milestones=1,
+    )
+    # Oldest two milestones pruned; newest kept; dated daily untouched.
+    assert milestones[0] in result.pruned_files
+    assert milestones[1] in result.pruned_files
+    assert not milestones[0].exists()
+    assert not milestones[1].exists()
+    assert milestones[2].exists()
+    assert daily.exists()
+
+
+def test_perform_backup_keep_milestones_none_keeps_all(tmp_path: Path) -> None:
+    db_path = tmp_path / "fantasy.db"
+    engine = create_app_engine(f"sqlite:///{db_path}")
+    upgrade_to_head(engine=engine)
+    engine.dispose()
+
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    old_milestone = backup_dir / "fantasy-premerge-20200101T000000Z.db"
+    old_milestone.write_bytes(b"placeholder")
+
+    result = perform_backup(
+        database_url=f"sqlite:///{db_path}",
+        backup_dir=backup_dir,
+        today=date(2026, 5, 28),
+        keep_days=None,
+        keep_milestones=None,
+    )
+    assert result.pruned_files == ()
+    assert old_milestone.exists()
+
+
 def test_perform_backup_rejects_postgres(tmp_path: Path) -> None:
     with pytest.raises(BackupError, match="SQLite"):
         perform_backup(
@@ -348,6 +408,8 @@ __all__ = [
     "test_collect_status_surfaces_sqlite_file_size",
     "test_perform_backup_errors_when_db_missing",
     "test_perform_backup_keep_days_none_skips_prune",
+    "test_perform_backup_keep_milestones_none_keeps_all",
+    "test_perform_backup_prunes_milestone_backups_by_count",
     "test_perform_backup_prunes_old_files",
     "test_perform_backup_rejects_postgres",
     "test_perform_backup_writes_dated_file",

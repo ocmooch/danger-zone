@@ -100,7 +100,15 @@ def upsert(
         existing_keys = _existing_conflict_keys(session, model, chunk, conflict_cols)
 
         stmt = insert_fn(table).values(chunk)
-        effective_update_cols = update_cols or _default_update_cols(chunk[0], conflict_cols)
+        # ``None`` means "update every non-key column" (the common case);
+        # an explicit empty sequence means "insert only, never clobber an
+        # existing row" → DO NOTHING on conflict. Distinguish the two so a
+        # caller can seed a column on insert without overwriting it later.
+        effective_update_cols = (
+            _default_update_cols(chunk[0], conflict_cols)
+            if update_cols is None
+            else list(update_cols)
+        )
         if effective_update_cols:
             stmt = stmt.on_conflict_do_update(
                 index_elements=list(conflict_cols),
