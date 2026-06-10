@@ -61,6 +61,14 @@ def test_rams_relocation_by_year() -> None:
     assert resolve_def_team_abbrev(p, 2016) == "LA"
 
 
+def test_rams_stored_lar_folds_to_nflverse_la() -> None:
+    # Our players row carries "LAR", but nflverse codes the Rams "LA" in every
+    # season — the stored-abbrev alias folds LAR→LA so the DEF still matches.
+    p = _player(name_full="Los Angeles Rams", nfl_team="LAR")
+    assert resolve_def_team_abbrev(p, 2024) == "LA"
+    assert resolve_def_team_abbrev(p, 2016) == "LA"
+
+
 def test_unresolvable_returns_none() -> None:
     p = _player(name_full="", nfl_team=None)
     assert resolve_def_team_abbrev(p, 2024) is None

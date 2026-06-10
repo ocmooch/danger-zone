@@ -76,6 +76,15 @@ _RELOCATIONS: dict[str, tuple[int, str]] = {
     "LA": (2016, "STL"),
 }
 
+# Our ``players`` table stores a franchise under a code nflverse never uses in
+# its per-week ``team`` / ``team_stats`` columns. Fold the stored code onto the
+# nflverse one before matching. The Rams are the only such case: we carry
+# "LAR" but nflverse codes them "LA" in *every* season, so without this fold
+# the Rams DEF never matches and its team-defense stats are dropped.
+_STORED_ABBREV_ALIASES: dict[str, str] = {
+    "LAR": "LA",
+}
+
 
 def resolve_def_team_abbrev(player: Player, season_year: int) -> str | None:
     """Return the nflverse team abbreviation for ``player`` in ``season_year``.
@@ -107,7 +116,7 @@ def resolve_def_team_abbrev(player: Player, season_year: int) -> str | None:
 def _current_abbrev(player: Player) -> str | None:
     stored = (player.nfl_team or "").strip().upper()
     if stored:
-        return stored
+        return _STORED_ABBREV_ALIASES.get(stored, stored)
     name = (player.name_full or "").strip().lower()
     if not name:
         return None
