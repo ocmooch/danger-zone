@@ -1,7 +1,7 @@
 # Pre-2016 Structural Reference (data-distilled)
 
 **Status:** confirmed-from-data · **Produced:** 2026-06-05 · Workstream **B** of
-`docs/PHASE_PRE2016_PLAN.md`.
+`docs/archive/PHASE_PRE2016_PLAN.md`.
 
 Every finding below was distilled from already-populated tables (`team_rosters`,
 `matchups`, `seasons`, `teams`) — no user input required. Confidence is **high**

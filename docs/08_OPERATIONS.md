@@ -77,6 +77,12 @@ ff-pipeline reconstruct           # Rebuild real history from NFL.com /history p
 ff-pipeline reconstruct --start 2010 --end 2025  # Explicit range (--end defaults to current year-1)
 ff-pipeline reconstruct --season 2018 --force    # Redo one already-completed season
 
+ff-pipeline reconstruct-owners    # Rebuild manager identities + per-season team ownership from history
+ff-pipeline reconstruct-owners --start 2010 --end 2025   # Explicit range
+
+ff-pipeline draft                 # Capture historical draft results from NFL.com /history pages
+ff-pipeline draft --season 2018   # Single season only
+
 ff-pipeline avatars               # Backfill team avatars -> assets store + teams FKs (idempotent)
 ff-pipeline avatars --start 2018 --end 2020      # Explicit range (--end defaults to current year-1)
 ff-pipeline avatars --season 2018                # Single season only
@@ -88,6 +94,9 @@ ff-pipeline rescore --dry-run     # Report diffs, don't write
 ff-pipeline team-defense          # Ingest team-defense (DST) raw stats (every season w/ DEF players)
 ff-pipeline team-defense --season 2024            # One season
 ff-pipeline team-defense --start-year 2016 --end-year 2025  # Range backfill
+
+ff-pipeline prune-players         # Delete players this IDP-less league can never roster
+ff-pipeline prune-players --dry-run               # Report what would be deleted, don't write
 
 ff-pipeline status                # Show pipeline health, last run, per-source status
 ff-pipeline status --verbose      # Include recent errors
@@ -104,8 +113,9 @@ ff-pipeline scoring load --csv path/to/settings.csv    # Load scraped scoring ru
 ff-pipeline serve                 # Start the FastAPI server
 ff-pipeline serve --reload        # Dev mode with auto-reload
 
-ff-pipeline backup                # Snapshot data/fantasy.db -> data/backups/
-ff-pipeline backup --keep-days 60 # Override the 30-day pruning window
+ff-pipeline backup                     # Snapshot data/fantasy.db -> data/backups/
+ff-pipeline backup --keep-days 60      # Override the 30-day dated-backup window
+ff-pipeline backup --keep-milestones 3 # Also cap named fantasy-pre-*.db snapshots
 
 ff-pipeline migrate up            # Run pending alembic migrations
 ff-pipeline migrate down --rev N  # Rollback to a revision (stub for M11+)
@@ -198,12 +208,17 @@ The database is everything. Back it up.
 ### Manual backup
 
 ```bash
-ff-pipeline backup                  # writes data/backups/fantasy-YYYY-MM-DD.db, prunes > 30d
-ff-pipeline backup --keep-days 0    # keep all
+ff-pipeline backup                    # writes data/backups/fantasy-YYYY-MM-DD.db, prunes > 30d
+ff-pipeline backup --keep-days 0      # keep all dated dailies
+ff-pipeline backup --keep-milestones 3  # keep only the 3 newest fantasy-pre-*.db milestones
 ff-pipeline backup --backup-dir /mnt/external/ff-backups
 ```
 
 Uses SQLite's online `.backup` API (safe while the DB is open). Logged + reported via `ff-pipeline status` (last backup is part of the standard output).
+
+Two retention knobs, because there are two kinds of backup file:
+- **Dated dailies** (`fantasy-YYYY-MM-DD.db`) — written by this command / cron, pruned by `--keep-days` (default 30).
+- **Named milestones** (`fantasy-pre-*.db`) — written by repair scripts before a risky migration. They carry no date, so `--keep-days` deliberately ignores them; they accumulate without bound unless you pass `--keep-milestones N` (default 0 = keep all), which keeps the N most recent by mtime and prunes older ones.
 
 ### Automated backup
 
