@@ -1254,7 +1254,16 @@ def backup_cmd(
     keep_days: int = typer.Option(
         30,
         "--keep-days",
-        help="Delete backups older than this many days (0 = keep all).",
+        help="Delete dated daily backups older than this many days (0 = keep all).",
+        min=0,
+    ),
+    keep_milestones: int = typer.Option(
+        0,
+        "--keep-milestones",
+        help=(
+            "Keep only the N most recent named milestone backups "
+            "(fantasy-pre-*.db); delete older ones (0 = keep all)."
+        ),
         min=0,
     ),
 ) -> None:
@@ -1271,6 +1280,7 @@ def backup_cmd(
             database_url=settings.database_url,
             backup_dir=target_dir,
             keep_days=keep_days if keep_days > 0 else None,
+            keep_milestones=keep_milestones if keep_milestones > 0 else None,
         )
     except BackupError as exc:
         typer.secho(str(exc), fg="red", err=True)

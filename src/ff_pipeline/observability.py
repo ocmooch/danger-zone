@@ -46,6 +46,11 @@ BACKUP_FILENAME_PREFIX = "fantasy-"
 BACKUP_FILENAME_SUFFIX = ".db"
 DEFAULT_BACKUP_RETENTION_DAYS = 30
 _BACKUP_DATE_RE = re.compile(r"fantasy-(\d{4}-\d{2}-\d{2})\.db$")
+# Milestone backups (``fantasy-pre-*.db`` etc.) are the operator-named
+# snapshots scripts write before a risky migration. They carry no parseable
+# date, so the daily-retention sweep deliberately leaves them alone — which is
+# why they accumulate without bound. ``keep_milestones`` caps them by count.
+_BACKUP_MILESTONE_RE = re.compile(r"fantasy-.*\.db$")
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +365,7 @@ def perform_backup(
     backup_dir: Path,
     today: date | None = None,
     keep_days: int | None = DEFAULT_BACKUP_RETENTION_DAYS,
+    keep_milestones: int | None = None,
 ) -> BackupResult:
     """Snapshot the SQLite database to ``backup_dir`` and prune older files.
 
@@ -389,14 +395,18 @@ def perform_backup(
     _sqlite_online_backup(sqlite_path, backup_path)
     bytes_written = backup_path.stat().st_size
 
-    pruned: tuple[Path, ...] = ()
+    pruned: list[Path] = []
     if keep_days is not None and keep_days > 0:
-        pruned = _prune_backups(backup_dir, keep_days=keep_days, today=today)
+        pruned.extend(_prune_backups(backup_dir, keep_days=keep_days, today=today))
+    if keep_milestones is not None and keep_milestones > 0:
+        pruned.extend(
+            _prune_milestone_backups(backup_dir, keep_last=keep_milestones, exclude=backup_path)
+        )
 
     return BackupResult(
         backup_path=backup_path,
         bytes_written=bytes_written,
-        pruned_files=pruned,
+        pruned_files=tuple(pruned),
     )
 
 
@@ -454,6 +464,39 @@ def _prune_backups(directory: Path, *, keep_days: int, today: date) -> tuple[Pat
         if file_date < cutoff:
             path.unlink()
             pruned.append(path)
+    pruned.sort()
+    return tuple(pruned)
+
+
+def _prune_milestone_backups(
+    directory: Path, *, keep_last: int, exclude: Path | None = None
+) -> tuple[Path, ...]:
+    """Keep the ``keep_last`` most recent milestone backups; delete older ones.
+
+    A *milestone* backup is a ``fantasy-*.db`` file whose name carries no
+    parseable ``YYYY-MM-DD`` date — the operator-named snapshots written
+    before risky migrations. Recency is by modification time. The dated
+    daily backups are governed by :func:`_prune_backups` and are never
+    touched here. ``exclude`` (the just-written snapshot) is left alone.
+    """
+
+    candidates: list[Path] = []
+    for path in directory.iterdir():
+        if not path.is_file() or path == exclude:
+            continue
+        name = path.name
+        if _BACKUP_MILESTONE_RE.search(name) is None:
+            continue
+        if _BACKUP_DATE_RE.search(name) is not None:
+            continue  # a plain dated daily — not a milestone
+        candidates.append(path)
+
+    # Newest first; keep the head, prune the tail.
+    candidates.sort(key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
+    pruned: list[Path] = []
+    for path in candidates[keep_last:]:
+        path.unlink()
+        pruned.append(path)
     pruned.sort()
     return tuple(pruned)
 
