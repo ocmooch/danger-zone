@@ -254,3 +254,49 @@ Backups: `data/backups/fantasy.db.pre-phantom-owner-repair-*.bak` and
 Once `dz-dashboard` confirms, its temporary presentation overrides
 (`analytics/owner_identity.py`, the phantom filters in `analytics/standings.py`,
 `tests/test_owner_identity.py`) become no-ops and can be removed.
+
+## Mike Slot (team_abbrev) Back-projection Repair (executed 2026-06-10)
+
+Run via `scripts/archive/repair_mike_slot_backprojection.py --apply` (dry-run by
+default; backs up the SQLite file before committing). Addresses the dashboard
+handoff `ff-pipeline-team-slot-backprojection.md` — the residual the owner-identity
+repair above re-owned but did not fully relabel.
+
+The lost-team reconstruction restored mike's (owner 3) 2010-2015 team rows but
+stamped them with his *modern* franchise identity: `team_abbrev = "12"` (his
+current slot) and `team_name = "Batesohardithurts"` (his 2025 name), when his real
+slot those years was **3**. That produced, in each of 2010-2015, a duplicate
+`team_abbrev = "12"` (mike + the real slot-12 owner) and a missing slot 3 — which
+mislabeled mike's team on every dashboard surface (e.g. `/standings/2015` rendered
+both mike and Kevin as "Bruce Jenner DJ's").
+
+What the repair did — for mike's six rows (`team_id` 23, 35, 47, 59, 71, 83) set
+`team_abbrev` `"12"` -> `"3"` and `team_name` to the period-correct NFL.com slot-3
+name (cross-checked against the dashboard's `(year, slot) -> name` table, whose
+surviving slot-12 name already matched the non-mike DB row each year):
+
+| year | team_id | slot-3 name |
+| --- | --- | --- |
+| 2010 | 23 | ThisTeamMakesSullyNervous |
+| 2011 | 35 | IAMTHESACKO |
+| 2012 | 47 | Sulladismichaelbushleague |
+| 2013 | 59 | Salty Caramel Sullad |
+| 2014 | 71 | IStoleSulladsPick |
+| 2015 | 83 | Snow and Mirrors |
+
+Only `teams.team_abbrev` and `teams.team_name` changed; matchups, rosters,
+transactions, draft position, and `final_rank` key on `team_id` and stayed
+attached. mike's 2018-2025 rows were left alone (slot 12 is correct there).
+
+Before / after (`data/fantasy.db`), all handoff acceptance checks pass:
+
+| Check | Before | After |
+| --- | --- | --- |
+| Duplicate `team_abbrev` in a played season | 6 (2010-2015) | 0 |
+| Played seasons 2010-2015 holding slot 3 | 0 | 6 |
+| mike's 2015 team | `12` / "Batesohardithurts" | `3` / "Snow and Mirrors" |
+
+Backup: `data/backups/fantasy-pre-mike-slot-repair-*.db`. `PRAGMA
+foreign_key_check` is clean and the repair script is idempotent (re-runs are
+no-ops). No dashboard change is required — its `(year, team_abbrev)` name overlay
+now resolves mike to the period-correct slot-3 name automatically.
