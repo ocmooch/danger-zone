@@ -366,6 +366,7 @@ The atomic stat record. **One row per (player, season, week, source)**. Multiple
 | `season_year` | INTEGER | |
 | `week` | INTEGER | |
 | `season_type` | TEXT | `'REG'`, `'POST'`, `'PRE'` |
+| `nfl_team` | TEXT | The player's own NFL team that week, season-correct (a 2015 Raider reads `OAK`, not `LV`). The per-season counterpart to `players.nfl_team`'s single current snapshot. Populated from nflverse's per-week `team`; NULL for sources that omit it. Resolve a player-season's team of record via `repository.queries.player_season_teams` (modal team, tie-broken by latest week) |
 | `nfl_opponent` | TEXT | 3-letter abbrev |
 | `source` | TEXT | `'nflverse'`, `'nfl_com_api'`, `'sleeper'`, `'nfl_com_league'` |
 | `stats` | TEXT (JSON) | The raw stat dict — passing_yards, completions, etc. |

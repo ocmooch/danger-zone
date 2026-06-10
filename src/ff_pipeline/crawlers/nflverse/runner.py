@@ -340,6 +340,7 @@ def _upsert_player_stats(
                 "season_year": s.season_year,
                 "week": s.week,
                 "season_type": s.season_type,
+                "nfl_team": s.nfl_team,
                 "nfl_opponent": s.nfl_opponent,
                 "source": SOURCE_NAME,
                 # SQLAlchemy's JSON type accepts dicts directly on both
@@ -434,6 +435,7 @@ def run_team_defense(
                     "season_year": ts.season_year,
                     "week": ts.week,
                     "season_type": ts.season_type,
+                    "nfl_team": ts.nfl_team,
                     "nfl_opponent": ts.nfl_opponent,
                     "source": SOURCE_NAME,
                     "stats": ts.stats,

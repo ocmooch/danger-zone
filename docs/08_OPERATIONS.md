@@ -247,6 +247,22 @@ rclone copy data/backups/ remote:fantasy-football-backups/
 3. If raw is wrong: `ff-pipeline run --source nflverse --season 2025` (idempotent — upserts overwrite stale rows)
 4. If raw is right but score is wrong: scoring rule bug — re-run `ff-pipeline rescore --season 2025 --dry-run` to see the diff, then `ff-pipeline scoring load --csv ...` to re-load rules if they were wrong
 
+### "Historical leaderboards show players' current NFL team, not the season's"
+
+`player_stats_raw.nfl_team` (the per-week, season-correct team behind
+`repository.queries.player_season_teams`) was added in migration
+`c1a4f7e2d8b3`. Pre-existing rows are NULL until the nflverse weekly stats are
+re-ingested — the column is populated on write, so a normal idempotent re-run
+backfills it (the upsert's `ON CONFLICT DO UPDATE` overwrites the NULL):
+
+1. `ff-pipeline migrate up` — apply the column.
+2. `ff-pipeline backfill --start 2014` (or `run --source nflverse --season Y`
+   per season) — re-ingest so every nflverse-covered player-week gets its
+   season team. Player-seasons nflverse cannot identify stay NULL (an honest
+   gap; consumers fall back to `players.nfl_team`).
+3. `ff-pipeline team-defense --start-year 2016 --end-year 2025` — DST raw rows
+   carry the season team too, so re-run this for DEF slots.
+
 ### "Team-defense (DST) slots show no points"
 
 DST scoring is derived from team-level nflverse data, not the per-player
