@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
+from ff_pipeline.crawlers.nflverse.franchises import historical_team_code
 from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
     League,
@@ -35,6 +36,8 @@ from ff_pipeline.repository.models import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
 
 
@@ -384,6 +387,62 @@ def player_scored_stats(
     return session.execute(stmt).scalars().first()
 
 
+def player_season_teams(
+    session: Session, player_ids: Sequence[int], season_year: int
+) -> dict[int, str]:
+    """Map each player to their season-correct NFL team for ``season_year``.
+
+    Read from the stored per-week ``player_stats_raw.nfl_team`` (the team a
+    player was actually on that season). The team of record is the one the
+    player appears with in the most primary stat weeks, ties broken by the
+    latest week, so a mid-season trade resolves to where they spent most of the
+    season. Players with no stored per-week team that season are absent from
+    the map — callers fall back to the current snapshot on ``players.nfl_team``.
+
+    The stored value is nflverse's current franchise code (nflverse normalizes
+    all of history to it), so it's run through :func:`historical_team_code` to
+    render the code in use that season — a 2015 Raider reads "OAK", not "LV".
+
+    Batched so the stats leaderboard can resolve a whole page of players in one
+    query instead of N+1.
+    """
+    if not player_ids:
+        return {}
+    stmt = (
+        select(
+            PlayerStatsRaw.player_id,
+            PlayerStatsRaw.nfl_team,
+            func.count().label("weeks"),
+            func.max(PlayerStatsRaw.week).label("last_week"),
+        )
+        .where(
+            PlayerStatsRaw.player_id.in_(player_ids),
+            PlayerStatsRaw.season_year == season_year,
+            PlayerStatsRaw.nfl_team.isnot(None),
+            PlayerStatsRaw.is_primary.is_(True),
+        )
+        .group_by(PlayerStatsRaw.player_id, PlayerStatsRaw.nfl_team)
+    )
+    # (weeks, last_week) descending wins per player.
+    best: dict[int, tuple[int, int]] = {}
+    result: dict[int, str] = {}
+    for row in session.execute(stmt).all():
+        rank = (int(row.weeks), int(row.last_week))
+        if row.player_id not in best or rank > best[row.player_id]:
+            best[row.player_id] = rank
+            result[row.player_id] = historical_team_code(row.nfl_team, season_year)
+    return result
+
+
+def player_nfl_team(session: Session, player_id: int, season_year: int) -> str | None:
+    """Season-correct NFL team for one player-season.
+
+    Thin single-player wrapper over :func:`player_season_teams`; returns
+    ``None`` when no per-week team is stored for that player-season.
+    """
+    return player_season_teams(session, [player_id], season_year).get(player_id)
+
+
 def player_ownership(session: Session, player_id: int) -> list[tuple[TeamRoster, Team]]:
     stmt = (
         select(TeamRoster, Team)
@@ -480,18 +539,51 @@ def top_scorers(
         stmt = stmt.where(Player.position == position)
     stmt = stmt.order_by(PlayerStatsScored.total_points.desc()).limit(limit)
     rows = session.execute(stmt).all()
+    # Each row is a single (player, week) score, so render the team the player
+    # was on that exact week; fall back to the current snapshot when no
+    # per-week team is stored.
+    week_teams = _player_week_teams(session, [(r.player_id, r.week) for r in rows], season_year)
     return [
         {
             "player_id": r.player_id,
             "name_full": r.name_full,
             "position": r.position,
-            "nfl_team": r.nfl_team,
+            "nfl_team": week_teams.get((r.player_id, r.week)) or r.nfl_team,
             "season_year": season_year,
             "week": r.week,
             "points": float(r.total_points or 0.0),
         }
         for r in rows
     ]
+
+
+def _player_week_teams(
+    session: Session, keys: Sequence[tuple[int, int]], season_year: int
+) -> dict[tuple[int, int], str]:
+    """Map ``(player_id, week)`` to the player's NFL team that exact week.
+
+    Reads the primary per-week ``player_stats_raw.nfl_team`` for the players in
+    ``keys``; pairs with no stored team are absent (caller falls back). The
+    stored current code is rendered as the season-era one via
+    :func:`historical_team_code` (a 2015 Raider reads "OAK", not "LV").
+    """
+    if not keys:
+        return {}
+    player_ids = {pid for pid, _ in keys}
+    stmt = select(
+        PlayerStatsRaw.player_id,
+        PlayerStatsRaw.week,
+        PlayerStatsRaw.nfl_team,
+    ).where(
+        PlayerStatsRaw.player_id.in_(player_ids),
+        PlayerStatsRaw.season_year == season_year,
+        PlayerStatsRaw.nfl_team.isnot(None),
+        PlayerStatsRaw.is_primary.is_(True),
+    )
+    return {
+        (row.player_id, row.week): historical_team_code(row.nfl_team, season_year)
+        for row in session.execute(stmt).all()
+    }
 
 
 def season_totals(session: Session, season_year: int) -> list[dict[str, Any]]:
@@ -511,12 +603,15 @@ def season_totals(session: Session, season_year: int) -> list[dict[str, Any]]:
         .order_by(func.sum(PlayerStatsScored.total_points).desc())
     )
     rows = session.execute(stmt).all()
+    # Render the team the player was on *that* season, not the current
+    # snapshot; fall back to the snapshot when no per-week team is stored.
+    season_teams = player_season_teams(session, [r.player_id for r in rows], season_year)
     return [
         {
             "player_id": r.player_id,
             "name_full": r.name_full,
             "position": r.position,
-            "nfl_team": r.nfl_team,
+            "nfl_team": season_teams.get(r.player_id) or r.nfl_team,
             "total_points": float(r.total or 0.0),
             "weeks_played": int(r.weeks or 0),
         }

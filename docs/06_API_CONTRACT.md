@@ -107,8 +107,8 @@ Transaction rows carry an `extra_data` object for events that don't fit the play
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /stats/players/top?season={y}&week={w}&position={pos}&limit={n}` | Top scorers |
-| `GET /stats/players/season-totals?season={y}` | Season-long totals per player |
+| `GET /stats/players/top?season={y}&week={w}&position={pos}&limit={n}` | Top scorers. `nfl_team` is season-correct — the team the player was on that exact week, not their current team (falls back to the current `players.nfl_team` snapshot when no per-week team is stored) |
+| `GET /stats/players/season-totals?season={y}` | Season-long totals per player. `nfl_team` is the player's team of record for that season (modal team, tie-broken by latest week), not their current team |
 | `GET /stats/owners/career` | Career stats aggregated by owner |
 
 ## Sample responses
