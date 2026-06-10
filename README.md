@@ -68,7 +68,7 @@ See `docs/` for the full design package.
 
 ```bash
 ff-pipeline init                  # Set up DB + run migrations
-ff-pipeline run                   # Full sync (current season)
+ff-pipeline run                   # Full sync (latest nflverse-ready season by default)
 ff-pipeline run --source nflverse # Sync only one source
 ff-pipeline run --source nfl_com --snapshot-kind pre_kickoff  # Game-day snapshot
 ff-pipeline backfill              # Pull historical seasons (resumable, idempotent)

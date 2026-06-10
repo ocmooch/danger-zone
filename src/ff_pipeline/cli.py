@@ -12,6 +12,7 @@ from __future__ import annotations
 # typer reads parameter annotations at runtime (via get_type_hints) to
 # resolve option types, so Path must be imported eagerly — not inside
 # TYPE_CHECKING.
+from datetime import date
 from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING
 
@@ -127,7 +128,11 @@ def run_cmd(
     season: int | None = typer.Option(
         None,
         "--season",
-        help="Restrict to a single season year (default: current calendar year).",
+        help=(
+            "Restrict to a single season year. Default: latest season with nflverse "
+            "stats likely published (current year from September onward, otherwise "
+            "previous year)."
+        ),
     ),
     week: int | None = typer.Option(
         None,
@@ -168,15 +173,13 @@ def run_cmd(
     if source is not None and source not in {"nflverse", "nfl_com", "sleeper", "team_defense"}:
         _stub(f"run --source {source}", "unknown source")
 
-    from datetime import datetime
-
     from sqlalchemy.orm import Session
 
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.settings import get_settings
 
     settings = get_settings()
-    target_year = season or datetime.now().year
+    target_year = season or _default_run_season()
     # No --source = the full sequence; nflverse first so player rows exist
     # before nfl_com / sleeper try to resolve against them. team_defense
     # runs last because it matches against the DEF players that the NFL.com
@@ -357,6 +360,20 @@ def _resolve_current_week(year: int) -> int:
     sept_first = date(year, 9, 1)
     delta_weeks = ((today - sept_first).days // 7) + 1
     return max(1, min(18, delta_weeks))
+
+
+def _default_run_season(today: date | None = None) -> int:
+    """Return the season a bare ``ff-pipeline run`` should target.
+
+    nflverse does not publish current-season weekly stat parquet until the
+    season is underway. During the offseason, default to the last completed
+    season so the all-source sync remains a useful, non-404 operational
+    command. Callers can still pass ``--season`` to force a specific year.
+    """
+    resolved_today = today or date.today()
+    if resolved_today.month < 9:
+        return resolved_today.year - 1
+    return resolved_today.year
 
 
 # ---------------------------------------------------------------------------

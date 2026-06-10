@@ -64,7 +64,7 @@ The single entry point is `ff-pipeline`, implemented with Typer. Subcommands:
 
 ```bash
 ff-pipeline init                  # Create database, run migrations, verify config
-ff-pipeline run                   # Full sync from all sources
+ff-pipeline run                   # Full sync from all sources (latest nflverse-ready season by default)
 ff-pipeline run --source nflverse # Sync only one source
 ff-pipeline run --verify          # Also run data-quality checks at end
 ff-pipeline run --dry-run         # Show what would happen, don't write
