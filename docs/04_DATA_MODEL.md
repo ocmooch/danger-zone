@@ -413,6 +413,28 @@ INDEX(`season_year`, `week`)
 
 Projections are append-only (`fetched_at` is part of the unique key) so we can analyze how projections changed over the course of a week.
 
+### `player_injury_reports`
+Weekly NFL injury report designations sourced from nflverse `load_injuries()`. One row per (player, season, week, game_type). Populated by `ff-pipeline injury-reports` and the repeatable backfill script `scripts/backfill_injury_reports.py`. Available from 2009 onward.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `report_id` | INTEGER PK AUTOINCREMENT | |
+| `player_id` | INTEGER FK → players | Resolved from `gsis_id`; rows with no match are skipped |
+| `season_year` | INTEGER | |
+| `week` | INTEGER | |
+| `game_type` | TEXT(8) | `'REG'`, `'POST'`, etc.; part of the unique key |
+| `report_status` | TEXT(32) | `'Out'`, `'Doubtful'`, `'Questionable'`, `'Probable'`, or NULL |
+| `report_primary_injury` | TEXT(64) | Body part (e.g. `'Knee'`, `'Hamstring'`) |
+| `report_secondary_injury` | TEXT(64) | Secondary injury if any |
+| `practice_status` | TEXT(128) | e.g. `'Did Not Practice'`, `'Limited Participation In Practice'` |
+| `date_modified` | TIMESTAMP | Timestamp from the source report |
+| `created_at`, `updated_at` | TIMESTAMP | |
+
+UNIQUE(`player_id`, `season_year`, `week`, `game_type`)
+INDEX(`season_year`, `week`) — primary BFF query access pattern
+
+**Query helper:** `repository.queries.injury_reports_for_week(session, season_year, week)` returns `dict[player_id → PlayerInjuryReport]` for use by the Phase 2 BFF box score.
+
 ### `pipeline_runs`
 Observability table — one row per `ff-pipeline run` invocation.
 

@@ -652,6 +652,42 @@ class TrendingPlayer(Base):
 
 
 # ---------------------------------------------------------------------------
+# Injury reports
+# ---------------------------------------------------------------------------
+
+
+class PlayerInjuryReport(Base):
+    __tablename__ = "player_injury_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id",
+            "season_year",
+            "week",
+            "game_type",
+            name="uq_player_injury_report_player_season_week_gametype",
+        ),
+        Index("ix_player_injury_report_season_week", "season_year", "week"),
+    )
+
+    report_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_injury_reports_player"),
+        nullable=False,
+    )
+    season_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    week: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_type: Mapped[str | None] = mapped_column(String(8))
+    report_status: Mapped[str | None] = mapped_column(String(32))
+    report_primary_injury: Mapped[str | None] = mapped_column(String(64))
+    report_secondary_injury: Mapped[str | None] = mapped_column(String(64))
+    practice_status: Mapped[str | None] = mapped_column(String(128))
+    date_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+# ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------
 
@@ -698,10 +734,12 @@ __all__ = [
     "League",
     "Matchup",
     "Owner",
+    "OwnerIdentityOverride",
     "PipelineRun",
     "Player",
     "PlayerAvailability",
     "PlayerIdOverride",
+    "PlayerInjuryReport",
     "PlayerStatsRaw",
     "PlayerStatsScored",
     "Projection",

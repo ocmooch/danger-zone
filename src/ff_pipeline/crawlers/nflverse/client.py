@@ -14,10 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-
-# LocalParquetSource is a dataclass with `directory: Path`, which is
-# introspected at dataclass-creation time — Path must be a runtime import.
-from pathlib import Path  # noqa: TC003
 from typing import TYPE_CHECKING, Protocol
 
 import polars as pl
@@ -35,6 +31,7 @@ from ff_pipeline.logging_config import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
 log = get_logger(__name__)
 
@@ -93,6 +90,7 @@ class NflverseSource(Protocol):
     def load_rosters(self, seasons: Sequence[int]) -> pl.DataFrame: ...
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame: ...
     def load_team_stats(self, seasons: Sequence[int]) -> pl.DataFrame: ...
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame: ...
 
 
 class LiveNflverseSource:
@@ -126,6 +124,12 @@ class LiveNflverseSource:
         import nflreadpy as nfl
 
         frame: pl.DataFrame = nfl.load_team_stats(seasons=list(seasons))
+        return frame
+
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
+        import nflreadpy as nfl
+
+        frame: pl.DataFrame = nfl.load_injuries(seasons=list(seasons))
         return frame
 
 
@@ -163,6 +167,10 @@ class LocalParquetSource:
 
     def load_team_stats(self, seasons: Sequence[int]) -> pl.DataFrame:
         frames = [self._read(f"team_stats_{y}.parquet") for y in seasons]
+        return pl.concat(frames) if len(frames) > 1 else frames[0]
+
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
+        frames = [self._read(f"injuries_{y}.parquet") for y in seasons]
         return pl.concat(frames) if len(frames) > 1 else frames[0]
 
     def _read(self, filename: str) -> pl.DataFrame:
@@ -331,7 +339,7 @@ def _opt_str(value: object) -> str | None:
 def _opt_int(value: object) -> int | None:
     if value is None:
         return None
-    if not isinstance(value, (int, float, str)):
+    if not isinstance(value, int | float | str):
         return None
     try:
         return int(value)

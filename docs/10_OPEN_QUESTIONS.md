@@ -264,6 +264,24 @@ add --kind sleeper_id --value 9999 --player-id 42`.
 
 ## Parked for Phase 3
 
+### Q6. Historical projections before 2018
+
+Sleeper's `/projections/nfl/{year}/{week}` returns ADP-only payloads for 2017
+and earlier — no actual per-stat projections (`pass_yd`, `rush_yd`, etc.). The
+`projections` table has no rows for seasons before 2018. Box scores for those
+seasons show `null` projection values in the dashboard.
+
+Two candidate sources to fill 2010–2017:
+- **nflverse nflreadr projections parquet** — FantasyPros-sourced weekly
+  pre-game projections, available ~2016+. Stat keys align with the scoring
+  engine. Would require a new nflverse projection crawler module.
+- **FantasyPros API** — further historical depth but requires a paid API key.
+
+Tracked here until there is demand from the dashboard to show projections for
+pre-2018 historical matchups.
+
+---
+
 ### Q5. Projections vs actual variance tracking
 Phase 1 stores raw projections + actuals; computing variance is a Phase 3 /
 dashboard concern. No precomputation in Phase 1.

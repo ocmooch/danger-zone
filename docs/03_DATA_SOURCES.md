@@ -158,6 +158,17 @@ Sleeper offers the best **free** projection API. Their data is competitive with 
 - Sleeper publishes: stay under **1000 requests/minute** to avoid IP block
 - Phase 1 will never come close — maybe 5-10 calls per pipeline run
 
+### Historical depth
+
+Probed 2026-06-11: Sleeper returns real per-stat projections (`pass_yd`, `rush_yd`,
+`rec_yd`, etc.) back to **2018**. Seasons 2017 and earlier return ADP-only payloads
+(`adp_dd_ppr`) with no usable projection stats — those map to all-zero stat dicts after
+the engine projection step and are not backfilled.
+
+For leagues active before 2018, projection data is absent; the dashboard falls back to
+`null` projection display. Alternative sources (nflverse nflreadr projections parquet,
+FantasyPros API) would be needed to cover 2010–2017 — tracked in `docs/10_OPEN_QUESTIONS.md`.
+
 ### Limitations
 
 - No private league data for us — we don't have a Sleeper league
