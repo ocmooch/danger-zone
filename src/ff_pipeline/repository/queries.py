@@ -24,6 +24,7 @@ from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
     PlayerAvailability,
+    PlayerInjuryReport,
     PlayerStatsRaw,
     PlayerStatsScored,
     Projection,
@@ -158,7 +159,7 @@ def roster_for_team_week(
         .where(TeamRoster.team_id == team_id, TeamRoster.week == target_week)
         .order_by(TeamRoster.roster_slot.is_(None), TeamRoster.roster_slot)
     )
-    return [(r, p) for r, p in session.execute(stmt).all()]
+    return list(session.execute(stmt).all())  # type: ignore[arg-type]
 
 
 def nfl_franchises_that_played(session: Session, season_year: int, week: int) -> set[str]:
@@ -450,7 +451,7 @@ def player_ownership(session: Session, player_id: int) -> list[tuple[TeamRoster,
         .where(TeamRoster.player_id == player_id)
         .order_by(TeamRoster.season_year, TeamRoster.week)
     )
-    return [(r, t) for r, t in session.execute(stmt).all()]
+    return list(session.execute(stmt).all())  # type: ignore[arg-type]
 
 
 def player_projections(
@@ -658,6 +659,33 @@ def owner_career_aggregates(session: Session) -> list[dict[str, Any]]:
         )
     rows.sort(key=lambda r: (-r["championships"], -r["total_wins"]))
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Injury reports
+# ---------------------------------------------------------------------------
+
+
+def injury_reports_for_week(
+    session: Session, season_year: int, week: int
+) -> dict[int, PlayerInjuryReport]:
+    """Return ``player_id → PlayerInjuryReport`` for a given season/week.
+
+    Used by the BFF box score to surface injury status alongside player
+    scores. Returns only rows that exist; missing players are absent from
+    the dict (caller treats absence as no report).
+    """
+    rows = (
+        session.execute(
+            select(PlayerInjuryReport).where(
+                PlayerInjuryReport.season_year == season_year,
+                PlayerInjuryReport.week == week,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {r.player_id: r for r in rows}
 
 
 # ---------------------------------------------------------------------------

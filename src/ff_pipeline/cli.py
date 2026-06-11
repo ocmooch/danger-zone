@@ -13,7 +13,7 @@ from __future__ import annotations
 # resolve option types, so Path must be imported eagerly — not inside
 # TYPE_CHECKING.
 from datetime import date
-from pathlib import Path  # noqa: TC003
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -919,6 +919,68 @@ def rescore_cmd(
                     f"  season_id={d.season_id} player_id={d.player_id} "
                     f"week={d.week}: {prev} -> {d.new_total:.2f}"
                 )
+
+
+@app.command("injury-reports")
+def injury_reports_cmd(
+    season: int | None = typer.Option(
+        None,
+        "--season",
+        help="Ingest only this season.",
+    ),
+    start_year: int | None = typer.Option(
+        None,
+        "--start-year",
+        help="First season for a range backfill (defaults to 2009, the earliest nflverse has).",
+    ),
+    end_year: int | None = typer.Option(
+        None,
+        "--end-year",
+        help="Last season for a range backfill (defaults to the current year).",
+    ),
+) -> None:
+    """Ingest nflverse weekly injury reports for past seasons.
+
+    Reads ``load_injuries(seasons)`` from nflreadpy and upserts report
+    designations (Out / Doubtful / Questionable / Probable) into
+    ``player_injury_reports``. Idempotent — safe to re-run.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.nflverse.injury_runner import run_injury_reports
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        seasons = [season]
+    else:
+        first = start_year if start_year is not None else 2009
+        last = end_year if end_year is not None else datetime.now().year
+        if first > last:
+            typer.secho(
+                f"--start-year ({first}) must be <= --end-year ({last}).", fg="red", err=True
+            )
+            raise typer.Exit(code=2)
+        seasons = list(range(first, last + 1))
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = run_injury_reports(ss, seasons=seasons)
+            ss.commit()
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"injury-reports: seasons={len(seasons)} "
+        f"rows +{result.rows_added} ~{result.rows_updated} "
+        f"({result.duration_ms} ms)"
+    )
 
 
 @app.command("team-defense")
