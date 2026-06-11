@@ -36,9 +36,10 @@ class ScoredResult:
 
     ``total_points`` is the rounded sum of ``breakdown`` values.
     ``breakdown`` maps each rule ``category`` to its contribution.
-    ``unmapped_stats`` lists any stat keys the caller supplied that no
-    rule consumed — these are not silently dropped; callers can surface
-    them as data-quality alerts.
+    ``unmapped_stats`` lists stat keys that had a non-zero value but no
+    matching rule — zero-value unmapped stats are omitted as they cannot
+    affect scoring. Callers can surface non-zero entries as data-quality
+    alerts.
     """
 
     total_points: float
@@ -65,14 +66,13 @@ def apply_rules(stats: Mapping[str, float], rules: ScoringRules) -> ScoredResult
             breakdown[rule.category] += contribution
 
     unmapped = _detect_unmapped_stats(stats, rules)
-    if unmapped:
-        for stat_key in unmapped:
-            log.warning(
-                "Unmapped stat in scoring",
-                stat_key=stat_key,
-                value=stats[stat_key],
-                season_id=rules.season_id,
-            )
+    for stat_key in unmapped:
+        log.warning(
+            "Unmapped stat in scoring",
+            stat_key=stat_key,
+            value=stats[stat_key],
+            season_id=rules.season_id,
+        )
 
     total = round(sum(breakdown.values()), _POINTS_PRECISION)
     rounded_breakdown = {k: round(v, _POINTS_PRECISION) for k, v in breakdown.items()}
@@ -127,7 +127,9 @@ def _score_rule(stats: Mapping[str, float], rule: ScoringRule) -> float:
 
 def _detect_unmapped_stats(stats: Mapping[str, float], rules: ScoringRules) -> tuple[str, ...]:
     known = {rule.stat_key for rule in rules.rules}
-    return tuple(sorted(key for key in stats if key not in known))
+    # Only surface unmapped stats that have a non-zero value — a zero-value
+    # unmapped stat cannot affect scoring and warning on it is pure noise.
+    return tuple(sorted(key for key in stats if key not in known and stats[key] != 0.0))
 
 
 __all__ = ["ScoredResult", "apply_rules"]

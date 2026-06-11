@@ -17,15 +17,12 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.1
+  - repo: local
     hooks:
       - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
         args: [--strict, src/]
         pass_filenames: false
-        additional_dependencies:
-          - pydantic>=2.7.0
-          - pydantic-settings>=2.3.0
-          - sqlalchemy>=2.0.30
-          - structlog>=24.1.0
-          - typer>=0.12.0

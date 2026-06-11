@@ -476,6 +476,21 @@ def test_multiple_unmapped_stats_sorted() -> None:
     assert result.unmapped_stats == ("alpha_stat", "zebra_stat")
 
 
+def test_zero_value_unmapped_stat_is_suppressed() -> None:
+    # A stat present in raw data but zero can never affect scoring; suppress
+    # it so leagues that don't score e.g. field_goal_missed don't flood logs.
+    stats = {"passing_tds": 1, "field_goal_missed": 0.0}
+    result = apply_rules(stats, STD_PPR_RULES)
+    assert result.unmapped_stats == ()
+    assert result.total_points == 4.0
+
+
+def test_nonzero_unmapped_stat_is_still_reported() -> None:
+    stats = {"passing_tds": 1, "mystery_stat": 7.0}
+    result = apply_rules(stats, STD_PPR_RULES)
+    assert result.unmapped_stats == ("mystery_stat",)
+
+
 # ---------------------------------------------------------------------------
 # Edge cases.
 # ---------------------------------------------------------------------------
