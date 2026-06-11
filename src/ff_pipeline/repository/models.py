@@ -534,6 +534,12 @@ class PlayerStatsRaw(Base):
     season_year: Mapped[int] = mapped_column(Integer, nullable=False)
     week: Mapped[int] = mapped_column(Integer, nullable=False)
     season_type: Mapped[str | None] = mapped_column(String(8))  # REG | POST | PRE
+    # The player's own NFL team that week, as the source abbreviated it for
+    # that season (nflverse's per-week ``team`` is already season-correct, so a
+    # 2015 Raider stays "OAK", not "LV"). Symmetric with ``nfl_opponent``; the
+    # season-correct counterpart to the single current snapshot on
+    # ``players.nfl_team``. Nullable for non-nflverse sources that omit it.
+    nfl_team: Mapped[str | None] = mapped_column(String(8))
     nfl_opponent: Mapped[str | None] = mapped_column(String(8))
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     stats: Mapped[dict[str, Any] | None] = mapped_column(JSON)

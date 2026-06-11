@@ -114,6 +114,9 @@ def test_run_nflverse_populates_players_and_stats(
         assert row.is_primary is True
         assert row.season_year == 2024
         assert row.week == 1
+        # The player's own per-week NFL team is persisted (season-correct,
+        # straight from nflverse's per-week ``team``).
+        assert row.nfl_team is not None and row.nfl_team == row.nfl_team.upper()
         # Stats JSON has the engine keys.
         assert "passing_yards" in row.stats
         assert "rushing_yards" in row.stats
