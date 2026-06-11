@@ -40,11 +40,20 @@ class ScoredResult:
     matching rule — zero-value unmapped stats are omitted as they cannot
     affect scoring. Callers can surface non-zero entries as data-quality
     alerts.
+    ``absent_per_unit_stat_keys`` lists per-unit rule stat keys that were
+    absent from the input stats dict (and therefore silently scored as 0).
+    Unlike ``unmapped_stats`` (data → no rule), these are rules → no data:
+    the scoring engine couldn't apply them because the source didn't supply
+    the value.  A key appearing here does not mean the actual stat was zero —
+    it means the source never provided it.  Callers that track known-missing
+    sources (e.g. nflverse long-TD bonuses deferred to M7) can intersect this
+    set with their known-gap list to surface accurate data-gap indicators.
     """
 
     total_points: float
     breakdown: dict[str, float]
     unmapped_stats: tuple[str, ...] = ()
+    absent_per_unit_stat_keys: tuple[str, ...] = ()
 
 
 def apply_rules(stats: Mapping[str, float], rules: ScoringRules) -> ScoredResult:
@@ -74,12 +83,15 @@ def apply_rules(stats: Mapping[str, float], rules: ScoringRules) -> ScoredResult
             season_id=rules.season_id,
         )
 
+    absent_per_unit = _detect_absent_per_unit_stats(stats, rules)
+
     total = round(sum(breakdown.values()), _POINTS_PRECISION)
     rounded_breakdown = {k: round(v, _POINTS_PRECISION) for k, v in breakdown.items()}
     return ScoredResult(
         total_points=total,
         breakdown=rounded_breakdown,
         unmapped_stats=unmapped,
+        absent_per_unit_stat_keys=absent_per_unit,
     )
 
 
@@ -130,6 +142,30 @@ def _detect_unmapped_stats(stats: Mapping[str, float], rules: ScoringRules) -> t
     # Only surface unmapped stats that have a non-zero value — a zero-value
     # unmapped stat cannot affect scoring and warning on it is pure noise.
     return tuple(sorted(key for key in stats if key not in known and stats[key] != 0.0))
+
+
+def _detect_absent_per_unit_stats(
+    stats: Mapping[str, float], rules: ScoringRules
+) -> tuple[str, ...]:
+    """Per-unit rule stat keys that are absent from the input stats dict.
+
+    Flat-bonus rules (``flat_points is not None``) are intentionally excluded:
+    the engine already treats absent flat-bonus keys as "doesn't apply to this
+    player type" (e.g. a WR has no ``points_allowed`` entry).  Per-unit rules
+    are different — their absent keys default to 0 silently, and for stat keys
+    that a data source *should* supply but doesn't (e.g. long-TD bonus counts
+    that nflverse defers to play-by-play), that silent default understates the
+    score without any indication that something is missing.
+    """
+    return tuple(
+        sorted(
+            {
+                rule.stat_key
+                for rule in rules.rules
+                if rule.flat_points is None and rule.stat_key not in stats
+            }
+        )
+    )
 
 
 __all__ = ["ScoredResult", "apply_rules"]

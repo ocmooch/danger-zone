@@ -301,6 +301,94 @@ def test_verify_player_fail_outside_tolerance(session: Session) -> None:
     assert abs(result.delta) > 0.1
 
 
+def test_verify_player_known_long_td_gap_passes_with_flag(session: Session) -> None:
+    """A deficit explained by absent long-TD bonus stat keys is a known gap.
+
+    Player Alpha: our engine scores 14.0 (no long-TD keys in raw stats).
+    NFL.com shows 15.0 (includes a 40+ yard TD bonus worth 1 pt).
+    The season has a ``passing_yards_bonus_long_td_40`` rule, but nflverse
+    never provides that key, so ``absent_per_unit_stat_keys`` includes it.
+    Result: ``passed=True, known_gap=True`` — not a real scoring engine bug.
+    """
+    season, _, _, _, _ = _seed(session)
+    session.add(
+        ScoringRule(
+            season_id=season.season_id,
+            category="passing",
+            stat_key="passing_yards_bonus_long_td_40",
+            points_per_unit=1.0,
+            unit_size=1.0,
+            threshold_min=0.0,
+        )
+    )
+    session.commit()
+
+    fetcher = _Fetcher()
+    # NFL.com gives 15.0 (our 14.0 + 1.0 long-TD bonus it computed)
+    html = _build_gamecenter_html(
+        home_team_id=1,
+        home_team_name="Alpha",
+        home_total=15.0,
+        away_team_id=2,
+        away_team_name="Bravo",
+        away_total=8.0,
+        home_starters=[("QB", "111", 15.0)],
+        away_starters=[("QB", "222", 8.0)],
+    )
+    fetcher.add(year=2024, team_id=1, week=1, html=html)
+    fetcher.add(year=2024, team_id=2, week=1, html=html)
+
+    result = verify_player(
+        session,
+        league_id="36271",
+        player_name="Player Alpha",
+        season_year=2024,
+        week=1,
+        fetcher=fetcher,
+    )
+    assert result.passed is True
+    assert result.known_gap is True
+    assert result.note == "long_td_bonus_absent_from_source"
+    assert result.our_points == pytest.approx(14.0)
+    assert result.nfl_com_points == pytest.approx(15.0)
+    assert result.delta == pytest.approx(-1.0)
+
+
+def test_verify_player_real_failure_not_masked_as_known_gap(session: Session) -> None:
+    """A deficit not explained by long-TD bonus absence is a real failure.
+
+    No long-TD bonus scoring rule exists, so even though our score is lower
+    than NFL.com the deficit is unexplained — kept as a real failure.
+    """
+    _seed(session)
+    fetcher = _Fetcher()
+    # NFL.com gives 14.5 vs our 14.0 → delta -0.5, outside default tolerance 0.1,
+    # no long-TD bonus rules → NOT a known gap.
+    html = _build_gamecenter_html(
+        home_team_id=1,
+        home_team_name="Alpha",
+        home_total=14.5,
+        away_team_id=2,
+        away_team_name="Bravo",
+        away_total=8.0,
+        home_starters=[("QB", "111", 14.5)],
+        away_starters=[("QB", "222", 8.0)],
+    )
+    fetcher.add(year=2024, team_id=1, week=1, html=html)
+    fetcher.add(year=2024, team_id=2, week=1, html=html)
+
+    result = verify_player(
+        session,
+        league_id="36271",
+        player_name="Player Alpha",
+        season_year=2024,
+        week=1,
+        fetcher=fetcher,
+    )
+    assert result.passed is False
+    assert result.known_gap is False
+
+
 def test_verify_player_returns_clean_error_when_player_not_found(
     session: Session,
 ) -> None:
@@ -416,7 +504,9 @@ def test_verify_sweep_notes_when_rules_missing(session: Session) -> None:
 __all__ = [
     "test_verify_player_fail_outside_tolerance",
     "test_verify_player_handles_missing_raw_stats",
+    "test_verify_player_known_long_td_gap_passes_with_flag",
     "test_verify_player_pass_within_tolerance",
+    "test_verify_player_real_failure_not_masked_as_known_gap",
     "test_verify_player_returns_clean_error_when_player_not_found",
     "test_verify_sweep_notes_when_rules_missing",
     "test_verify_sweep_returns_empty_when_season_missing",
