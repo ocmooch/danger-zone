@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
+from ff_pipeline.crawlers.nflverse.stat_keys import LONG_TD_BONUS_STAT_KEYS
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.repository.models import (
     PlayerStatsRaw,
@@ -112,6 +113,13 @@ def rescore_seasons(
         # one SELECT per raw row.
         existing_by_stat_id = _existing_scored_for_season(session, season.season_id)
 
+        # Identify which long-TD bonus stat keys have rules for this season so
+        # we can log a single warning when they're systematically absent.
+        bonus_rule_keys = LONG_TD_BONUS_STAT_KEYS & {
+            rule.stat_key for rule in _load_rules(session, season.season_id).rules
+        }
+        bonus_gap_logged = False
+
         scored_rows: list[dict[str, object]] = []
         raw_rows = list(
             session.execute(
@@ -139,6 +147,21 @@ def rescore_seasons(
             except (TypeError, ValueError):
                 continue
             result = apply_rules(numeric_stats, rules)
+
+            # Warn once per season when long-TD bonus stat keys are absent
+            # from the raw data (nflverse doesn't provide them; M7 will fix).
+            if not bonus_gap_logged and bonus_rule_keys:
+                absent_bonus = bonus_rule_keys & set(result.absent_per_unit_stat_keys)
+                if absent_bonus:
+                    log.warning(
+                        "Long-TD bonus stat keys absent from nflverse source data; "
+                        "scored totals for players with TDs may be understated. "
+                        "This is a known M7 gap — implement play-by-play derivation to fix.",
+                        season_year=season.year,
+                        absent_keys=sorted(absent_bonus),
+                    )
+                    bonus_gap_logged = True
+
             previous = existing_by_stat_id.get(raw.stat_id)
             previous_total = previous if previous is not None else None
             scored_rows.append(

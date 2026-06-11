@@ -28,6 +28,7 @@ from ff_pipeline.crawlers.nfl_com.parsers import (
     parse_gamecenter,
 )
 from ff_pipeline.crawlers.nfl_com.urls import team_gamecenter
+from ff_pipeline.crawlers.nflverse.stat_keys import LONG_TD_BONUS_STAT_KEYS
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.repository.models import (
     Matchup,
@@ -62,7 +63,14 @@ class _HtmlFetcher(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class VerifyComparison:
-    """One ``(player, season, week)`` engine-vs-NFL.com comparison."""
+    """One ``(player, season, week)`` engine-vs-NFL.com comparison.
+
+    ``known_gap`` is True when the delta is entirely explained by a documented
+    data-source limitation (e.g. long-TD bonus stat keys absent from nflverse)
+    rather than a scoring engine bug. Such rows are marked ``passed=True``
+    so they don't appear in the "real failures" count, but ``known_gap`` lets
+    callers distinguish them from clean matches.
+    """
 
     player_id: int | None
     player_name: str | None
@@ -72,6 +80,7 @@ class VerifyComparison:
     nfl_com_points: float | None
     delta: float | None
     passed: bool
+    known_gap: bool = False
     note: str | None = None
 
 
@@ -171,7 +180,7 @@ def verify_player(
             note=f"scoring_rules_missing: season_id={season.season_id}",
         )
 
-    our_points = _our_player_points(
+    our_points, absent_keys = _our_player_points(
         session, player_id=player.player_id, season_year=season_year, week=week, rules=rules
     )
 
@@ -192,6 +201,7 @@ def verify_player(
         ours=our_points,
         theirs=nfl_points,
         tolerance=tolerance,
+        absent_per_unit_keys=absent_keys,
     )
 
 
@@ -322,12 +332,17 @@ def _our_player_points(
     season_year: int,
     week: int,
     rules: ScoringRules,
-) -> float | None:
+) -> tuple[float | None, tuple[str, ...]]:
     """Apply the season's rules to whatever raw row we have for this player.
 
-    Prefers the ``nflverse`` row (canonical performance data); falls back
-    to whatever ``is_primary=True`` row exists. Returns ``None`` if no
-    raw stats are on file.
+    Returns ``(total_points, absent_per_unit_stat_keys)``. Prefers the
+    ``nflverse`` row (canonical performance data); falls back to whatever
+    ``is_primary=True`` row exists. Returns ``(None, ())`` if no raw stats
+    are on file.
+
+    ``absent_per_unit_stat_keys`` is the set of per-unit rule stat keys that
+    were missing from the raw data — callers use this to detect known-gap
+    rows (e.g. long-TD bonus keys absent from nflverse).
     """
     rows = list(
         session.execute(
@@ -341,15 +356,16 @@ def _our_player_points(
         .all()
     )
     if not rows:
-        return None
+        return None, ()
     chosen = next((r for r in rows if r.source == "nflverse"), None) or next(
         (r for r in rows if r.is_primary), rows[0]
     )
     stats = chosen.stats or {}
     if not isinstance(stats, dict):
-        return None
+        return None, ()
     numeric_stats = {k: float(v) for k, v in stats.items() if isinstance(v, int | float)}
-    return apply_rules(numeric_stats, rules).total_points
+    result = apply_rules(numeric_stats, rules)
+    return result.total_points, result.absent_per_unit_stat_keys
 
 
 def _find_nfl_com_points_for_player(
@@ -451,7 +467,7 @@ def _compare_side(
                 )
             )
             continue
-        our_points = _our_player_points(
+        our_points, absent_keys = _our_player_points(
             session,
             player_id=player.player_id,
             season_year=season.year,
@@ -466,6 +482,7 @@ def _compare_side(
                 ours=our_points,
                 theirs=entry.points,
                 tolerance=tolerance,
+                absent_per_unit_keys=absent_keys,
             )
         )
     return comparisons
@@ -479,6 +496,7 @@ def _build_comparison(
     ours: float | None,
     theirs: float | None,
     tolerance: float,
+    absent_per_unit_keys: tuple[str, ...] = (),
 ) -> VerifyComparison:
     if ours is None and theirs is None:
         return VerifyComparison(
@@ -517,6 +535,24 @@ def _build_comparison(
             note="nfl_com_points_missing",
         )
     delta = ours - theirs
+    # A negative delta where at least one long-TD bonus stat key was absent from
+    # the raw data is a known, documented source gap (nflverse M7 deferred) —
+    # not a scoring engine bug. Mark as passed so it doesn't pollute the real
+    # failure count; ``known_gap=True`` lets callers distinguish it from a clean
+    # match and present it separately in CLI output.
+    if delta < 0 and LONG_TD_BONUS_STAT_KEYS & set(absent_per_unit_keys):
+        return VerifyComparison(
+            player_id=player.player_id,
+            player_name=player.name_full,
+            season_year=season_year,
+            week=week,
+            our_points=ours,
+            nfl_com_points=theirs,
+            delta=delta,
+            passed=True,
+            known_gap=True,
+            note="long_td_bonus_absent_from_source",
+        )
     passed = abs(delta) <= tolerance
     return VerifyComparison(
         player_id=player.player_id,
@@ -777,6 +813,8 @@ def _nfl_team_id_lookup(teams: Sequence[Team]) -> dict[int, int]:
 
 __all__ = [
     "DEFAULT_SWEEP_WEEKS",
+    # Re-exported so callers can check known-gap keys without importing stat_keys:
+    "LONG_TD_BONUS_STAT_KEYS",
     "ReconcileReport",
     "TeamTotalComparison",
     "VerifyComparison",

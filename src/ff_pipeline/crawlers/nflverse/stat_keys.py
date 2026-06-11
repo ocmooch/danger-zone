@@ -18,6 +18,9 @@ Out of M4 scope (need play-by-play, land in M7):
 * ``rushing_yards_bonus_long_td_40`` / ``_50``
 * ``receiving_yards_bonus_long_td_40`` / ``_50``
 
+These keys are tracked in ``LONG_TD_BONUS_STAT_KEYS`` so callers can detect when
+a scored total may be understated because the source data never provides them.
+
 Team-defense keys (``sacks``, ``interceptions``, ``points_allowed``,
 ``total_yards_allowed``, etc.) are *not* projected here — they need
 team-level derivation from ``load_team_stats`` + ``load_schedules`` rather
@@ -111,6 +114,25 @@ def expected_nflverse_columns() -> frozenset[str]:
     return frozenset(cols)
 
 
+# Stat keys that require play-by-play analysis to populate (deferred to M7).
+# nflverse's load_player_stats() never includes these columns, so they are
+# absent from every player_stats_raw row ingested via this crawler.  When the
+# scoring engine scores a row that lacks these keys it silently defaults them
+# to 0, potentially understating the total by the long-TD bonus points.
+# Downstream consumers (BFF, rescore warnings) reference this set to detect
+# and surface the gap rather than silently displaying incomplete totals.
+LONG_TD_BONUS_STAT_KEYS: frozenset[str] = frozenset(
+    {
+        "passing_yards_bonus_long_td_40",
+        "passing_yards_bonus_long_td_50",
+        "rushing_yards_bonus_long_td_40",
+        "rushing_yards_bonus_long_td_50",
+        "receiving_yards_bonus_long_td_40",
+        "receiving_yards_bonus_long_td_50",
+    }
+)
+
+
 def _as_float(value: object) -> float:
     if value is None:
         return 0.0
@@ -124,4 +146,4 @@ def _as_float(value: object) -> float:
         return 0.0
 
 
-__all__ = ["expected_nflverse_columns", "project_stats"]
+__all__ = ["LONG_TD_BONUS_STAT_KEYS", "expected_nflverse_columns", "project_stats"]
