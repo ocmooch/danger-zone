@@ -164,7 +164,9 @@ def _duplicate_context_keys(rules: ScoringRules) -> frozenset[str]:
         if rule.stat_key in _TEAM_DEFENSE_DUPLICATE_KEYS:
             categories_by_key[rule.stat_key].add(rule.category)
     return frozenset(
-        key for key, categories in categories_by_key.items() if "defense" in categories and len(categories) > 1
+        key
+        for key, categories in categories_by_key.items()
+        if "defense" in categories and len(categories) > 1
     )
 
 
