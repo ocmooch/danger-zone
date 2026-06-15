@@ -294,6 +294,35 @@ def test_special_teams_td() -> None:
     assert result.total_points == 6.0
 
 
+def test_team_defense_special_teams_td_does_not_score_misc_duplicate() -> None:
+    rules = ScoringRules(
+        season_id=1,
+        rules=(
+            _rule("misc", "special_teams_tds", points_per_unit=6.0),
+            _rule("defense", "special_teams_tds", points_per_unit=6.0),
+            _rule("defense", "sacks", points_per_unit=1.0),
+        ),
+    )
+    result = apply_rules({"special_teams_tds": 1, "sacks": 1}, rules)
+
+    assert result.total_points == 7.0
+    assert result.breakdown == {"defense": 7.0}
+
+
+def test_individual_special_teams_td_still_scores_misc_rule() -> None:
+    rules = ScoringRules(
+        season_id=1,
+        rules=(
+            _rule("misc", "special_teams_tds", points_per_unit=6.0),
+            _rule("defense", "special_teams_tds", points_per_unit=6.0),
+        ),
+    )
+    result = apply_rules({"special_teams_tds": 1}, rules)
+
+    assert result.total_points == 6.0
+    assert result.breakdown == {"misc": 6.0}
+
+
 def test_blocked_kicks() -> None:
     result = apply_rules({"blocked_kicks": 2}, STD_PPR_RULES)
     assert result.total_points == 4.0

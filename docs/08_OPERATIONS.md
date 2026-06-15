@@ -271,7 +271,10 @@ DEF players exist (i.e. after the NFL.com roster sync). Order:
 
 1. `ff-pipeline team-defense --start-year 2016 --end-year 2025` — ingests
    per-team DST raw rows (sacks/INTs/.../points_allowed/yards_allowed) and
-   matches them to rostered DEF players. Franchises this league never
+   matches them to rostered DEF players. `points_allowed` uses play-by-play
+   when available to match NFL.com fantasy D/ST semantics: defensive TDs and
+   safeties against the offense are excluded, while kickoff/punt/blocked-punt
+   return scores are charged to the D/ST unit. Franchises this league never
    rostered that season are reported as `unmatched` (expected, not an error).
 2. `ff-pipeline rescore` — scores the new DEF raw rows with each season's
    `defense` rules.
