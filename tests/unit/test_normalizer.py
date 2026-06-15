@@ -304,6 +304,42 @@ class TestResolverFuzzy:
         assert resolver.stats.fuzzy_rejected_conflicting_id == 1
         assert resolver.stats.created == 1
 
+    def test_abbreviated_name_requires_matching_last_name(self, session: Session) -> None:
+        """NFL.com ``X. Last`` rows must preserve the surname structure.
+
+        Regression for Christine Michael being fuzzy-stamped onto Michael Cox:
+        token sorting can make ``C. Michael`` look similar enough to
+        ``Michael Cox`` if the resolver ignores that ``Michael`` is the last
+        name, not an interchangeable token.
+        """
+        cox = _seed_player(
+            session,
+            name_full="Michael Cox",
+            position="RB",
+            gsis_id="00-0030128",
+            rookie_year=2013,
+            last_season=2014,
+        )
+        christine = _seed_player(
+            session,
+            name_full="Christine Michael",
+            position="RB",
+            gsis_id="00-0030432",
+            rookie_year=2013,
+            last_season=2018,
+        )
+        resolver = PlayerResolver(session)
+
+        pid = resolver.resolve(
+            PlayerIdentity(name_full="C. Michael", position="RB", nfl_com_player_id="2539322"),
+            source="nfl_com",
+            season=2016,
+        )
+
+        assert pid == christine
+        assert pid != cox
+        assert resolver.stats.matched_by_fuzzy == 1
+
     def test_fuzzy_threshold_constant_is_high_enough(self) -> None:
         # Sanity guard: if someone drops the threshold, this test fires.
         assert FUZZY_MATCH_THRESHOLD >= 80

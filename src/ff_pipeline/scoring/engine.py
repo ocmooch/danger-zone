@@ -28,6 +28,19 @@ log = get_logger(__name__)
 # Totals are rounded to the cent so floating-point drift never shows up
 # in user-facing scores. NFL.com reports to two decimals.
 _POINTS_PRECISION = 2
+_TEAM_DEFENSE_STAT_KEYS = frozenset(
+    {
+        "sacks",
+        "interceptions",
+        "fumbles_recovered",
+        "safeties",
+        "defensive_tds",
+        "blocked_kicks",
+        "points_allowed",
+        "total_yards_allowed",
+    }
+)
+_TEAM_DEFENSE_DUPLICATE_KEYS = frozenset({"special_teams_tds"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,8 +81,12 @@ def apply_rules(stats: Mapping[str, float], rules: ScoringRules) -> ScoredResult
     """
 
     breakdown: defaultdict[str, float] = defaultdict(float)
+    is_team_defense = _is_team_defense_stats(stats)
+    duplicate_context_keys = _duplicate_context_keys(rules)
 
     for rule in rules.rules:
+        if _skip_duplicate_context_rule(stats, rule, is_team_defense, duplicate_context_keys):
+            continue
         contribution = _score_rule(stats, rule)
         if contribution != 0.0:
             breakdown[rule.category] += contribution
@@ -135,6 +152,42 @@ def _score_rule(stats: Mapping[str, float], rule: ScoringRule) -> float:
         effective_value = min(effective_value, cap)
 
     return (effective_value / rule.unit_size) * rule.points_per_unit
+
+
+def _is_team_defense_stats(stats: Mapping[str, float]) -> bool:
+    return any(key in stats for key in _TEAM_DEFENSE_STAT_KEYS)
+
+
+def _duplicate_context_keys(rules: ScoringRules) -> frozenset[str]:
+    categories_by_key: defaultdict[str, set[str]] = defaultdict(set)
+    for rule in rules.rules:
+        if rule.stat_key in _TEAM_DEFENSE_DUPLICATE_KEYS:
+            categories_by_key[rule.stat_key].add(rule.category)
+    return frozenset(
+        key for key, categories in categories_by_key.items() if "defense" in categories and len(categories) > 1
+    )
+
+
+def _skip_duplicate_context_rule(
+    stats: Mapping[str, float],
+    rule: ScoringRule,
+    is_team_defense: bool,
+    duplicate_context_keys: frozenset[str],
+) -> bool:
+    """Avoid applying the wrong-context return-TD rule.
+
+    NFL.com exposes "Kickoff and Punt Return Touchdowns" in both individual
+    misc scoring and D/ST scoring. Both scrape to ``special_teams_tds`` because
+    nflverse uses that stat name for both contexts. When both rules exist, the
+    raw stat row decides which category consumes the shared key: D/ST rows carry
+    defense-only keys such as ``points_allowed`` and ``sacks``; individual rows
+    do not.
+    """
+    if rule.stat_key not in duplicate_context_keys or stats.get(rule.stat_key, 0) == 0:
+        return False
+    if is_team_defense:
+        return rule.category != "defense"
+    return rule.category == "defense"
 
 
 def _detect_unmapped_stats(stats: Mapping[str, float], rules: ScoringRules) -> tuple[str, ...]:

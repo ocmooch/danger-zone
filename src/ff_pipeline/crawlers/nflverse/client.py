@@ -91,6 +91,7 @@ class NflverseSource(Protocol):
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame: ...
     def load_team_stats(self, seasons: Sequence[int]) -> pl.DataFrame: ...
     def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame: ...
+    def load_pbp(self, seasons: Sequence[int]) -> pl.DataFrame: ...
 
 
 class LiveNflverseSource:
@@ -132,6 +133,12 @@ class LiveNflverseSource:
         frame: pl.DataFrame = nfl.load_injuries(seasons=list(seasons))
         return frame
 
+    def load_pbp(self, seasons: Sequence[int]) -> pl.DataFrame:
+        import nflreadpy as nfl
+
+        frame: pl.DataFrame = nfl.load_pbp(seasons=list(seasons))
+        return frame
+
 
 @dataclass(frozen=True, slots=True)
 class LocalParquetSource:
@@ -144,6 +151,7 @@ class LocalParquetSource:
     * ``rosters_{year}.parquet``
     * ``schedules_{year}.parquet``
     * ``team_stats_{year}.parquet``
+    * ``pbp_{year}.parquet``
 
     Missing files raise — tests should fail loudly if a fixture is absent.
     """
@@ -171,6 +179,10 @@ class LocalParquetSource:
 
     def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
         frames = [self._read(f"injuries_{y}.parquet") for y in seasons]
+        return pl.concat(frames) if len(frames) > 1 else frames[0]
+
+    def load_pbp(self, seasons: Sequence[int]) -> pl.DataFrame:
+        frames = [self._read(f"pbp_{y}.parquet") for y in seasons]
         return pl.concat(frames) if len(frames) > 1 else frames[0]
 
     def _read(self, filename: str) -> pl.DataFrame:
@@ -244,10 +256,13 @@ class NflverseClient:
         team_df = self._source.load_team_stats(seasons)
         self._check_team_columns(team_df)
         schedule_df = self._source.load_schedules(seasons)
+        load_pbp = getattr(self._source, "load_pbp", None)
+        play_by_play_df = load_pbp(seasons) if callable(load_pbp) else pl.DataFrame()
 
         out = build_team_defense_stats(
             team_rows=team_df.iter_rows(named=True),
             schedule_rows=schedule_df.iter_rows(named=True),
+            play_by_play_rows=play_by_play_df.iter_rows(named=True),
         )
         log.info(
             "Built nflverse team-defense stats",

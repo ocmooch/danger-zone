@@ -120,13 +120,28 @@ def test_real_csv_total_yards_allowed_brackets_present(dz_settings) -> None:  # 
     assert r.breakdown["defense"] == pytest.approx(4.0)
 
 
-def test_real_csv_kickoff_punt_return_td_in_both_categories(dz_settings) -> None:  # type: ignore[no-untyped-def]
+def test_real_csv_kickoff_punt_return_td_routes_by_row_context(dz_settings) -> None:  # type: ignore[no-untyped-def]
+    # NFL.com exposes kickoff/punt return TDs in both individual misc scoring and
+    # D/ST scoring, and the real dz CSV does carry the shared special_teams_tds
+    # key in both categories. The engine must route the shared key by row context
+    # so a single return TD is scored once, not double-counted across categories.
+    categories = {
+        pr.rule.category for pr in dz_settings.rules if pr.rule.stat_key == "special_teams_tds"
+    }
+    assert {"misc", "defense"} <= categories  # the CSV defines it in both
     rules = ScoringRules(season_id=1, rules=tuple(pr.rule for pr in dz_settings.rules))
-    r = apply_rules({"special_teams_tds": 1}, rules)
-    # Two rules both fire (one in misc for the offense, one in defense for DST)
-    assert r.breakdown.get("misc") == pytest.approx(6.0)
-    assert r.breakdown.get("defense") == pytest.approx(6.0)
-    assert r.total_points == pytest.approx(12.0)
+
+    # Individual player row (no team-defense context) consumes the misc rule only.
+    individual = apply_rules({"special_teams_tds": 1}, rules)
+    assert individual.breakdown.get("misc") == pytest.approx(6.0)
+    assert "defense" not in individual.breakdown
+    assert individual.total_points == pytest.approx(6.0)
+
+    # Team-defense row (carries a defense-only key) consumes the defense rule only.
+    team_defense = apply_rules({"special_teams_tds": 1, "sacks": 0}, rules)
+    assert team_defense.breakdown.get("defense") == pytest.approx(6.0)
+    assert "misc" not in team_defense.breakdown
+    assert team_defense.total_points == pytest.approx(6.0)
 
 
 def test_real_csv_negative_rushing_yards_subtract_points(dz_settings) -> None:  # type: ignore[no-untyped-def]
