@@ -34,6 +34,7 @@ ENV/
 # so first-run code can write into them without mkdir.
 data/*
 !data/.gitkeep
+!data/commissioner_history.yaml
 !data/logs/
 !data/backups/
 !data/nflverse_cache/

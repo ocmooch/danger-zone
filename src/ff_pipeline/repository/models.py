@@ -159,6 +159,46 @@ class OwnerIdentityOverride(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class Commissioner(Base):
+    """A commissioner tenure — one row per term an owner served.
+
+    Manually curated metadata (like ``owner_identity_overrides``): commissioner
+    history cannot be crawled from NFL.com. Seeded from
+    ``data/commissioner_history.yaml`` via ``scripts/load_commissioner_history.py``.
+    ``from_year``/``to_year`` are inclusive NFL season years; ``to_year IS NULL``
+    means the tenure is ongoing. A non-consecutive return gets a second row.
+    """
+
+    __tablename__ = "commissioners"
+    __table_args__ = (
+        UniqueConstraint(
+            "league_id",
+            "owner_id",
+            "from_year",
+            name="uq_commissioners_owner_from",
+        ),
+    )
+
+    commissioner_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("leagues.league_id", name="fk_commissioners_league"),
+        nullable=False,
+    )
+    owner_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("owners.owner_id", name="fk_commissioners_owner"),
+        nullable=False,
+    )
+    from_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    to_year: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+    owner: Mapped[Owner] = relationship()
+
+
 class Team(Base):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("season_id", "team_name", name="uq_teams_season_team_name"),)

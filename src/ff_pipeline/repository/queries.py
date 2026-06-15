@@ -18,6 +18,7 @@ from sqlalchemy import func, or_, select
 from ff_pipeline.crawlers.nflverse.franchises import historical_team_code
 from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
+    Commissioner,
     League,
     Matchup,
     Owner,
@@ -686,6 +687,28 @@ def injury_reports_for_week(
         .all()
     )
     return {r.player_id: r for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# Commissioners
+# ---------------------------------------------------------------------------
+
+
+def commissioner_terms(session: Session, league_id: str) -> list[Commissioner]:
+    """Return a league's commissioner terms ordered oldest-first.
+
+    Manually-curated metadata seeded into the ``commissioners`` table. Each row
+    carries its ``owner`` relationship so callers can resolve display names.
+    """
+    return list(
+        session.execute(
+            select(Commissioner)
+            .where(Commissioner.league_id == league_id)
+            .order_by(Commissioner.from_year)
+        )
+        .scalars()
+        .all()
+    )
 
 
 # ---------------------------------------------------------------------------
