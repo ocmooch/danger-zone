@@ -277,6 +277,193 @@ def test_real_game_dal_dst_week11_2023_scores_28() -> None:
     assert apply_rules(dal.stats, _defense_rules()).total_points == 28.0
 
 
+def test_points_allowed_excludes_opponent_defensive_touchdown() -> None:
+    team_rows = [
+        _team_row("GB", week=6, season=2020),
+        _team_row("TB", week=6, season=2020, passing_yards=200, rushing_yards=100),
+    ]
+    schedule_rows = [
+        {
+            "season": 2020,
+            "week": 6,
+            "home_team": "TB",
+            "away_team": "GB",
+            "home_score": 38,
+            "away_score": 10,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2020, 6, "TB", "GB", home=0, away=0),
+        _pbp_score("g", 2020, 6, "TB", "GB", home=6, away=0, posteam="GB", td_team="TB"),
+        _pbp_score("g", 2020, 6, "TB", "GB", home=7, away=0, posteam="TB", xp="good"),
+        _pbp_score("g", 2020, 6, "TB", "GB", home=14, away=0, posteam="TB", td_team="TB"),
+        _pbp_score("g", 2020, 6, "TB", "GB", home=38, away=0, posteam="TB", fg="made"),
+    ]
+
+    gb = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "GB"
+    )
+
+    assert gb.stats["points_allowed"] == 31.0
+
+
+def test_points_allowed_counts_kickoff_return_against_dst() -> None:
+    team_rows = [_team_row("CIN", week=1, season=2010), _team_row("NE", week=1, season=2010)]
+    schedule_rows = [
+        {
+            "season": 2010,
+            "week": 1,
+            "home_team": "NE",
+            "away_team": "CIN",
+            "home_score": 38,
+            "away_score": 24,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2010, 1, "NE", "CIN", home=0, away=0),
+        _pbp_score("g", 2010, 1, "NE", "CIN", home=7, away=0, posteam="NE", td_team="NE"),
+        _pbp_score("g", 2010, 1, "NE", "CIN", home=14, away=0, posteam="CIN", td_team="NE"),
+        _pbp_score("g", 2010, 1, "NE", "CIN", home=24, away=0, posteam="NE", td_team="NE"),
+        # Kickoff return TD: td_team == posteam, so it is charged to CIN D/ST.
+        _pbp_score("g", 2010, 1, "NE", "CIN", home=31, away=0, posteam="NE", td_team="NE"),
+        _pbp_score("g", 2010, 1, "NE", "CIN", home=38, away=0, posteam="NE", td_team="NE"),
+    ]
+
+    cin = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "CIN"
+    )
+
+    assert cin.stats["points_allowed"] == 31.0
+
+
+def test_points_allowed_counts_punt_return_against_dst() -> None:
+    team_rows = [_team_row("CAR", week=16, season=2019), _team_row("IND", week=16, season=2019)]
+    schedule_rows = [
+        {
+            "season": 2019,
+            "week": 16,
+            "home_team": "IND",
+            "away_team": "CAR",
+            "home_score": 38,
+            "away_score": 6,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2019, 16, "IND", "CAR", home=0, away=0),
+        _pbp_score("g", 2019, 16, "IND", "CAR", home=24, away=0, posteam="IND", td_team="IND"),
+        _pbp_score(
+            "g",
+            2019,
+            16,
+            "IND",
+            "CAR",
+            home=31,
+            away=0,
+            posteam="CAR",
+            td_team="IND",
+            return_td=1.0,
+            desc="M.Palardy punts 53 yards. N.Hines for 71 yards, TOUCHDOWN.",
+        ),
+    ]
+
+    car = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "CAR"
+    )
+
+    assert car.stats["points_allowed"] == 31.0
+
+
+def test_points_allowed_counts_blocked_punt_return_against_dst() -> None:
+    team_rows = [_team_row("TEN", week=10, season=2020), _team_row("IND", week=10, season=2020)]
+    schedule_rows = [
+        {
+            "season": 2020,
+            "week": 10,
+            "home_team": "TEN",
+            "away_team": "IND",
+            "home_score": 17,
+            "away_score": 34,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2020, 10, "TEN", "IND", home=0, away=0),
+        _pbp_score("g", 2020, 10, "TEN", "IND", home=0, away=27, posteam="IND", td_team="IND"),
+        _pbp_score(
+            "g",
+            2020,
+            10,
+            "TEN",
+            "IND",
+            home=0,
+            away=34,
+            posteam="TEN",
+            td_team="IND",
+            desc="T.Daniel punt is BLOCKED, RECOVERED by IND. T.Carrie for 6 yards, TOUCHDOWN.",
+        ),
+    ]
+
+    ten = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "TEN"
+    )
+
+    assert ten.stats["points_allowed"] == 34.0
+
+
+def test_points_allowed_excludes_safety_against_offense() -> None:
+    team_rows = [_team_row("CLE", week=13, season=2023), _team_row("LA", week=13, season=2023)]
+    schedule_rows = [
+        {
+            "season": 2023,
+            "week": 13,
+            "home_team": "LA",
+            "away_team": "CLE",
+            "home_score": 36,
+            "away_score": 19,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2023, 13, "LA", "CLE", home=0, away=0),
+        _pbp_score("g", 2023, 13, "LA", "CLE", home=34, away=0, posteam="LA", td_team="LA"),
+        _pbp_score("g", 2023, 13, "LA", "CLE", home=36, away=0, posteam="CLE", safety=1),
+    ]
+
+    cle = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "CLE"
+    )
+
+    assert cle.stats["points_allowed"] == 34.0
+
+
 def test_missing_schedule_omits_bracket_keys() -> None:
     """No schedule row → no points_allowed / total_yards_allowed key, so the
     flat brackets score nothing rather than awarding a spurious shutout/
@@ -306,3 +493,39 @@ def test_points_allowed_brackets(points_allowed: int, expected: float) -> None:
 def test_total_yards_allowed_brackets(yards: int, expected: float) -> None:
     stats = {"total_yards_allowed": float(yards)}
     assert apply_rules(stats, _defense_rules()).total_points == expected
+
+
+def _pbp_score(
+    game_id: str,
+    season: int,
+    week: int,
+    home_team: str,
+    away_team: str,
+    *,
+    home: float,
+    away: float,
+    posteam: str | None = None,
+    td_team: str | None = None,
+    fg: str | None = None,
+    xp: str | None = None,
+    safety: float = 0.0,
+    return_td: float = 0.0,
+    desc: str | None = None,
+) -> dict[str, object]:
+    return {
+        "game_id": game_id,
+        "season": season,
+        "week": week,
+        "home_team": home_team,
+        "away_team": away_team,
+        "total_home_score": home,
+        "total_away_score": away,
+        "posteam": posteam,
+        "td_team": td_team,
+        "touchdown": 1.0 if td_team else 0.0,
+        "return_touchdown": return_td,
+        "field_goal_result": fg,
+        "extra_point_result": xp,
+        "safety": safety,
+        "desc": desc,
+    }

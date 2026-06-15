@@ -1,0 +1,37 @@
+# Commissioner history — manually curated. Cannot be crawled from NFL.com.
+# from_year/to_year are inclusive NFL season years. to_year omitted (null) = ongoing.
+# Distilled from NFL.com league-manager transaction records. Add a note for any
+# term that broke the league's usual 2-season rotation.
+# Loaded into the `commissioners` table by scripts/load_commissioner_history.py.
+commissioners:
+  - owner_id: 1     # harry
+    from_year: 2010
+    to_year: 2011
+
+  - owner_id: 4     # sully
+    from_year: 2012
+    to_year: 2013
+
+  - owner_id: 2     # scott
+    from_year: 2014
+    to_year: 2015
+
+  - owner_id: 6     # Dave
+    from_year: 2016
+    to_year: 2017
+
+  - owner_id: 9     # Jeff
+    from_year: 2018
+    to_year: 2019
+
+  - owner_id: 8     # Chris
+    from_year: 2020
+    to_year: 2021
+
+  - owner_id: 5     # DJ
+    from_year: 2022
+    to_year: 2023
+
+  - owner_id: 10    # Rob
+    from_year: 2024
+    to_year:        # ongoing (current commissioner)

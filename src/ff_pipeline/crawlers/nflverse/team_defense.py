@@ -152,13 +152,15 @@ def build_team_defense_stats(
     *,
     team_rows: Iterable[Mapping[str, object]],
     schedule_rows: Iterable[Mapping[str, object]],
+    play_by_play_rows: Iterable[Mapping[str, object]] = (),
 ) -> list[TeamDefenseStat]:
     """Combine team-stat rows and schedule rows into DST stat dicts.
 
     For each ``(team, season, week)`` team-stats row we attach:
 
     * the team's own counting stats (sacks, INTs, ...);
-    * ``points_allowed`` — the opponent's final score for that game;
+    * ``points_allowed`` — the opponent's fantasy D/ST points allowed from
+      play-by-play when available, otherwise the opponent's final score;
     * ``total_yards_allowed`` — the opponent's offensive total net yards;
     * ``nfl_opponent`` — the opponent's abbreviation.
 
@@ -181,7 +183,8 @@ def build_team_defense_stats(
         team_row_index[key] = row
 
     # Index each game's (opponent, points_allowed) per team-week.
-    game_context = _index_schedule(schedule_rows)
+    fantasy_points_allowed = _index_fantasy_points_allowed(play_by_play_rows)
+    game_context = _index_schedule(schedule_rows, fantasy_points_allowed=fantasy_points_allowed)
 
     out: list[TeamDefenseStat] = []
     for key, row in team_row_index.items():
@@ -229,6 +232,8 @@ def build_team_defense_stats(
 
 def _index_schedule(
     schedule_rows: Iterable[Mapping[str, object]],
+    *,
+    fantasy_points_allowed: Mapping[tuple[int, int, str], float] | None = None,
 ) -> dict[tuple[int, int, str], tuple[str | None, float | None]]:
     """``(season, week, team) -> (opponent, points_allowed)``.
 
@@ -247,10 +252,99 @@ def _index_schedule(
             continue
         home_score = _as_opt_float(row.get("home_score"))
         away_score = _as_opt_float(row.get("away_score"))
+        if fantasy_points_allowed is not None:
+            home_score = fantasy_points_allowed.get((season, week, away), home_score)
+            away_score = fantasy_points_allowed.get((season, week, home), away_score)
         # points_allowed for a team is the *other* side's score.
         index[(season, week, home)] = (away, away_score)
         index[(season, week, away)] = (home, home_score)
     return index
+
+
+def _index_fantasy_points_allowed(
+    play_by_play_rows: Iterable[Mapping[str, object]],
+) -> dict[tuple[int, int, str], float]:
+    """Return fantasy D/ST points allowed by ``(season, week, defense_team)``.
+
+    Final score is not the same as fantasy D/ST points allowed. Defensive
+    return TDs and safeties scored against the offense are not charged to that
+    team's D/ST; kickoff/punt return TDs are charged because they are scored
+    against the special-teams half of the D/ST unit. Extra points and two-point
+    conversions inherit the preceding touchdown's classification.
+    """
+
+    out: dict[tuple[int, int, str], float] = {}
+    prev_score_by_game: dict[str, tuple[float, float]] = {}
+    last_td_counts_by_game_team: dict[tuple[str, str], bool] = {}
+    for row in play_by_play_rows:
+        game_id = _as_opt_str(row.get("game_id"))
+        season = _as_opt_int(row.get("season"))
+        week = _as_opt_int(row.get("week"))
+        home = _as_opt_str(row.get("home_team"))
+        away = _as_opt_str(row.get("away_team"))
+        home_score = _as_opt_float(row.get("total_home_score"))
+        away_score = _as_opt_float(row.get("total_away_score"))
+        if (
+            game_id is None
+            or season is None
+            or week is None
+            or home is None
+            or away is None
+            or home_score is None
+            or away_score is None
+        ):
+            continue
+
+        previous = prev_score_by_game.get(game_id)
+        current = (home_score, away_score)
+        prev_score_by_game[game_id] = current
+        if previous is None:
+            continue
+
+        home_delta = home_score - previous[0]
+        away_delta = away_score - previous[1]
+        scoring_team: str | None = None
+        points = 0.0
+        if home_delta > 0 and away_delta == 0:
+            scoring_team = home
+            points = home_delta
+        elif away_delta > 0 and home_delta == 0:
+            scoring_team = away
+            points = away_delta
+        if scoring_team is None or points <= 0:
+            continue
+
+        counts = _score_counts_against_dst(row, scoring_team, last_td_counts_by_game_team, game_id)
+        if counts:
+            charged_team = away if scoring_team == home else home
+            out[(season, week, charged_team)] = out.get((season, week, charged_team), 0.0) + points
+    return out
+
+
+def _score_counts_against_dst(
+    row: Mapping[str, object],
+    scoring_team: str,
+    last_td_counts_by_game_team: dict[tuple[str, str], bool],
+    game_id: str,
+) -> bool:
+    posteam = _as_opt_str(row.get("posteam"))
+    td_team = _as_opt_str(row.get("td_team"))
+    if _as_float(row.get("touchdown")):
+        counts = td_team == posteam or _is_special_teams_return_touchdown(row)
+        last_td_counts_by_game_team[(game_id, scoring_team)] = counts
+        return counts
+    if _as_float(row.get("safety")):
+        return False
+    if _as_opt_str(row.get("field_goal_result")) == "made":
+        return scoring_team == posteam
+    if row.get("extra_point_result") is not None or row.get("two_point_conv_result") is not None:
+        return last_td_counts_by_game_team.get((game_id, scoring_team), scoring_team == posteam)
+    return scoring_team == posteam
+
+
+def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
+    desc = (_as_opt_str(row.get("desc")) or "").lower()
+    return any(marker in desc for marker in (" punt", " punts ", " kicks ", " kickoff", "field goal"))
 
 
 def _team_key(row: Mapping[str, object]) -> tuple[int, int, str] | None:

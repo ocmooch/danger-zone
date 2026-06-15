@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 from datetime import date
 from unittest import mock
 
@@ -12,6 +13,19 @@ from ff_pipeline import __version__
 from ff_pipeline.cli import _default_run_season, app
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI styling from Rich-rendered help.
+
+    Typer renders help through Rich, which injects color escape codes — and can
+    split a styled flag like ``--csv`` across them — whenever the output is
+    treated as a color terminal. That happens under CI's forced-color env but
+    not a local non-TTY run, so flag substring checks must compare plain text.
+    """
+    return _ANSI_RE.sub("", text)
 
 
 def test_version_flag_prints_version() -> None:
@@ -62,36 +76,41 @@ def test_run_command_help_lists_sleeper_as_source() -> None:
 def test_backfill_command_help_lists_start_end_source() -> None:
     result = runner.invoke(app, ["backfill", "--help"])
     assert result.exit_code == 0
+    stdout = _plain(result.stdout)
     for flag in ("--start", "--end", "--season", "--source", "--week", "--force"):
-        assert flag in result.stdout, f"missing flag in backfill --help: {flag}"
+        assert flag in stdout, f"missing flag in backfill --help: {flag}"
 
 
 def test_verify_command_help_lists_sweep_mode() -> None:
     result = runner.invoke(app, ["verify", "--help"])
     assert result.exit_code == 0
+    stdout = _plain(result.stdout)
     for flag in ("--player", "--season", "--week", "--sweep", "--reconcile"):
-        assert flag in result.stdout, f"missing flag in verify --help: {flag}"
+        assert flag in stdout, f"missing flag in verify --help: {flag}"
 
 
 def test_rescore_command_help_lists_dry_run() -> None:
     result = runner.invoke(app, ["rescore", "--help"])
     assert result.exit_code == 0
-    assert "--season" in result.stdout
-    assert "--dry-run" in result.stdout
+    stdout = _plain(result.stdout)
+    assert "--season" in stdout
+    assert "--dry-run" in stdout
 
 
 def test_avatars_command_help_lists_season_range() -> None:
     result = runner.invoke(app, ["avatars", "--help"])
     assert result.exit_code == 0
+    stdout = _plain(result.stdout)
     for opt in ("--start", "--end", "--season"):
-        assert opt in result.stdout
+        assert opt in stdout
 
 
 def test_scoring_load_help_lists_season_override() -> None:
     result = runner.invoke(app, ["scoring", "load", "--help"])
     assert result.exit_code == 0
+    stdout = _plain(result.stdout)
     for flag in ("--csv", "--season", "--fixtures-dir"):
-        assert flag in result.stdout, f"missing flag in scoring load --help: {flag}"
+        assert flag in stdout, f"missing flag in scoring load --help: {flag}"
 
 
 @contextlib.contextmanager

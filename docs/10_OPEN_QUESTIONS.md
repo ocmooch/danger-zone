@@ -80,6 +80,16 @@ no nflverse row at all (retired before the 2010 window), so there is nothing
 to fold into. Left as honest single-row gaps — *not* pending work; do not
 fabricate a canonical identity for them.
 
+**Resolved — Christine Michael / Michael Cox (2026-06-15)**: NFL.com abbreviated
+lineup rows for "C. Michael" had been fuzzy-stamped onto real Giants RB Michael
+Cox because "Michael" was treated as a strong full-name token rather than the
+last name. Player `5829` is now only Michael Cox's real Giants RB history; NFL.com
+player id `2539322`, the 2013 W8 and 2015-2016 roster rows, and matching
+transactions were moved to existing Christine Michael player `16245`, with a
+durable `player_id_overrides` pin. The resolver now treats abbreviated NFL.com
+names structurally: first initial and surname must match before the fuzzy
+candidate can win, so this specific conflation cannot reappear.
+
 **Remaining (irreducible)**: gamecenter-only skips with **no** rostered span
 still surface as `our_raw_stats_missing` in `verify` — genuinely ambiguous
 abbreviated names (several real players sharing initial+last+position) plus
@@ -138,12 +148,21 @@ name vs canonical name) — deferred to Phase 2.
 
 ### P1-V5. Reconstruction team-total trust-check not closed
 
-**State (open, 2026-06-07)**: per-player scored rows are useful, but the
+**State (open, updated 2026-06-15)**: per-player scored rows are useful, but the
 summed-starters → NFL.com team-total invariant is not yet reliable enough to
 close the UP/F27 trust gate, so the reconstruction stays marked **not final**.
 `ff-pipeline verify --season 2010 --reconcile` compared 183 team-weeks and
 failed 134; `ff-pipeline verify --season 2024 --week 1 --reconcile` failed 9 of
 13 rows, including one no-starters artifact.
+
+The dashboard zero-score audit did close one bounded D/ST class on 2026-06-15:
+team-defense reconstruction now uses play-by-play-derived fantasy
+`points_allowed` when available, and the scoring engine no longer double-applies
+the shared `special_teams_tds` key when both individual and D/ST return-TD rules
+exist. This resolved the NFL.com-0/nflverse-nonzero exceptions without evidence
+of an in-season 2010 scoring-setting change or manual score edit. The broader
+team-total reconcile gate remains open because starter-set reconstruction and
+long-TD bonuses are separate residuals.
 
 **Owner**: Phase 2. **Fix path**: investigate the offline team-total sanity
 check (starters set, bench exclusion, DST/long-TD deltas) before any downstream

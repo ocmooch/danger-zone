@@ -56,6 +56,7 @@ in-flight writes from the same run.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -305,8 +306,11 @@ class PlayerResolver:
 
         best_score = 0
         best_pid: int | None = None
+        abbreviated = _abbreviated_initial_last(identity.name_full)
         for pid, name_full, position, rookie_year, last_season in index:
             if target_position and position and position.upper() != target_position:
+                continue
+            if abbreviated is not None and not _matches_initial_last(abbreviated, name_full):
                 continue
             # Era guard: a name match is only credible if the candidate was
             # actually in the NFL that season. Filtering here (not just on the
@@ -315,6 +319,8 @@ class PlayerResolver:
             if season is not None and not _career_contains(season, rookie_year, last_season):
                 continue
             score = fuzz.token_sort_ratio(identity.name_full, name_full)
+            if abbreviated is not None:
+                score = max(score, FUZZY_MATCH_THRESHOLD)
             if score > best_score:
                 best_score = score
                 best_pid = pid
@@ -547,6 +553,36 @@ def _career_contains(season: int, rookie_year: int | None, last_season: int | No
     if rookie_year is not None and season < rookie_year:
         return False
     return last_season is None or season <= last_season + 1
+
+
+_SUFFIX_TOKENS = frozenset({"jr", "sr", "ii", "iii", "iv", "v"})
+
+
+def _name_tokens(name: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"[a-z0-9]+", name.lower()))
+
+
+def _abbreviated_initial_last(name: str) -> tuple[str, str] | None:
+    """Return ``(first_initial, last_name)`` for NFL.com ``X. Last`` names.
+
+    Fuzzy matching is intentionally broad for ordinary names, but abbreviated
+    NFL.com lineup names carry one critical piece of structure: the final token
+    is the surname. Without preserving that, ``C. Michael`` can score highly
+    enough against ``Michael Cox`` to stamp Christine Michael's NFL.com history
+    onto Cox.
+    """
+    tokens = _name_tokens(name)
+    if len(tokens) != 2 or len(tokens[0]) != 1:
+        return None
+    return (tokens[0], tokens[1])
+
+
+def _matches_initial_last(abbreviated: tuple[str, str], candidate_name: str) -> bool:
+    first_initial, last_name = abbreviated
+    tokens = [token for token in _name_tokens(candidate_name) if token not in _SUFFIX_TOKENS]
+    if len(tokens) < 2:
+        return False
+    return tokens[0].startswith(first_initial) and tokens[-1] == last_name
 
 
 def _is_nfl_com_team_defense(identity: PlayerIdentity) -> bool:
