@@ -21,6 +21,7 @@ from ff_pipeline.nfl_teams import canonical_franchise
 from ff_pipeline.repository.models import (
     Owner,
     Player,
+    PlayerInjuryReport,
     PlayerStatsRaw,
     PlayerStatsScored,
     Season,
@@ -29,6 +30,7 @@ from ff_pipeline.repository.models import (
 )
 from ff_pipeline.repository.queries import (
     get_matchup,
+    injury_reports_for_week,
     list_matchups,
     nfl_franchises_that_played,
 )
@@ -71,6 +73,31 @@ def _lineup_status(
     return "did_not_play"
 
 
+def _extra_str(extra_data: object, key: str) -> str | None:
+    if not isinstance(extra_data, dict):
+        return None
+    value = extra_data.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _reserve_eligibility_status(
+    *,
+    roster_slot: str | None,
+    roster_status: str | None,
+    roster_status_label: str | None,
+    injury_report: PlayerInjuryReport | None,
+) -> str | None:
+    if not _is_reserve_slot(roster_slot):
+        return None
+    return (
+        roster_status_label
+        or roster_status
+        or (injury_report.report_status if injury_report else None)
+        or (injury_report.practice_status if injury_report else None)
+        or roster_slot
+    )
+
+
 @router.get("", response_model=Envelope[list[MatchupOut]])
 def list_matchups_endpoint(
     session: SessionDep,
@@ -105,6 +132,7 @@ def _build_side(
     week: int,
     total_score: float | None,
     played_franchises: set[str],
+    injury_reports: dict[int, PlayerInjuryReport],
 ) -> BoxScoreSide:
     team = session.get(Team, team_id)
     owner = session.get(Owner, team.owner_id) if team else None
@@ -116,6 +144,9 @@ def _build_side(
 
     lineup: list[BoxScoreLineupEntry] = []
     for roster, player in roster_rows:
+        injury_report = injury_reports.get(player.player_id)
+        roster_status = _extra_str(roster.extra_data, "player_status")
+        roster_status_label = _extra_str(roster.extra_data, "player_status_label")
         raw = (
             session.execute(
                 select(PlayerStatsRaw).where(
@@ -145,6 +176,24 @@ def _build_side(
                 roster_slot=roster.roster_slot,
                 player_id=player.player_id,
                 player_name=player.name_full,
+                nfl_opponent=_extra_str(roster.extra_data, "opponent"),
+                nfl_game_status=_extra_str(roster.extra_data, "game_status"),
+                roster_status=roster_status,
+                roster_status_label=roster_status_label,
+                injury_status=injury_report.report_status if injury_report else None,
+                injury_primary_injury=(
+                    injury_report.report_primary_injury if injury_report else None
+                ),
+                injury_secondary_injury=(
+                    injury_report.report_secondary_injury if injury_report else None
+                ),
+                injury_practice_status=injury_report.practice_status if injury_report else None,
+                reserve_eligibility_status=_reserve_eligibility_status(
+                    roster_slot=roster.roster_slot,
+                    roster_status=roster_status,
+                    roster_status_label=roster_status_label,
+                    injury_report=injury_report,
+                ),
                 raw_stats=dict(raw.stats or {}) if raw else {},
                 league_points=scored.total_points if scored else None,
                 breakdown=dict(scored.points_breakdown or {}) if scored else {},
@@ -178,9 +227,16 @@ def get_box_score_endpoint(
 
     # Which NFL teams played this week — shared by both sides, so resolve once.
     played_franchises = nfl_franchises_that_played(session, season_year, matchup.week)
+    injury_reports = injury_reports_for_week(session, season_year, matchup.week)
 
     home = _build_side(
-        session, matchup.team_id, season_year, matchup.week, matchup.team_score, played_franchises
+        session,
+        matchup.team_id,
+        season_year,
+        matchup.week,
+        matchup.team_score,
+        played_franchises,
+        injury_reports,
     )
     away: BoxScoreSide | None = None
     if matchup.opponent_team_id is not None:
@@ -191,6 +247,7 @@ def get_box_score_endpoint(
             matchup.week,
             matchup.opponent_score,
             played_franchises,
+            injury_reports,
         )
 
     winner: int | None = None

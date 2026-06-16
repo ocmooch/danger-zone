@@ -105,6 +105,8 @@ class ParsedRosterEntry:
     nfl_team: str | None
     opponent: str | None
     game_status: str | None
+    player_status: str | None = None
+    player_status_label: str | None = None
     points: float | None = None
 
 
@@ -639,6 +641,7 @@ def _parse_roster_row(tr: Tag) -> ParsedRosterEntry | None:
     position, nfl_team = _position_and_team_from_row(tr)
     opp_node = tr.select_one(".playerOpponent")
     status_node = tr.select_one(".playerGameStatus")
+    player_status_node = tr.select_one(".playerNameAndInfo strong.status")
     points_node = tr.select_one("span.playerTotal")
     points = _parse_float(points_node.get_text(strip=True)) if points_node else None
 
@@ -651,6 +654,12 @@ def _parse_roster_row(tr: Tag) -> ParsedRosterEntry | None:
         nfl_team=nfl_team,
         opponent=opp_node.get_text(strip=True) if opp_node else None,
         game_status=status_node.get_text(strip=True) if status_node else None,
+        player_status=player_status_node.get_text(strip=True) if player_status_node else None,
+        player_status_label=(
+            str(player_status_node.get("title")).strip()
+            if player_status_node and player_status_node.get("title")
+            else None
+        ),
         points=points,
     )
 

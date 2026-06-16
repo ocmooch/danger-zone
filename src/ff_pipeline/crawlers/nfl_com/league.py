@@ -28,6 +28,33 @@ the state at kickoff" record per (player, week). The runner accepts a
 When ``snapshot_kind`` is not provided, the runner derives it from the
 current UTC time via ``_default_snapshot_kind``: Sunday before 18:00 UTC
 (approx 1pm ET kickoff) is pre-kickoff; everything else is audit.
+
+Audit captures are NOT week-accurate
+------------------------------------
+
+The live NFL.com roster page is *not* week-aware — it always returns
+*today's* roster. ``run_nfl_com(year, week=N, ...)`` writes that current
+roster into the ``week=N`` slot. An ``audit`` sync run mid/late-season but
+pointed at an early week would therefore stamp the *current* rosters onto
+that early week (this is the 2025/2026 week-1 corruption, where every team's
+week-1 roster was overwritten with its end-of-season roster).
+
+To prevent recurrence, ``_scrape_and_upsert_rosters`` quarantines an audit
+roster write whenever the target (season, week) already holds an
+authoritative snapshot (``AUTHORITATIVE_SNAPSHOT_KINDS`` — draft /
+pre_kickoff / history): the roster write is skipped so an audit capture can
+never become a week's sole authoritative roster.
+
+Remediating existing bad rows: prevention does not repair rows already in
+the DB (2025 wk1, 2026 wk1 — entirely ``audit``). Overwrite them by
+re-running the history reconstruction for that week, which owns the whole
+(season, week) snapshot and replaces every row with week-accurate
+``history`` data::
+
+    uv run ff-pipeline reconstruct --year 2025   # or the per-week path in
+    # ff_pipeline.crawlers.nfl_com.history.reconstruct_lineups(weeks=[1])
+
+(Requires live NFL.com access; do not run offline.)
 """
 
 from __future__ import annotations
@@ -90,6 +117,16 @@ log = get_logger(__name__)
 
 SOURCE_NAME = "nfl_com"
 SnapshotKind = Literal["pre_kickoff", "audit"]
+
+# Snapshot kinds that are *week-accurate* and therefore authoritative for a
+# given (season, week): the draft (week 0), the live pre-kickoff lock, and the
+# post-hoc history reconstruction. An ``audit`` capture is NOT week-accurate —
+# the live NFL.com roster page is not week-aware and always returns *today's*
+# roster (see ``_default_snapshot_kind``), so an audit sync pointed at an early
+# week would otherwise stamp the current roster onto that week. ``audit`` may
+# only fill a (season, week) that has no authoritative snapshot yet; it must
+# never overwrite one. Enforced in ``_scrape_and_upsert_rosters``.
+AUTHORITATIVE_SNAPSHOT_KINDS: frozenset[str] = frozenset({"pre_kickoff", "draft", "history"})
 
 
 class _HtmlFetcher(Protocol):
@@ -604,7 +641,26 @@ def _scrape_and_upsert_rosters(
     warnings: list[str],
     resolver: PlayerResolver,
 ) -> tuple[int, int]:
-    _ = year  # roster is fetched as "current", not year-tagged — kept for symmetry
+    # Precedence guard: an ``audit`` capture is the current (not week-accurate)
+    # roster, because the live NFL.com roster page ignores the requested week.
+    # If this (season, week) already holds an authoritative snapshot
+    # (draft / pre_kickoff / history), an audit write would clobber it and the
+    # week would read as today's rosters stamped onto an earlier week — exactly
+    # the 2025/2026 week-1 corruption. Quarantine the audit roster write in that
+    # case: skip it entirely so audit can never become a week's sole
+    # authoritative roster. (Non-roster facets — matchups / transactions /
+    # availability — are unaffected and still sync.)
+    if snapshot_kind == "audit" and _week_has_authoritative_roster(
+        session, season_year=year, week=week
+    ):
+        msg = (
+            f"audit roster write skipped for week={week}: an authoritative "
+            f"snapshot already exists; audit captures are not week-accurate and "
+            f"must not overwrite draft/pre_kickoff/history rows"
+        )
+        log.info("roster audit write quarantined", year=year, week=week)
+        warnings.append(msg)
+        return 0, 0
     total_added = 0
     total_updated = 0
     for nfl_team_id, internal_team_id in team_id_by_nfl_team_id.items():
@@ -626,6 +682,28 @@ def _scrape_and_upsert_rosters(
         total_added += counts.rows_added
         total_updated += counts.rows_updated
     return total_added, total_updated
+
+
+def _week_has_authoritative_roster(session: Session, *, season_year: int, week: int) -> bool:
+    """True if any roster row for ``(season_year, week)`` is week-accurate.
+
+    Week-accurate kinds are ``AUTHORITATIVE_SNAPSHOT_KINDS`` (draft /
+    pre_kickoff / history). ``snapshot_kind`` lives in ``extra_data`` JSON,
+    which is read back as a Python dict, so we inspect the tag in Python rather
+    than via a dialect-specific JSON path (this runs once per sync, not per
+    row). Rows missing the tag (legacy / unexpected) are treated as
+    non-authoritative so an audit sync can still seed an otherwise-empty week.
+    """
+    existing = session.execute(
+        select(TeamRoster.extra_data).where(
+            TeamRoster.season_year == season_year,
+            TeamRoster.week == week,
+        )
+    ).scalars()
+    return any(
+        isinstance(extra, dict) and extra.get("snapshot_kind") in AUTHORITATIVE_SNAPSHOT_KINDS
+        for extra in existing
+    )
 
 
 def _upsert_team_roster(
@@ -663,6 +741,8 @@ def _upsert_team_roster(
                     "snapshot_kind": snapshot_kind,
                     "game_status": entry.game_status,
                     "opponent": entry.opponent,
+                    "player_status": entry.player_status,
+                    "player_status_label": entry.player_status_label,
                 },
             }
         )
