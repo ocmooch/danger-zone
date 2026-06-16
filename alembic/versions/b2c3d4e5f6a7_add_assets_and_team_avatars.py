@@ -53,9 +53,7 @@ def upgrade() -> None:
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["league_id"], ["leagues.league_id"], name="fk_assets_league"
-        ),
+        sa.ForeignKeyConstraint(["league_id"], ["leagues.league_id"], name="fk_assets_league"),
         sa.PrimaryKeyConstraint("asset_id"),
         sa.UniqueConstraint("sha256", name="uq_assets_sha256"),
     )
