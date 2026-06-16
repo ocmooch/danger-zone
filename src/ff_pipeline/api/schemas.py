@@ -261,6 +261,15 @@ class BoxScoreLineupEntry(BaseModel):
     roster_slot: str | None = None
     player_id: int
     player_name: str
+    nfl_opponent: str | None = None
+    nfl_game_status: str | None = None
+    roster_status: str | None = None
+    roster_status_label: str | None = None
+    injury_status: str | None = None
+    injury_primary_injury: str | None = None
+    injury_secondary_injury: str | None = None
+    injury_practice_status: str | None = None
+    reserve_eligibility_status: str | None = None
     raw_stats: dict[str, Any] = Field(default_factory=dict)
     league_points: float | None = None
     breakdown: dict[str, float] = Field(default_factory=dict)

@@ -189,6 +189,15 @@ Transaction rows carry an `extra_data` object for events that don't fit the play
         {
           "roster_slot": "QB",
           "player_name": "Lamar Jackson",
+          "nfl_opponent": "CIN",
+          "nfl_game_status": "Win,27-20",
+          "roster_status": null,
+          "roster_status_label": null,
+          "injury_status": null,
+          "injury_primary_injury": null,
+          "injury_secondary_injury": null,
+          "injury_practice_status": null,
+          "reserve_eligibility_status": null,
           "raw_stats": { "passing_yards": 287, "passing_tds": 2, "rushing_yards": 41, "rushing_tds": 1 },
           "league_points": 27.78,
           "breakdown": { "passing": 19.48, "rushing": 10.10, "bonus": 0.0 },
@@ -197,6 +206,15 @@ Transaction rows carry an `extra_data` object for events that don't fit the play
         {
           "roster_slot": "BN",
           "player_name": "Some Bye-Week WR",
+          "nfl_opponent": null,
+          "nfl_game_status": null,
+          "roster_status": null,
+          "roster_status_label": null,
+          "injury_status": null,
+          "injury_primary_injury": null,
+          "injury_secondary_injury": null,
+          "injury_practice_status": null,
+          "reserve_eligibility_status": null,
           "raw_stats": {},
           "league_points": null,
           "breakdown": {},
@@ -223,6 +241,15 @@ tell a real zero from a missing one:
 | `did_not_play` | Player's team played but the player recorded no stats (inactive / scratch), or the franchise was indeterminate. | `null` |
 
 A `null` `league_points` therefore means "no stat data" (`bye`/`ir`/`did_not_play`), **never** "scored zero" — an organic zero is `status: "played"` with `league_points: 0.0`. Bye detection derives the week's playing teams from ingested stats, so for a week that has not been ingested yet every entry falls back to `did_not_play` rather than being mislabeled `bye`.
+
+Lineup entries also carry contextual designation fields:
+
+| Field | Meaning |
+|-------|---------|
+| `nfl_opponent` / `nfl_game_status` | NFL.com roster snapshot opponent and rendered game result/status, when captured. These distinguish a team bye from a player who simply did not record stats. |
+| `roster_status` / `roster_status_label` | NFL.com roster badge captured from the lineup row, e.g. `IR` / `Injured Reserve` or `IA` / `Inactive`. Present only after roster/gamecenter ingestion that captured the badge. |
+| `injury_status`, `injury_primary_injury`, `injury_secondary_injury`, `injury_practice_status` | Weekly nflverse injury-report designation/details for the same player and scoring week. Missing fields mean no injury-report row was available, not necessarily healthy. |
+| `reserve_eligibility_status` | For `RES`/`IR` fantasy roster slots, the best available eligibility context: roster badge label, roster badge, injury report status/practice status, or the slot name as a final fallback. This can coexist with `status: "played"` when a player remained in a reserve slot after becoming game-active and scoring points. |
 
 ### `GET /players/{player_id}/stats?season=2024&week=8`
 

@@ -320,6 +320,14 @@ def test_parse_gamecenter_extracts_both_sides_and_full_rosters() -> None:
     assert "BN" in home_slots
     assert "RES" in home_slots
 
+    inactive = next(e for e in gc.home.entries if e.player_name == "D. Adams")
+    assert inactive.player_status == "IA"
+    assert inactive.player_status_label == "Inactive"
+
+    reserve = next(e for e in gc.home.entries if e.roster_slot == "RES")
+    assert reserve.player_status == "IR"
+    assert reserve.player_status_label == "Injured Reserve"
+
 
 def test_parse_gamecenter_missing_team_wraps_raises() -> None:
     with pytest.raises(ParseError, match="teamWrap"):

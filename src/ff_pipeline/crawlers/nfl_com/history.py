@@ -526,6 +526,8 @@ def _upsert_lineup_side(
                     "nfl_com_points": entry.points,
                     "opponent": entry.opponent,
                     "game_status": entry.game_status,
+                    "player_status": entry.player_status,
+                    "player_status_label": entry.player_status_label,
                 },
             }
         )
