@@ -22,23 +22,32 @@ The rules were solved from labeled NFL.com data: 2011–2015 match the current
 51-rule set; 2010 is a distinct era (6-pt passing TDs + 0.5 PPR). Loaded,
 rescored, and verified. Full decision record moved to
 `10_OPEN_QUESTIONS_ARCHIVE.md`. Two residual limits it surfaced remain open
-below: the long-TD-length bonuses (§P1-V2) and the reconstruction team-total
-trust-check (§P1-V5).
+below: the reconstruction team-total trust-check (§P1-V5).
 
-### P1-V2. Long-TD-length bonuses are unscored (data-source gap)
+### P1-V2. Long-TD-length bonuses — RESOLVED (2026-06-16)
 
-**State**: Residual non-DST `verify` deltas are a steady ~12–18/season of
-clean **−1 / −4 / −8** under-scores — the `*_yards_bonus_long_td_40/_50`
-bonuses (40+ yd TD = +1, 50+ yd stacks to +4). The rules exist in
-`scoring_rules`, but nflverse weekly aggregates carry no per-TD distance, so
-the engine never gets a count. Documented out-of-scope in
-`crawlers/nflverse/stat_keys.py` and `05_SCORING_ENGINE.md`. Deltas come in
-pairs (the same long TD credits passer and receiver).
+`crawlers/nflverse/long_td_bonus.py` now derives 40+/50+ yard passing,
+rushing, and receiving TD counts from nflverse `load_pbp()` and merges them
+into each offensive `player_stats_raw.stats` JSON payload during nflverse
+ingest. The existing scoring rules then score those keys normally; no schema
+or API change was needed.
 
-**Owner**: Phase 2. **Fix path**: ingest nflverse play-by-play (`load_pbp`),
-derive per-week 40+/50+ yd TD counts into `player_stats_raw`, map to the
-existing `*_bonus_long_td_*` keys, `rescore`. Engine + rules already handle
-the keys; only the input values are missing.
+Validation on the local 2025 DB: before the fix,
+`ff-pipeline verify --season 2025 --reconcile` was **107/196** passing with
+**89** failures. After `ff-pipeline run --source nflverse --season 2025` and
+`ff-pipeline rescore --season 2025`, reconcile is **173/196** passing with
+**23** residual failures. All offensive 2025 nflverse raw rows now carry the
+six long-TD keys (`missing_off=0`); the remaining long-key absences are DST
+rows, where offensive TD-distance bonuses do not apply.
+
+Residual 2025 failures are separate from this source gap: all 12 week-1
+team totals still fail with mixed fractional deltas and missing starters on
+two teams, and 11 later team-weeks remain. Spot checks show those later rows
+are no longer explained by absent long-TD keys; a few involve Seattle 50+ yard
+plays where NFL.com's stored team totals disagree with a simple stacked-tier
+interpretation, while other rows still require stacked 50+ scoring to match.
+Keep these in the reconstruction/team-total trust-check bucket (§P1-V5), not
+under the long-TD source gap.
 
 ### P1-V3. Ambiguous abbreviated names can't be auto-merged
 

@@ -189,7 +189,7 @@ This is an integration test that runs as part of `pytest tests/integration/test_
 | Shared return-TD stat keys | NFL.com can expose kickoff/punt return TDs in both individual misc scoring and D/ST scoring. Both scrape to `special_teams_tds`; when both rules exist, the engine applies the shared key by row context so team-defense rows consume only the defense rule and individual player rows consume only the misc rule. |
 | Negative stats (INTs, fumbles, missed FGs) | Rule's `points_per_unit` is negative; engine math handles naturally |
 | Bonus stacking (300+ AND 400+ yard bonuses) | Each is a separate rule; both trigger independently for a 400-yard game |
-| Bonus only above threshold (e.g., long TD 40+ yards) | `threshold_min` on the stat applies; nflverse's `pbp` data provides the per-play yardage we need to compute "TDs of 40+ yards" |
+| Long-TD distance bonuses | `crawlers/nflverse/long_td_bonus.py` derives per-player 40+/50+ passing, rushing, and receiving TD counts from nflverse `load_pbp()` and stores them in `player_stats_raw.stats`; the engine then scores the existing `*_yards_bonus_long_td_40/_50` keys like any other per-unit rule. |
 
 ## Where the engine fails on purpose
 

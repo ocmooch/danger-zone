@@ -344,7 +344,9 @@ def _score_counts_against_dst(
 
 def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
     desc = (_as_opt_str(row.get("desc")) or "").lower()
-    return any(marker in desc for marker in (" punt", " punts ", " kicks ", " kickoff", "field goal"))
+    return any(
+        marker in desc for marker in (" punt", " punts ", " kicks ", " kickoff", "field goal")
+    )
 
 
 def _team_key(row: Mapping[str, object]) -> tuple[int, int, str] | None:
