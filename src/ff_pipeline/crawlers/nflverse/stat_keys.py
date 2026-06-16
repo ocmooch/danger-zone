@@ -12,14 +12,15 @@ nflverse uses similar names for most keys but differs on a few:
 * fumbles_lost is derived: sum of ``sack_fumbles_lost`` (passing) +
   ``rushing_fumbles_lost`` + ``receiving_fumbles_lost``.
 
-Out of M4 scope (need play-by-play, land in M7):
+Derived from play-by-play and merged by ``NflverseClient.player_stats``:
 
 * ``passing_yards_bonus_long_td_40`` / ``_50`` (count of TDs of 40+/50+ yds)
 * ``rushing_yards_bonus_long_td_40`` / ``_50``
 * ``receiving_yards_bonus_long_td_40`` / ``_50``
 
-These keys are tracked in ``LONG_TD_BONUS_STAT_KEYS`` so callers can detect when
-a scored total may be understated because the source data never provides them.
+These keys are tracked in ``LONG_TD_BONUS_STAT_KEYS`` so callers can detect
+legacy rows or test fixtures that were ingested before play-by-play derivation
+was available.
 
 Team-defense keys (``sacks``, ``interceptions``, ``points_allowed``,
 ``total_yards_allowed``, etc.) are *not* projected here — they need
@@ -114,13 +115,11 @@ def expected_nflverse_columns() -> frozenset[str]:
     return frozenset(cols)
 
 
-# Stat keys that require play-by-play analysis to populate (deferred to M7).
-# nflverse's load_player_stats() never includes these columns, so they are
-# absent from every player_stats_raw row ingested via this crawler.  When the
-# scoring engine scores a row that lacks these keys it silently defaults them
-# to 0, potentially understating the total by the long-TD bonus points.
-# Downstream consumers (BFF, rescore warnings) reference this set to detect
-# and surface the gap rather than silently displaying incomplete totals.
+# Stat keys that require play-by-play analysis to populate. nflverse's
+# load_player_stats() never includes these columns, so NflverseClient derives
+# them from load_pbp() and merges them into each offensive raw stat payload.
+# Downstream verification/rescore code still references this set to detect
+# legacy rows or fixtures ingested without PBP enrichment.
 LONG_TD_BONUS_STAT_KEYS: frozenset[str] = frozenset(
     {
         "passing_yards_bonus_long_td_40",

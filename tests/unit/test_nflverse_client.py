@@ -22,6 +22,7 @@ from ff_pipeline.crawlers.nflverse import (
     LocalParquetSource,
     NflverseClient,
 )
+from ff_pipeline.crawlers.nflverse.long_td_bonus import derive_long_td_bonus_counts
 from ff_pipeline.crawlers.nflverse.stat_keys import (
     expected_nflverse_columns,
     project_stats,
@@ -127,6 +128,35 @@ def test_expected_columns_includes_renames_and_sums() -> None:
     assert "fg_made_60_" in cols  # one of the 50+ summands
 
 
+def test_long_td_bonus_counts_stack_from_pbp_fixture() -> None:
+    pbp = pl.read_parquet(FIXTURE_DIR / "pbp_long_td_bonus_2024.parquet")
+
+    out = derive_long_td_bonus_counts(pbp.iter_rows(named=True))
+
+    passer = out[
+        next(
+            key
+            for key in out
+            if key.gsis_id == "00-PASSER" and key.season_year == 2024 and key.week == 1
+        )
+    ]
+    assert passer["passing_yards_bonus_long_td_40"] == 2.0
+    assert passer["passing_yards_bonus_long_td_50"] == 1.0
+
+    receiver_40 = out[next(key for key in out if key.gsis_id == "00-RECEIVER40")]
+    assert receiver_40["receiving_yards_bonus_long_td_40"] == 1.0
+    assert "receiving_yards_bonus_long_td_50" not in receiver_40
+
+    receiver_50 = out[next(key for key in out if key.gsis_id == "00-RECEIVER50")]
+    assert receiver_50["receiving_yards_bonus_long_td_40"] == 1.0
+    assert receiver_50["receiving_yards_bonus_long_td_50"] == 1.0
+
+    rusher_50 = out[next(key for key in out if key.gsis_id == "00-RUSHER50")]
+    assert rusher_50["rushing_yards_bonus_long_td_40"] == 1.0
+    assert rusher_50["rushing_yards_bonus_long_td_50"] == 1.0
+    assert all(key.gsis_id not in {"00-RECEIVER39", "00-RUSHER12"} for key in out)
+
+
 # ---------------------------------------------------------------------------
 # Client + LocalParquetSource — integration of source seam + projection
 # ---------------------------------------------------------------------------
@@ -208,6 +238,39 @@ def test_client_reads_committed_fixture() -> None:
     assert "passing_yards" in sample.stats
     assert "fumbles_lost" in sample.stats
     assert "field_goal_made_50_plus" in sample.stats
+    assert "passing_yards_bonus_long_td_40" in sample.stats
+
+
+def test_client_merges_long_td_bonus_counts_from_pbp_fixture() -> None:
+    stats_df = pl.DataFrame(
+        {
+            "player_id": ["00-PASSER", "00-RECEIVER50", "00-RUSHER50", "00-NONE"],
+            "player_display_name": ["Passer", "Receiver", "Rusher", "No Bonus"],
+            "position": ["QB", "WR", "RB", "TE"],
+            "team": ["BUF", "BUF", "BUF", "BUF"],
+            "season": [2024, 2024, 2024, 2024],
+            "week": [1, 1, 1, 1],
+            "season_type": ["REG", "REG", "REG", "REG"],
+            "opponent_team": ["MIA", "MIA", "MIA", "MIA"],
+        }
+    )
+
+    class _PbpSource(_InMemorySource):
+        def load_pbp(self, seasons):  # type: ignore[no-untyped-def]  # noqa: ARG002
+            return pl.read_parquet(FIXTURE_DIR / "pbp_long_td_bonus_2024.parquet")
+
+    out = NflverseClient(source=_PbpSource(stats_df, _empty_players_df())).player_stats(
+        seasons=[2024]
+    )
+    by_gsis = {row.gsis_id: row for row in out}
+
+    assert by_gsis["00-PASSER"].stats["passing_yards_bonus_long_td_40"] == 2.0
+    assert by_gsis["00-PASSER"].stats["passing_yards_bonus_long_td_50"] == 1.0
+    assert by_gsis["00-RECEIVER50"].stats["receiving_yards_bonus_long_td_40"] == 1.0
+    assert by_gsis["00-RECEIVER50"].stats["receiving_yards_bonus_long_td_50"] == 1.0
+    assert by_gsis["00-RUSHER50"].stats["rushing_yards_bonus_long_td_40"] == 1.0
+    assert by_gsis["00-RUSHER50"].stats["rushing_yards_bonus_long_td_50"] == 1.0
+    assert by_gsis["00-NONE"].stats["passing_yards_bonus_long_td_40"] == 0.0
 
 
 class _RenamingLocalSource:
