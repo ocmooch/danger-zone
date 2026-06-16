@@ -160,14 +160,12 @@ Sleeper offers the best **free** projection API. Their data is competitive with 
 
 ### Historical depth
 
-Probed 2026-06-11: Sleeper returns real per-stat projections (`pass_yd`, `rush_yd`,
-`rec_yd`, etc.) back to **2018**. Seasons 2017 and earlier return ADP-only payloads
-(`adp_dd_ppr`) with no usable projection stats — those map to all-zero stat dicts after
-the engine projection step and are not backfilled.
-
-For leagues active before 2018, projection data is absent; the dashboard falls back to
-`null` projection display. Alternative sources (nflverse nflreadr projections parquet,
-FantasyPros API) would be needed to cover 2010–2017 — tracked in `docs/10_OPEN_QUESTIONS.md`.
+Re-probed 2026-06-16: Sleeper's projection endpoint serves historical regular-season
+payloads well beyond the weeks originally crawled (for example, 2017 W7 returned
+9,361 rows, and 2020/2021/2023/2024 all returned roughly 9.4k rows). The sparse
+`projections` table was therefore a crawl-coverage gap, not a source-depth gap:
+run the existing Sleeper pipeline across the historical season/week grid to
+populate missing cells.
 
 ### Limitations
 

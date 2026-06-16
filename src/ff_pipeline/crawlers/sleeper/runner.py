@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ff_pipeline.crawlers.sleeper.client import LiveSleeperSource
 from ff_pipeline.crawlers.sleeper.endpoints import (
@@ -49,6 +49,7 @@ from ff_pipeline.normalizer.player_ids import PlayerIdentity, PlayerResolver
 from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
+    PlayerIdentityLink,
     Projection,
     ScoringRule,
     Season,
@@ -302,7 +303,14 @@ def _sync_sleeper_ids(
 
 
 def _build_sleeper_to_player_id_map(session: Session) -> dict[str, int]:
-    stmt = select(Player.sleeper_id, Player.player_id).where(Player.sleeper_id.isnot(None))
+    stmt = (
+        select(
+            Player.sleeper_id,
+            func.coalesce(PlayerIdentityLink.canonical_player_id, Player.player_id),
+        )
+        .outerjoin(PlayerIdentityLink, PlayerIdentityLink.member_player_id == Player.player_id)
+        .where(Player.sleeper_id.isnot(None))
+    )
     return {sid: pid for sid, pid in session.execute(stmt).all() if sid}
 
 

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy.orm import Session
 
+from ff_pipeline.crawlers.nflverse.runner import _gsis_id_to_player_id
+from ff_pipeline.crawlers.sleeper.runner import _build_sleeper_to_player_id_map
 from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
 from ff_pipeline.repository.models import Player, PlayerIdentityLink
@@ -72,3 +74,36 @@ def test_player_identity_cluster_returns_linked_members(session: Session) -> Non
 
 def test_player_identity_cluster_unknown_player(session: Session) -> None:
     assert player_identity_cluster(session, 999_999) is None
+
+
+def test_nflverse_gsis_map_resolves_linked_member_to_canonical(session: Session) -> None:
+    canonical = _player(session, "Mike Williams", nfl_com_player_id="2558846")
+    member = _player(session, "Mike Williams", gsis_id="00-0033536")
+    session.add(
+        PlayerIdentityLink(
+            member_player_id=member,
+            canonical_player_id=canonical,
+            source="manual",
+            confidence="high",
+        )
+    )
+    session.flush()
+
+    assert _gsis_id_to_player_id(session, ["00-0033536"]) == {"00-0033536": canonical}
+
+
+def test_sleeper_map_resolves_linked_member_to_canonical(session: Session) -> None:
+    canonical = _player(session, "Mike Williams", sleeper_id="8770", nfl_com_player_id="2558846")
+    member = _player(session, "Mike Williams", sleeper_id="4068", gsis_id="00-0033536")
+    session.add(
+        PlayerIdentityLink(
+            member_player_id=member,
+            canonical_player_id=canonical,
+            source="manual",
+            confidence="high",
+        )
+    )
+    session.flush()
+
+    assert _build_sleeper_to_player_id_map(session)["4068"] == canonical
+    assert _build_sleeper_to_player_id_map(session)["8770"] == canonical
