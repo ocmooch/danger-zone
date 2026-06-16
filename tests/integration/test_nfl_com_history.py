@@ -284,7 +284,9 @@ def _minimal_gamecenter_html() -> str:
           <table class="tableType-player"><tbody>
             <tr>
               <td class="teamPosition">QB</td>
-              <td><a class="playerName" href="/players/card?playerId={player_id}">{player_name}</a><em>QB - BUF</em></td>
+              <td class="playerNameAndInfo"><a class="playerName" href="/players/card?playerId={player_id}">{player_name}</a><em>QB - BUF</em><strong class="status status-ir" title="Injured Reserve">IR</strong></td>
+              <td class="playerOpponent">NYJ</td>
+              <td class="playerGameStatus">Win, 21-17</td>
               <td><span class="playerTotal">10.0</span></td>
             </tr>
           </tbody></table>
@@ -346,6 +348,11 @@ def test_reconstruct_lineups_clears_stale_week_snapshot_before_writing(
     assert orphan_team.team_id not in {row.team_id for row in rows}
     assert stale.player_id not in {row.player_id for row in rows}
     assert {(row.extra_data or {}).get("snapshot_kind") for row in rows} == {"history"}
+    assert all("player_status" not in (row.extra_data or {}) for row in rows)
+    assert all("player_status_label" not in (row.extra_data or {}) for row in rows)
+    assert all((row.extra_data or {}).get("nfl_com_points") == 10.0 for row in rows)
+    assert all((row.extra_data or {}).get("opponent") == "NYJ" for row in rows)
+    assert all((row.extra_data or {}).get("game_status") == "Win, 21-17" for row in rows)
 
 
 @pytest.mark.integration

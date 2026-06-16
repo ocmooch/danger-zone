@@ -206,6 +206,17 @@ def test_runner_populates_rosters_with_pre_kickoff_flag(session: Session) -> Non
     # and they are non-starters.
     bn = [r for r in rosters if r.roster_slot == "BN"]
     assert bn and all(r.is_starter is False for r in bn)
+    status_rows = [
+        r
+        for r in rosters
+        if (r.extra_data or {}).get("player_status")
+        and (r.extra_data or {}).get("snapshot_kind") == "pre_kickoff"
+    ]
+    assert status_rows
+    assert {r.extra_data["player_status_label"] for r in status_rows if r.extra_data} >= {
+        "Inactive",
+        "Injured Reserve",
+    }
 
 
 @pytest.mark.integration
