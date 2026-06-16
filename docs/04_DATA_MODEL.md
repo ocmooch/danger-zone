@@ -217,6 +217,34 @@ same-player / same-season / same-week roster rows are 0.
 
 INDEX on `gsis_id`, `sleeper_id`, `nfl_com_player_id` (join columns)
 
+### `player_identity_links`
+Auditable crosswalk for split `players` rows that represent the same real NFL
+player.
+
+This table is intentionally additive: existing foreign keys are not rewritten
+and duplicate player rows are not deleted. A manually curated member row points
+at the canonical row, usually the NFL.com/roster side because league rosters and
+box scores already reference it. Read paths that need player facts across
+sources should resolve through `repository.queries.player_identity_cluster()`;
+the nflverse and Sleeper ingestion maps also honor the table so future stats and
+projections attach to the canonical player instead of extending the split.
+
+Seed data lives in `data/player_identity_links.yaml` and is loaded with
+`scripts/load_player_identity_links.py` (idempotent; safe to rerun after edits).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `link_id` | INTEGER PK AUTOINCREMENT | |
+| `member_player_id` | INTEGER FK -> players | Split/non-canonical row; unique |
+| `canonical_player_id` | INTEGER FK -> players | Canonical row to read/write through |
+| `source` | TEXT | e.g. `manual` |
+| `confidence` | TEXT | e.g. `high` |
+| `notes` | TEXT | Human audit note |
+| `created_at`, `updated_at` | TIMESTAMP | |
+
+UNIQUE(`member_player_id`)
+INDEX(`canonical_player_id`)
+
 **Querying league-relevant players.** The read API exposes this as an additive
 filter rather than making callers join: `GET /players?league_relevant=true`
 returns only players with a non-NULL rostered span, `=false` returns only the
@@ -411,7 +439,7 @@ Projected stats from external sources, scored using league rules.
 UNIQUE(`player_id`, `season_year`, `week`, `source`, `fetched_at`)
 INDEX(`season_year`, `week`)
 
-Projections are append-only (`fetched_at` is part of the unique key) so we can analyze how projections changed over the course of a week.
+Projections are append-only (`fetched_at` is part of the unique key) so we can analyze how projections changed over the course of a week. Historical source coverage is broader than the original crawl: Sleeper serves regular-season projection payloads for legacy years, so an empty `(season_year, week)` cell is a crawler-run coverage gap, not proof that the source lacks data.
 
 ### `player_injury_reports`
 Weekly NFL injury report designations sourced from nflverse `load_injuries()`. One row per (player, season, week, game_type). Populated by `ff-pipeline injury-reports` and the repeatable backfill script `scripts/backfill_injury_reports.py`. Available from 2009 onward.

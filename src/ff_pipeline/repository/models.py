@@ -391,6 +391,42 @@ class PlayerIdOverride(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class PlayerIdentityLink(Base):
+    """Auditable member-to-canonical player identity crosswalk.
+
+    Unlike ``player_id_overrides`` (external ID -> internal player pin), this
+    links already-created ``players`` rows that represent the same real NFL
+    player. Keeping the link table separate avoids destructive FK rewrites and
+    lets downstream reads union by canonical cluster once the curation is seeded.
+    """
+
+    __tablename__ = "player_identity_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "member_player_id",
+            name="uq_player_identity_links_member",
+        ),
+        Index("ix_player_identity_links_canonical", "canonical_player_id"),
+    )
+
+    link_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    member_player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_identity_links_member"),
+        nullable=False,
+    )
+    canonical_player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_identity_links_canonical"),
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    confidence: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class TeamRoster(Base):
     __tablename__ = "team_rosters"
     __table_args__ = (
