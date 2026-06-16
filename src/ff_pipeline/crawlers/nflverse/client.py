@@ -18,6 +18,11 @@ from typing import TYPE_CHECKING, Protocol
 
 import polars as pl
 
+from ff_pipeline.crawlers.nflverse.long_td_bonus import (
+    LONG_TD_BONUS_ZEROES,
+    LongTdBonusKey,
+    derive_long_td_bonus_counts,
+)
 from ff_pipeline.crawlers.nflverse.stat_keys import (
     expected_nflverse_columns,
     project_stats,
@@ -214,6 +219,7 @@ class NflverseClient:
     def player_stats(self, seasons: Sequence[int]) -> list[NflversePlayerStat]:
         df = self._source.load_player_stats(seasons)
         self._check_columns(df, "player_stats")
+        long_td_bonus_counts = self._long_td_bonus_counts(seasons)
 
         out: list[NflversePlayerStat] = []
         for row in df.iter_rows(named=True):
@@ -222,6 +228,13 @@ class NflverseClient:
                 # nflverse occasionally emits team-aggregate rows; skip.
                 continue
             stats = project_stats(row)
+            stats.update(LONG_TD_BONUS_ZEROES)
+            bonus_key = LongTdBonusKey(
+                gsis_id=str(gsis),
+                season_year=int(row["season"]),
+                week=int(row["week"]),
+            )
+            stats.update(long_td_bonus_counts.get(bonus_key, {}))
             out.append(
                 NflversePlayerStat(
                     gsis_id=str(gsis),
@@ -241,6 +254,22 @@ class NflverseClient:
             row_count=len(out),
         )
         return out
+
+    def _long_td_bonus_counts(
+        self, seasons: Sequence[int]
+    ) -> dict[LongTdBonusKey, dict[str, float]]:
+        load_pbp = getattr(self._source, "load_pbp", None)
+        if not callable(load_pbp):
+            return {}
+        try:
+            play_by_play_df = load_pbp(seasons)
+        except (FileNotFoundError, NotImplementedError):
+            log.info(
+                "nflverse PBP unavailable; long-TD bonus keys will remain zero",
+                seasons=list(seasons),
+            )
+            return {}
+        return derive_long_td_bonus_counts(play_by_play_df.iter_rows(named=True))
 
     # ----- team_defense -----
 

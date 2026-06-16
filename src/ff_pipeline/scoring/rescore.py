@@ -43,6 +43,17 @@ log = get_logger(__name__)
 # their own pre-computed projected_points, so we never feed them through
 # rescore.
 _SCORABLE_SOURCES: tuple[str, ...] = ("nflverse",)
+_OFFENSIVE_LONG_TD_SOURCE_KEYS: frozenset[str] = frozenset(
+    {
+        "passing_yards",
+        "passing_tds",
+        "rushing_yards",
+        "rushing_tds",
+        "receiving_yards",
+        "receiving_tds",
+        "receptions",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,8 +160,13 @@ def rescore_seasons(
             result = apply_rules(numeric_stats, rules)
 
             # Warn once per season when long-TD bonus stat keys are absent
-            # from the raw data (nflverse doesn't provide them; M7 will fix).
-            if not bonus_gap_logged and bonus_rule_keys:
+            # from offensive raw rows. Kicker and DST rows share source=
+            # nflverse but cannot carry offensive TD-distance bonuses.
+            if (
+                not bonus_gap_logged
+                and bonus_rule_keys
+                and _OFFENSIVE_LONG_TD_SOURCE_KEYS & set(numeric_stats)
+            ):
                 absent_bonus = bonus_rule_keys & set(result.absent_per_unit_stat_keys)
                 if absent_bonus:
                     log.warning(
