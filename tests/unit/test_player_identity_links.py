@@ -12,8 +12,22 @@ from ff_pipeline.crawlers.nflverse.runner import _create_stub_players, _gsis_id_
 from ff_pipeline.crawlers.sleeper.runner import _build_sleeper_to_player_id_map
 from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
-from ff_pipeline.repository.models import Player, PlayerIdentityLink
-from ff_pipeline.repository.queries import player_identity_cluster
+from ff_pipeline.repository.models import (
+    League,
+    Owner,
+    Player,
+    PlayerIdentityLink,
+    PlayerStatsRaw,
+    PlayerStatsScored,
+    Season,
+    Team,
+    TeamRoster,
+    Transaction,
+)
+from ff_pipeline.repository.queries import (
+    player_identity_cluster,
+    player_source_identity_mismatches,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -35,6 +49,22 @@ def _player(session: Session, name: str, **kwargs: object) -> int:
     session.flush()
     assert isinstance(row.player_id, int)
     return row.player_id
+
+
+def _team(session: Session, year: int) -> tuple[int, int]:
+    league = session.get(League, "league")
+    if league is None:
+        league = League(league_id="league", name="League", platform="nfl_com")
+        session.add(league)
+        session.flush()
+    owner = Owner(league_id="league", display_name=f"Owner {year}", is_active=True)
+    season = Season(league_id="league", year=year, status="completed")
+    session.add_all([owner, season])
+    session.flush()
+    team = Team(season_id=season.season_id, owner_id=owner.owner_id, team_name=f"Team {year}")
+    session.add(team)
+    session.flush()
+    return season.season_id, team.team_id
 
 
 def test_player_identity_cluster_defaults_to_self(session: Session) -> None:
@@ -75,6 +105,91 @@ def test_player_identity_cluster_returns_linked_members(session: Session) -> Non
 
 def test_player_identity_cluster_unknown_player(session: Session) -> None:
     assert player_identity_cluster(session, 999_999) is None
+
+
+def test_source_identity_mismatch_reports_impossible_nfl_com_owner(session: Session) -> None:
+    season_id, team_id = _team(session, 2016)
+    wrong = _player(
+        session,
+        "Les Miller",
+        position="NT",
+        nfl_com_player_id="2533034",
+        gsis_id="old-les",
+        rookie_year=1987,
+        last_season=1998,
+    )
+    session.add_all(
+        [
+            TeamRoster(team_id=team_id, player_id=wrong, season_year=2016, week=0),
+            Transaction(
+                season_id=season_id,
+                transaction_type="draft",
+                team_id=team_id,
+                player_id=wrong,
+            ),
+        ]
+    )
+    session.flush()
+
+    assert player_source_identity_mismatches(session) == [
+        {
+            "player_id": wrong,
+            "name_full": "Les Miller",
+            "position": "NT",
+            "rookie_year": 1987,
+            "last_season": 1998,
+            "first_observed_season": 2016,
+            "last_observed_season": 2016,
+            "nfl_com_player_id": "2533034",
+            "gsis_id": "old-les",
+            "roster_row_count": 1,
+            "transaction_row_count": 1,
+            "draft_pick_count": 1,
+            "reason": "observed_after_nfl_career_without_stats",
+        }
+    ]
+
+
+def test_source_identity_mismatch_allows_exact_late_career_stash(session: Session) -> None:
+    season_id, team_id = _team(session, 2021)
+    tebow = _player(
+        session,
+        "Tim Tebow",
+        position="QB",
+        nfl_com_player_id="497135",
+        gsis_id="tebow",
+        rookie_year=2010,
+        last_season=2012,
+    )
+    raw = PlayerStatsRaw(
+        player_id=tebow,
+        season_year=2011,
+        week=1,
+        source="nflverse",
+        is_primary=True,
+    )
+    session.add(raw)
+    session.flush()
+    session.add_all(
+        [
+            Transaction(
+                season_id=season_id,
+                transaction_type="free_agent_add",
+                team_id=team_id,
+                player_id=tebow,
+            ),
+            PlayerStatsScored(
+                stat_id=raw.stat_id,
+                season_id=season_id,
+                player_id=tebow,
+                week=1,
+                total_points=0.0,
+            ),
+        ]
+    )
+    session.flush()
+
+    assert player_source_identity_mismatches(session) == []
 
 
 def test_nflverse_gsis_map_resolves_linked_member_to_canonical(session: Session) -> None:

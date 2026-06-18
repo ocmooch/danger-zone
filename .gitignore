@@ -35,6 +35,7 @@ ENV/
 data/*
 !data/.gitkeep
 !data/commissioner_history.yaml
+!data/source_player_identity_repairs.json
 !data/logs/
 !data/backups/
 !data/nflverse_cache/
