@@ -73,6 +73,10 @@ ff-pipeline backfill              # Backfill historical seasons (resumable)
 ff-pipeline backfill --start 2018 # From a specific year
 ff-pipeline backfill --season 2020 # Single season only
 
+ff-pipeline backfill-projections  # Backfill Sleeper projections across every fantasy week (playoffs incl.)
+ff-pipeline backfill-projections --start 2018 --end 2025  # Explicit range; skips already-populated weeks
+ff-pipeline backfill-projections --season 2022 --force    # Re-fetch one season even where projections exist
+
 ff-pipeline reconstruct           # Rebuild real history from NFL.com /history pages (resumable)
 ff-pipeline reconstruct --start 2010 --end 2025  # Explicit range (--end defaults to current year-1)
 ff-pipeline reconstruct --season 2018 --force    # Redo one already-completed season

@@ -175,6 +175,7 @@ This is the highest-risk milestone. Allow extra time and expect iteration on par
 **Done when**:
 - [x] `ff-pipeline run --source sleeper` populates `projections` — verified 2024 week 1 wrote 2759 rows after nflverse stamped gsis_ids
 - [x] Trending data appears in a `trending_players` table or as a denormalized JSON column on players — `trending_players` table created via migration `5cfbbf4a868f`, populated with add/drop snapshots per fetch
+- [x] Projections cover fantasy **playoff** weeks, not just the regular season (2026-06-18) — the original crawl stopped at `seasons.regular_season_weeks`, leaving weeks 15-17 empty. `ff-pipeline backfill-projections` walks the full matchup schedule (`ff_pipeline.projection_backfill`) and the live DB was backfilled for 2018-2025; verified 2022 & 2025 W15-17 now carry real, non-hollow projections (`tests/integration/test_projection_backfill.py`). See `03_DATA_SOURCES.md` → Sleeper → Historical depth.
 
 ---
 
