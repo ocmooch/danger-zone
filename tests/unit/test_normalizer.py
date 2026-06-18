@@ -23,6 +23,7 @@ from ff_pipeline.normalizer.conflicts import (
 from ff_pipeline.normalizer.player_ids import (
     FUZZY_MATCH_THRESHOLD,
     PlayerIdentity,
+    PlayerIdentityConflict,
     PlayerResolver,
 )
 from ff_pipeline.repository.database import create_app_engine
@@ -439,6 +440,98 @@ class TestResolverEraGuard:
         assert pid == existing
         assert resolver.stats.matched_by_direct_id == 1
         assert resolver.stats.created == 0
+
+    def test_corrupt_direct_nfl_id_is_rejected(self, session: Session) -> None:
+        _seed_player(
+            session,
+            name_full="Les Miller",
+            position="NT",
+            nfl_com_player_id="2533034",
+            rookie_year=1987,
+            last_season=1998,
+        )
+        resolver = PlayerResolver(session)
+
+        with pytest.raises(PlayerIdentityConflict, match="Lamar Miller"):
+            resolver.resolve(
+                PlayerIdentity(
+                    name_full="Lamar Miller",
+                    position="RB",
+                    nfl_com_player_id="2533034",
+                ),
+                source="nfl_com",
+                season=2016,
+            )
+
+    def test_override_repairs_corrupt_direct_nfl_id(self, session: Session) -> None:
+        wrong = _seed_player(
+            session,
+            name_full="Cal Peterson",
+            position="LB",
+            nfl_com_player_id="2507164",
+            rookie_year=1974,
+            last_season=1982,
+        )
+        correct = _seed_player(
+            session,
+            name_full="Adrian Peterson",
+            position="RB",
+            rookie_year=2007,
+            last_season=2021,
+        )
+        session.add(
+            PlayerIdOverride(
+                external_id_kind="nfl_com_player_id",
+                external_id_value="2507164",
+                player_id=correct,
+                notes="verified source identity",
+            )
+        )
+        session.flush()
+
+        resolver = PlayerResolver(session)
+        assert (
+            resolver.resolve(
+                PlayerIdentity(
+                    name_full="Adrian Peterson",
+                    position="RB",
+                    nfl_com_player_id="2507164",
+                ),
+                source="nfl_com",
+                season=2016,
+            )
+            == correct
+        )
+        assert correct != wrong
+        assert resolver.stats.matched_by_override == 1
+
+    def test_ambiguous_abbreviated_name_does_not_pick_first_row(self, session: Session) -> None:
+        _seed_player(
+            session,
+            name_full="J.J. Finley",
+            position="TE",
+            rookie_year=2008,
+            last_season=2011,
+        )
+        _seed_player(
+            session,
+            name_full="Jermichael Finley",
+            position="TE",
+            rookie_year=2008,
+            last_season=2013,
+        )
+        resolver = PlayerResolver(session)
+
+        pid = resolver.resolve(
+            PlayerIdentity(name_full="J. Finley", position="TE"),
+            source="nfl_com",
+            season=2010,
+        )
+
+        assert resolver.stats.matched_by_fuzzy == 0
+        assert resolver.stats.fuzzy_rejected_ambiguous == 1
+        assert resolver.stats.created == 1
+        assert session.get(Player, pid).name_full == "J. Finley"  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ from ff_pipeline.repository.models import (
     TeamRoster,
     Transaction,
 )
+from ff_pipeline.repository.player_identity_integrity import source_identity_mismatches
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -419,6 +420,11 @@ def player_identity_cluster(session: Session, player_id: int) -> dict[str, objec
         "canonical_player_id": canonical_id,
         "member_player_ids": sorted(member_ids),
     }
+
+
+def player_source_identity_mismatches(session: Session) -> list[dict[str, Any]]:
+    """Strong NFL.com external-ID ownership conflicts for downstream observability."""
+    return source_identity_mismatches(session)
 
 
 def player_season_teams(
