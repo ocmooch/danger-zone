@@ -43,25 +43,21 @@ def test_backfills_blank_nfl_team_from_nickname(name: str, expected: str) -> Non
     assert resolve_def_team_abbrev(p, 2024) == expected
 
 
-def test_raiders_relocation_by_year() -> None:
-    # Blank nfl_team, recovered from the "Raiders" nickname, then
-    # relocation-adjusted: OAK through 2019, LV from 2020.
-    p = _player(name_full="Raiders", nfl_team=None)
-    assert resolve_def_team_abbrev(p, 2019) == "OAK"
-    assert resolve_def_team_abbrev(p, 2020) == "LV"
+def test_relocated_def_always_resolves_to_current_code() -> None:
+    # nflverse keys every season under the current code, so the ingest index
+    # must use the current code regardless of season — pre-move years included.
+    # (The pre-move display code lives in historical_team_code, not here.)
+    raiders = _player(name_full="Raiders", nfl_team=None)
+    assert resolve_def_team_abbrev(raiders, 2019) == "LV"
+    assert resolve_def_team_abbrev(raiders, 2020) == "LV"
 
+    chargers = _player(name_full="Los Angeles Chargers", nfl_team="LAC")
+    assert resolve_def_team_abbrev(chargers, 2016) == "LAC"
+    assert resolve_def_team_abbrev(chargers, 2017) == "LAC"
 
-def test_chargers_relocation_by_year() -> None:
-    # Stored as the current LAC; SD through 2016, LAC from 2017.
-    p = _player(name_full="Los Angeles Chargers", nfl_team="LAC")
-    assert resolve_def_team_abbrev(p, 2016) == "SD"
-    assert resolve_def_team_abbrev(p, 2017) == "LAC"
-
-
-def test_rams_relocation_by_year() -> None:
-    p = _player(name_full="Los Angeles Rams", nfl_team="LA")
-    assert resolve_def_team_abbrev(p, 2015) == "STL"
-    assert resolve_def_team_abbrev(p, 2016) == "LA"
+    rams = _player(name_full="Los Angeles Rams", nfl_team="LA")
+    assert resolve_def_team_abbrev(rams, 2015) == "LA"
+    assert resolve_def_team_abbrev(rams, 2016) == "LA"
 
 
 def test_rams_stored_lar_folds_to_nflverse_la() -> None:
