@@ -28,8 +28,12 @@ from ff_pipeline.crawlers.nfl_com.history import (
     reconstruct_owners,
     reconstruct_standings,
 )
-from ff_pipeline.crawlers.nfl_com.league import _upsert_owners_and_teams
-from ff_pipeline.crawlers.nfl_com.parsers import ParsedOwner
+from ff_pipeline.crawlers.nfl_com.league import (
+    _upsert_owners_and_teams,
+    _upsert_transactions,
+)
+from ff_pipeline.crawlers.nfl_com.parsers import ParsedOwner, ParsedTransaction
+from ff_pipeline.normalizer.player_ids import PlayerResolver
 from ff_pipeline.repository.database import create_app_engine
 from ff_pipeline.repository.migrations import upgrade_to_head
 from ff_pipeline.repository.models import (
@@ -94,6 +98,78 @@ def _seed_league_and_teams(session: Session, *, year: int = 2024, n_teams: int =
         )
     session.flush()
     return season.season_id
+
+
+def _waiver_add(nfl_player_id: str, *, faab_bid: int | None) -> ParsedTransaction:
+    return ParsedTransaction(
+        nfl_transaction_id="100",
+        transaction_type="waiver_add",
+        executed_at="Sep 24, 1:00am",
+        effective_week=3,
+        team_id=4,
+        counterpart_team_id=None,
+        player_id=nfl_player_id,
+        player_name="Test Claimant",
+        direction="in",
+        notes="al",
+        extra_data=None if faab_bid is None else {"faab_bid": faab_bid},
+    )
+
+
+@pytest.mark.integration
+def test_upsert_transactions_backfills_faab_bid_in_place(session: Session) -> None:
+    # A waiver claim ingested before the bid parser existed lands with no
+    # extra_data. Re-ingesting the same leg once the bid is parsed must enrich
+    # the stored row in place — not insert a duplicate — and be idempotent.
+    season_id = _seed_league_and_teams(session, year=2024)
+    teams = session.execute(select(Team).where(Team.season_id == season_id)).scalars().all()
+    team_map = {int(t.team_abbrev): t.team_id for t in teams}
+    session.add(Player(name_full="Test Claimant", nfl_com_player_id="999001"))
+    session.flush()
+    resolver = PlayerResolver(session)
+
+    def run(parsed: ParsedTransaction) -> None:
+        _upsert_transactions(
+            session,
+            season_id=season_id,
+            season_year=2024,
+            parsed=[parsed],
+            team_id_by_nfl_team_id=team_map,
+            warnings=[],
+            resolver=resolver,
+        )
+        session.flush()
+
+    # 1) First ingest — pre-bid era, lands with no faab_bid.
+    run(_waiver_add("999001", faab_bid=None))
+    rows = (
+        session.execute(select(Transaction).where(Transaction.season_id == season_id))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].extra_data is None
+
+    # 2) Re-ingest the identical leg now carrying the bid → enriched in place,
+    #    still exactly one row (no duplicate leg).
+    run(_waiver_add("999001", faab_bid=7))
+    rows = (
+        session.execute(select(Transaction).where(Transaction.season_id == season_id))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].extra_data == {"faab_bid": 7}
+
+    # 3) Re-ingest again with the same bid → idempotent no-op.
+    run(_waiver_add("999001", faab_bid=7))
+    rows = (
+        session.execute(select(Transaction).where(Transaction.season_id == season_id))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].extra_data == {"faab_bid": 7}
 
 
 @pytest.mark.integration

@@ -264,6 +264,51 @@ silently start failing on expiry; the pipeline writes a `source_health`
 scheduled sync and emit a notification on failure; record observed TTLs in
 project memory to tune the schedule. Related: M5-V3.
 
+### M5-V8. FAAB winning-bid amount — RESOLVED (2026-06-20)
+
+**Tracks**: dz-dashboard `F-37` (handoff `docs/handoffs/faab-bid-capture.md`).
+The dashboard asked us to capture the winning FAAB bid per FAAB-era waiver
+claim (league adopted FAAB in 2021) into `transactions.extra_data.faab_bid`.
+
+**Finding: the bid IS on the history transactions page the sweep already
+fetches** — it renders in the `To` cell as a trailing parenthetical after the
+team anchor, on `From=Waivers` rows only. NFL.com mislabels the unit as
+" pts" (`<a class="teamName">…</a> (51 pts)`), but it is the winning FAAB bid,
+not points. Evidence (league `36271`):
+
+- A waiver claim's parenthetical matches **no** points figure for the player.
+  Dontayvion Wicks' 2024 W5 waiver claim shows `(51 pts)`; his actual scoring
+  was W5 = 4.0, season-to-date ≈ 40, best week 24.8 — `51` is a `$51` bid
+  (he broke out W4, so the claim was contested), confirmed by the league owner.
+- The parenthetical appears **only** on `From=Waivers` legs; `From=Free Agents`
+  adds have none — exactly matching FAAB (free agents are free, waiver claims
+  cost budget). Many show `(0 pts)` = a `$0` unopposed claim.
+
+*(An earlier revision of this note wrongly concluded the bid was unavailable,
+having mistaken the `(N pts)` parenthetical for points scored. Corrected.)*
+
+**Capture plan** (idempotency wrinkle): `_parse_transaction_row` extracts the
+`To`-cell parenthetical into `extra_data["faab_bid"]` on add/waiver-add legs;
+free-agent adds stay null (no hardcoded year — gate on the parenthetical's
+presence). The ingest (`league._upsert_transactions`) is **append-only** —
+it fingerprints and *skips* on match, so it neither updates nor duplicates;
+populating `faab_bid` onto existing NULL rows therefore needs an explicit
+"enrich on fingerprint match" path, with `faab_bid` kept **out** of
+`_extra_sig` (so it neither splits fingerprints into duplicate legs nor is
+required to match). Then re-crawl + re-ingest 2021–2025. Scoring is untouched.
+
+**Done (2026-06-20)**: `parsers._faab_bid_extra` captures the bid;
+`league._upsert_transactions` enriches it in place on fingerprint match (kept
+out of `_extra_sig`); `scripts/backfill_faab_bids.py` re-ran the transactions
+sweep for 2021–2025. Captured **1,056** waiver bids
+(214/241/214/205/182 by year — one per waiver claim, matching the M5-V2 sweep's
+per-year `waiver_add` counts), all in place: `transactions` row count held at
+41,870 (no duplicate legs), pre-2021 untouched, and `faab_bid` lands on
+`waiver_add` legs only. Bids span $0 (unopposed) to $100 (the budget cap).
+The backfill is idempotent — re-running is a no-op. The dz-dashboard F-37
+consume path (`_faab_bid()` → `extra_data.{faab_bid,faab,bid}`) now lights up
+with no dashboard code change.
+
 ---
 
 ## Player-identity follow-ups (deferred past Phase 1)

@@ -1050,6 +1050,12 @@ _BENCH_SLOTS = ("BN", "IR", "RES", "TAXI")
 _TXN_ID_FROM_CLASS = re.compile(r"^transaction-[a-z_]+-(\d+)(?:-\d+)?$")
 _WAIVERS_TEXT_RE = re.compile(r"waivers?", re.IGNORECASE)
 _FREE_AGENT_TEXT_RE = re.compile(r"free\s+agents?", re.IGNORECASE)
+# A winning FAAB bid renders in the To cell as a trailing parenthetical after
+# the team anchor — ``<a class="teamName">Team</a> (51 pts)``. The unit is
+# mislabelled "pts" by NFL.com but is the waiver-budget dollars spent, not
+# points scored (a $0 bid = an unopposed claim). Only ``From=Waivers`` legs
+# carry it; free-agent adds have none. Captured into ``extra_data.faab_bid``.
+_FAAB_BID_RE = re.compile(r"\((\d+)\s*pts?\)\s*$", re.IGNORECASE)
 
 
 def parse_transactions(html: str) -> list[ParsedTransaction]:
@@ -1171,6 +1177,11 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
     else:
         team_id, direction = to_team_id, "in"
 
+    # Winning FAAB bid (waiver-budget dollars) trails the To-cell team anchor on
+    # waiver claims. Gate on presence: free-agent adds and pre-FAAB-era rows have
+    # no parenthetical, so they stay null without any year hardcoding.
+    extra_data = _faab_bid_extra(to_node) if txn_type != "drop" else None
+
     return [
         _make_txn(
             nfl_txn_id,
@@ -1182,8 +1193,19 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
             player_name=player_name,
             direction=direction,
             notes=notes,
+            extra_data=extra_data,
         )
     ]
+
+
+def _faab_bid_extra(to_node: Tag | None) -> dict[str, Any] | None:
+    """``{"faab_bid": N}`` from a To cell's trailing ``(N pts)``, else None."""
+    if to_node is None:
+        return None
+    match = _FAAB_BID_RE.search(to_node.get_text(" ", strip=True))
+    if match is None:
+        return None
+    return {"faab_bid": int(match.group(1))}
 
 
 def _lineup_direction(to_slot: str | None) -> str | None:
@@ -1285,6 +1307,7 @@ def _make_txn(
     player_name: str | None,
     direction: str | None,
     notes: str | None,
+    extra_data: dict[str, Any] | None = None,
 ) -> ParsedTransaction:
     return ParsedTransaction(
         nfl_transaction_id=nfl_txn_id,
@@ -1297,6 +1320,7 @@ def _make_txn(
         player_name=player_name,
         direction=direction,
         notes=notes,
+        extra_data=extra_data,
     )
 
 
