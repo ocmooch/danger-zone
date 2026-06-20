@@ -62,9 +62,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from ff_pipeline.crawlers.nfl_com.availability import sweep_availability
 from ff_pipeline.crawlers.nfl_com.client import (
@@ -867,6 +867,12 @@ def _upsert_transactions(
     skipped = 0
     rows_to_insert: list[dict[str, object]] = []
     fingerprints_seen: set[tuple[object, ...]] = set()
+    # transaction_id + current extra_data of already-stored rows, keyed by the
+    # same fingerprint, so a re-run can *enrich* a matched row in place (e.g.
+    # backfill a ``faab_bid`` onto a waiver claim first ingested before the bid
+    # was parsed) without inserting a duplicate leg.
+    existing_by_fp: dict[tuple[object, ...], tuple[int, dict[str, Any] | None]] = {}
+    faab_updates: list[tuple[int, dict[str, Any]]] = []
 
     # Read the season's existing fingerprints in one query. ``executed_at``
     # is normalized to a UTC-isoformat string for the fingerprint because
@@ -880,12 +886,13 @@ def _upsert_transactions(
             Transaction.direction,
             Transaction.executed_at,
             Transaction.extra_data,
+            Transaction.transaction_id,
         ).where(Transaction.season_id == season_id)
     ).all()
     for row in existing:
-        fingerprints_seen.add(
-            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
-        )
+        fingerprint = (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
+        fingerprints_seen.add(fingerprint)
+        existing_by_fp.setdefault(fingerprint, (row[6], row[5]))
 
     for t in parsed:
         team_id = team_id_by_nfl_team_id.get(t.team_id) if t.team_id is not None else None
@@ -914,6 +921,7 @@ def _upsert_transactions(
         )
         if fingerprint in fingerprints_seen:
             skipped += 1
+            _collect_faab_enrich(existing_by_fp.get(fingerprint), t.extra_data, faab_updates)
             continue
         fingerprints_seen.add(fingerprint)
         rows_to_insert.append(
@@ -934,8 +942,42 @@ def _upsert_transactions(
         for new_row in rows_to_insert:
             session.add(Transaction(**new_row))
         inserted = len(rows_to_insert)
+    for txn_id, merged_extra in faab_updates:
+        session.execute(
+            update(Transaction)
+            .where(Transaction.transaction_id == txn_id)
+            .values(extra_data=merged_extra)
+        )
+    if faab_updates:
+        log.info("transactions faab_bid enriched", season_id=season_id, rows=len(faab_updates))
     _ = warnings  # reserved hook
     return _Counts(inserted, skipped)
+
+
+def _collect_faab_enrich(
+    existing: tuple[int, dict[str, Any] | None] | None,
+    parsed_extra: dict[str, Any] | None,
+    out: list[tuple[int, dict[str, Any]]],
+) -> None:
+    """Queue an in-place ``faab_bid`` backfill for a fingerprint-matched row.
+
+    The append-only upsert otherwise *skips* a matched row, so a waiver claim
+    first ingested before the bid parser existed would never gain its bid. When
+    the freshly parsed leg carries a ``faab_bid`` the stored row lacks (or that
+    differs), merge it onto the stored ``extra_data``. ``faab_bid`` is kept out
+    of ``_extra_sig`` so adding it never splits the fingerprint into a duplicate
+    leg; re-running once the bid is stored is a no-op (idempotent).
+    """
+    if existing is None or parsed_extra is None:
+        return
+    bid = parsed_extra.get("faab_bid")
+    if bid is None:
+        return
+    txn_id, stored_extra = existing
+    stored_extra = stored_extra or {}
+    if stored_extra.get("faab_bid") == bid:
+        return
+    out.append((txn_id, {**stored_extra, "faab_bid": bid}))
 
 
 def _extra_sig(extra_data: dict[str, object] | None) -> tuple[object, ...] | None:
