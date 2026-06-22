@@ -204,6 +204,11 @@ def run_cmd(
                     _run_team_defense(ss, seasons=[target_year])
                 else:  # sleeper
                     _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
+            # Deterministic post-ingest overrides re-apply on every run so a
+            # fresh scrape never reverts a league ruling (e.g. the 2022 wk17
+            # no-contest resolution).
+            _apply_overrides(ss, league_id=settings.nfl_league_id)
+            ss.commit()
     finally:
         engine.dispose()
 
@@ -340,6 +345,52 @@ def _run_sleeper(ss: Session, *, settings: Settings, target_year: int, week: int
             fg="yellow",
             err=True,
         )
+
+
+def _apply_overrides(ss: Session, *, league_id: str | None) -> None:
+    """Apply deterministic post-ingest overrides and record a pipeline run.
+
+    Overrides are idempotent corrections that sit on top of the scraped/scored
+    data and must re-apply on every ingest so a fresh scrape never reverts a
+    league ruling. A ``pipeline_runs`` row is recorded only when an override
+    actually changed something, so the dashboard ``AnalyticsCache`` (keyed on
+    the latest run id) invalidates.
+    """
+    from datetime import UTC, datetime
+
+    from ff_pipeline.overrides import apply_hamlin_2022_wk17_override
+    from ff_pipeline.repository.models import PipelineRun
+
+    hamlin = apply_hamlin_2022_wk17_override(ss, league_id=league_id)
+    if not hamlin.applied:
+        return
+
+    if hamlin.unexpected_flips:
+        for flip in hamlin.unexpected_flips:
+            typer.secho(f"warning: hamlin override unexpected flip: {flip}", fg="yellow", err=True)
+
+    ss.add(
+        PipelineRun(
+            status="success",
+            mode="override",
+            finished_at=datetime.now(tz=UTC),
+            sources_summary={
+                "hamlin_2022_wk17": {
+                    "slots_written": hamlin.slots_written,
+                    "matchups_recomputed": hamlin.matchups_recomputed,
+                    "champion_team_id": hamlin.champion_team_id,
+                    "runner_up_team_id": hamlin.runner_up_team_id,
+                    "standings_swapped": list(hamlin.standings_swapped)
+                    if hamlin.standings_swapped
+                    else None,
+                }
+            },
+        )
+    )
+    typer.echo(
+        f"overrides: hamlin_2022_wk17 slots={hamlin.slots_written} "
+        f"matchups={hamlin.matchups_recomputed} champion={hamlin.champion_team_id}"
+    )
 
 
 def _resolve_current_week(year: int) -> int:
@@ -979,6 +1030,9 @@ def rescore_cmd(
                 dry_run=dry_run,
             )
             if not dry_run:
+                # Re-apply deterministic overrides that sit on top of the
+                # freshly-scored values (e.g. the 2022 wk17 no-contest ruling).
+                _apply_overrides(ss, league_id=settings.nfl_league_id)
                 ss.commit()
     finally:
         engine.dispose()
