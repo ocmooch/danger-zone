@@ -194,15 +194,28 @@ def build_team_defense_stats(
         offense_yards[key] = team_offense_yards(row)
         team_row_index[key] = row
 
-    # Index each game's (opponent, points_allowed) per team-week.
+    # Index each game's (opponent, points_allowed) per team-week, and the
+    # play-by-play-derived D/ST touchdown counts (nflverse's columns undercount).
+    play_by_play_rows = list(play_by_play_rows)
     fantasy_points_allowed = _index_fantasy_points_allowed(play_by_play_rows)
     game_context = _index_schedule(schedule_rows, fantasy_points_allowed=fantasy_points_allowed)
+    dst_touchdowns = _index_dst_touchdowns(play_by_play_rows)
 
     out: list[TeamDefenseStat] = []
     for key, row in team_row_index.items():
         season_year, week, team = key
         stats = project_team_counting_stats(row)
         season_type = str(row.get("season_type") or "REG")
+
+        # Prefer the play-by-play TD count when it finds more than nflverse's
+        # team-stats columns did — only ever *raises* the combined total, so a
+        # correct row is never lowered by a play the rollup happened to miss.
+        pbp_def, pbp_special = dst_touchdowns.get(key, (0, 0))
+        if pbp_def + pbp_special > stats.get("defensive_tds", 0.0) + stats.get(
+            "special_teams_tds", 0.0
+        ):
+            stats["defensive_tds"] = float(pbp_def)
+            stats["special_teams_tds"] = float(pbp_special)
 
         # Sacks default to this team's own (possibly undercounted) def_sacks;
         # overridden below by the opponent's authoritative ``sacks_suffered``
@@ -330,6 +343,55 @@ def _index_fantasy_points_allowed(
         if counts:
             charged_team = away if scoring_team == home else home
             out[(season, week, charged_team)] = out.get((season, week, charged_team), 0.0) + points
+    return out
+
+
+# Play types whose touchdown is a special-teams return (kick/punt/blocked-kick),
+# credited to the scoring team's special-teams half regardless of ``posteam`` —
+# a kickoff return TD carries ``td_team == posteam`` yet is not an offensive score.
+_SPECIAL_TEAMS_TD_PLAY_TYPES: frozenset[str] = frozenset({"kickoff", "punt", "field_goal"})
+
+
+def _index_dst_touchdowns(
+    play_by_play_rows: Iterable[Mapping[str, object]],
+) -> dict[tuple[int, int, str], tuple[int, int]]:
+    """``(season, week, team) -> (defensive_tds, special_teams_tds)`` from play-by-play.
+
+    nflverse's team-stats ``def_tds`` / ``special_teams_tds`` columns undercount
+    real return/recovery touchdowns (e.g. a team with two defensive scores reads
+    one); the play-by-play carries every one. A touchdown is credited to the
+    scoring team's D/ST when:
+
+    * the play is a kick/punt/blocked-kick return (``play_type`` in
+      :data:`_SPECIAL_TEAMS_TD_PLAY_TYPES`) — the special-teams half; or
+    * the scoring team did not have offensive possession (``td_team != posteam``
+      on a scrimmage play) — the defensive half (interception / fumble return).
+
+    An offensive touchdown (``td_team == posteam`` on a run/pass) is not a D/ST
+    score and is skipped. Both halves score 6 points, so the split is for fidelity;
+    the total is what the engine uses.
+    """
+
+    out: dict[tuple[int, int, str], tuple[int, int]] = {}
+    for row in play_by_play_rows:
+        if not _as_float(row.get("touchdown")):
+            continue
+        td_team = canonical_franchise(_as_opt_str(row.get("td_team")))
+        if td_team is None:
+            continue
+        season = _as_opt_int(row.get("season"))
+        week = _as_opt_int(row.get("week"))
+        if season is None or week is None:
+            continue
+        play_type = _as_opt_str(row.get("play_type"))
+        posteam = canonical_franchise(_as_opt_str(row.get("posteam")))
+        key = (season, week, td_team)
+        defensive, special = out.get(key, (0, 0))
+        if play_type in _SPECIAL_TEAMS_TD_PLAY_TYPES:
+            out[key] = (defensive, special + 1)
+        elif td_team != posteam:
+            out[key] = (defensive + 1, special)
+        # else: offensive touchdown — not a D/ST score.
     return out
 
 

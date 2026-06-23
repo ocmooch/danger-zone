@@ -521,6 +521,122 @@ def test_relocated_opponent_code_still_joins() -> None:
     assert out["LAC"].stats["points_allowed"] == 27.0
 
 
+def test_dst_touchdowns_recounted_from_play_by_play() -> None:
+    """nflverse's ``def_tds`` undercounts return TDs; the play-by-play count wins
+    when it finds more (only ever raises the total, never lowers a correct row).
+
+    MIN's defense scores two non-offensive TDs (a pick-six and a fumble return)
+    but the team-stats row carries ``def_tds=1``. A kickoff return (``td_team ==
+    posteam`` but ``play_type='kickoff'``) is a special-teams score, not offense.
+    """
+    team_rows = [
+        _team_row("MIN", week=1, def_tds=1),  # nflverse undercount: only 1 of 3
+        _team_row("TEN", week=1),
+    ]
+    schedule_rows = [
+        {
+            "season": 2024,
+            "week": 1,
+            "home_team": "MIN",
+            "away_team": "TEN",
+            "home_score": 25,
+            "away_score": 16,
+        },
+    ]
+    pbp = [
+        _pbp_score("g", 2024, 1, "MIN", "TEN", home=0, away=0),
+        # Pick-six: TEN on offense, MIN scores -> defensive TD.
+        _pbp_score(
+            "g",
+            2024,
+            1,
+            "MIN",
+            "TEN",
+            home=7,
+            away=0,
+            posteam="TEN",
+            td_team="MIN",
+            play_type="pass",
+        ),
+        # Fumble return on a run play: TEN on offense, MIN scores -> defensive TD.
+        _pbp_score(
+            "g",
+            2024,
+            1,
+            "MIN",
+            "TEN",
+            home=14,
+            away=0,
+            posteam="TEN",
+            td_team="MIN",
+            play_type="run",
+        ),
+        # Kickoff return TD: td_team == posteam, but play_type makes it special teams.
+        _pbp_score(
+            "g",
+            2024,
+            1,
+            "MIN",
+            "TEN",
+            home=21,
+            away=0,
+            posteam="MIN",
+            td_team="MIN",
+            play_type="kickoff",
+        ),
+        # An ordinary MIN offensive TD must NOT be counted as a D/ST score.
+        _pbp_score(
+            "g",
+            2024,
+            1,
+            "MIN",
+            "TEN",
+            home=25,
+            away=0,
+            posteam="MIN",
+            td_team="MIN",
+            play_type="run",
+        ),
+    ]
+    out = {
+        t.nfl_team: t
+        for t in build_team_defense_stats(
+            team_rows=team_rows, schedule_rows=schedule_rows, play_by_play_rows=pbp
+        )
+    }
+    min_dst = out["MIN"]
+    assert min_dst.stats["defensive_tds"] == 2.0  # the two return TDs, not nflverse's 1
+    assert min_dst.stats["special_teams_tds"] == 1.0  # the kickoff return
+    # Three 6-pt scores from the recount.
+    assert apply_rules(min_dst.stats, _defense_rules()).total_points >= 18.0
+
+
+def test_dst_touchdown_recount_never_lowers_nflverse_count() -> None:
+    """When play-by-play finds *fewer* D/ST TDs than nflverse recorded (a missed
+    play), the nflverse count stands — the recount only raises the total."""
+    team_rows = [_team_row("SF", week=3, def_tds=1), _team_row("DAL", week=3)]
+    schedule_rows = [
+        {
+            "season": 2024,
+            "week": 3,
+            "home_team": "SF",
+            "away_team": "DAL",
+            "home_score": 10,
+            "away_score": 0,
+        },
+    ]
+    # No touchdown plays in the play-by-play.
+    pbp = [_pbp_score("g", 2024, 3, "SF", "DAL", home=0, away=0)]
+    sf = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows, schedule_rows=schedule_rows, play_by_play_rows=pbp
+        )
+        if t.nfl_team == "SF"
+    )
+    assert sf.stats["defensive_tds"] == 1.0  # nflverse value preserved
+
+
 @pytest.mark.parametrize(
     ("points_allowed", "expected"),
     [(0, 10.0), (6, 7.0), (7, 4.0), (20, 1.0), (21, 0.0), (28, -1.0), (35, -4.0), (52, -4.0)],
@@ -555,6 +671,7 @@ def _pbp_score(
     safety: float = 0.0,
     return_td: float = 0.0,
     desc: str | None = None,
+    play_type: str | None = None,
 ) -> dict[str, object]:
     return {
         "game_id": game_id,
@@ -572,4 +689,5 @@ def _pbp_score(
         "extra_point_result": xp,
         "safety": safety,
         "desc": desc,
+        "play_type": play_type,
     }
