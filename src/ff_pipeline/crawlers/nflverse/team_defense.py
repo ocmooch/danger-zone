@@ -35,6 +35,17 @@ The nflverse column names for the ``def_*`` family have shifted across
 mirroring the tolerant projection in ``stat_keys.py``. Columns that are
 absent are reported once by :func:`expected_team_columns` so a rename is
 visible in the logs without crashing a run.
+
+**Relocated-franchise codes.** The two nflverse frames disagree on which
+code a relocated franchise carries: ``load_team_stats`` (and ``load_pbp``)
+normalize every season to the franchise's *current* code (``LAC``/``LV``/
+``LA``), but ``load_schedules`` keeps the *era* code (``SD`` pre-2017,
+``OAK`` pre-2020, ``STL`` pre-2016). Joining the schedule's opponent
+identity back into the team-stats index therefore silently missed for those
+games, dropping ``points_allowed`` / ``total_yards_allowed`` (and the
+opponent-sourced ``sacks``) for both the relocated team and its opponents.
+Every team code read from a frame is folded through
+:func:`canonical_franchise` so both frames key on one stable code.
 """
 
 from __future__ import annotations
@@ -43,6 +54,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ff_pipeline.logging_config import get_logger
+from ff_pipeline.nfl_teams import canonical_franchise
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -182,15 +194,28 @@ def build_team_defense_stats(
         offense_yards[key] = team_offense_yards(row)
         team_row_index[key] = row
 
-    # Index each game's (opponent, points_allowed) per team-week.
+    # Index each game's (opponent, points_allowed) per team-week, and the
+    # play-by-play-derived D/ST touchdown counts (nflverse's columns undercount).
+    play_by_play_rows = list(play_by_play_rows)
     fantasy_points_allowed = _index_fantasy_points_allowed(play_by_play_rows)
     game_context = _index_schedule(schedule_rows, fantasy_points_allowed=fantasy_points_allowed)
+    dst_touchdowns = _index_dst_touchdowns(play_by_play_rows)
 
     out: list[TeamDefenseStat] = []
     for key, row in team_row_index.items():
         season_year, week, team = key
         stats = project_team_counting_stats(row)
         season_type = str(row.get("season_type") or "REG")
+
+        # Prefer the play-by-play TD count when it finds more than nflverse's
+        # team-stats columns did — only ever *raises* the combined total, so a
+        # correct row is never lowered by a play the rollup happened to miss.
+        pbp_def, pbp_special = dst_touchdowns.get(key, (0, 0))
+        if pbp_def + pbp_special > stats.get("defensive_tds", 0.0) + stats.get(
+            "special_teams_tds", 0.0
+        ):
+            stats["defensive_tds"] = float(pbp_def)
+            stats["special_teams_tds"] = float(pbp_special)
 
         # Sacks default to this team's own (possibly undercounted) def_sacks;
         # overridden below by the opponent's authoritative ``sacks_suffered``
@@ -246,8 +271,8 @@ def _index_schedule(
     for row in schedule_rows:
         season = _as_opt_int(row.get("season"))
         week = _as_opt_int(row.get("week"))
-        home = _as_opt_str(row.get("home_team"))
-        away = _as_opt_str(row.get("away_team"))
+        home = canonical_franchise(_as_opt_str(row.get("home_team")))
+        away = canonical_franchise(_as_opt_str(row.get("away_team")))
         if season is None or week is None or home is None or away is None:
             continue
         home_score = _as_opt_float(row.get("home_score"))
@@ -280,8 +305,8 @@ def _index_fantasy_points_allowed(
         game_id = _as_opt_str(row.get("game_id"))
         season = _as_opt_int(row.get("season"))
         week = _as_opt_int(row.get("week"))
-        home = _as_opt_str(row.get("home_team"))
-        away = _as_opt_str(row.get("away_team"))
+        home = canonical_franchise(_as_opt_str(row.get("home_team")))
+        away = canonical_franchise(_as_opt_str(row.get("away_team")))
         home_score = _as_opt_float(row.get("total_home_score"))
         away_score = _as_opt_float(row.get("total_away_score"))
         if (
@@ -321,14 +346,63 @@ def _index_fantasy_points_allowed(
     return out
 
 
+# Play types whose touchdown is a special-teams return (kick/punt/blocked-kick),
+# credited to the scoring team's special-teams half regardless of ``posteam`` —
+# a kickoff return TD carries ``td_team == posteam`` yet is not an offensive score.
+_SPECIAL_TEAMS_TD_PLAY_TYPES: frozenset[str] = frozenset({"kickoff", "punt", "field_goal"})
+
+
+def _index_dst_touchdowns(
+    play_by_play_rows: Iterable[Mapping[str, object]],
+) -> dict[tuple[int, int, str], tuple[int, int]]:
+    """``(season, week, team) -> (defensive_tds, special_teams_tds)`` from play-by-play.
+
+    nflverse's team-stats ``def_tds`` / ``special_teams_tds`` columns undercount
+    real return/recovery touchdowns (e.g. a team with two defensive scores reads
+    one); the play-by-play carries every one. A touchdown is credited to the
+    scoring team's D/ST when:
+
+    * the play is a kick/punt/blocked-kick return (``play_type`` in
+      :data:`_SPECIAL_TEAMS_TD_PLAY_TYPES`) — the special-teams half; or
+    * the scoring team did not have offensive possession (``td_team != posteam``
+      on a scrimmage play) — the defensive half (interception / fumble return).
+
+    An offensive touchdown (``td_team == posteam`` on a run/pass) is not a D/ST
+    score and is skipped. Both halves score 6 points, so the split is for fidelity;
+    the total is what the engine uses.
+    """
+
+    out: dict[tuple[int, int, str], tuple[int, int]] = {}
+    for row in play_by_play_rows:
+        if not _as_float(row.get("touchdown")):
+            continue
+        td_team = canonical_franchise(_as_opt_str(row.get("td_team")))
+        if td_team is None:
+            continue
+        season = _as_opt_int(row.get("season"))
+        week = _as_opt_int(row.get("week"))
+        if season is None or week is None:
+            continue
+        play_type = _as_opt_str(row.get("play_type"))
+        posteam = canonical_franchise(_as_opt_str(row.get("posteam")))
+        key = (season, week, td_team)
+        defensive, special = out.get(key, (0, 0))
+        if play_type in _SPECIAL_TEAMS_TD_PLAY_TYPES:
+            out[key] = (defensive, special + 1)
+        elif td_team != posteam:
+            out[key] = (defensive + 1, special)
+        # else: offensive touchdown — not a D/ST score.
+    return out
+
+
 def _score_counts_against_dst(
     row: Mapping[str, object],
     scoring_team: str,
     last_td_counts_by_game_team: dict[tuple[str, str], bool],
     game_id: str,
 ) -> bool:
-    posteam = _as_opt_str(row.get("posteam"))
-    td_team = _as_opt_str(row.get("td_team"))
+    posteam = canonical_franchise(_as_opt_str(row.get("posteam")))
+    td_team = canonical_franchise(_as_opt_str(row.get("td_team")))
     if _as_float(row.get("touchdown")):
         counts = td_team == posteam or _is_special_teams_return_touchdown(row)
         last_td_counts_by_game_team[(game_id, scoring_team)] = counts
@@ -352,7 +426,7 @@ def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
 def _team_key(row: Mapping[str, object]) -> tuple[int, int, str] | None:
     season = _as_opt_int(row.get("season"))
     week = _as_opt_int(row.get("week"))
-    team = _as_opt_str(row.get("team"))
+    team = canonical_franchise(_as_opt_str(row.get("team")))
     if season is None or week is None or team is None:
         return None
     return (season, week, team)
