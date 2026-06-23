@@ -477,6 +477,50 @@ def test_missing_schedule_omits_bracket_keys() -> None:
     assert apply_rules(sf.stats, _defense_rules()).total_points == 3.0
 
 
+def test_relocated_opponent_code_still_joins() -> None:
+    """A schedule that names a relocated franchise by its *era* code must still
+    join to that franchise's team-stats row, which nflverse keys by the
+    *current* code.
+
+    ``load_team_stats`` / ``load_pbp`` normalize the Chargers to ``LAC`` in
+    every season, but ``load_schedules`` keeps the era code ``SD`` before 2017.
+    Without folding both frames through ``canonical_franchise`` the opponent
+    lookup misses: SF's ``total_yards_allowed`` and opponent-sourced ``sacks``
+    drop, and the Chargers' own row never gets ``points_allowed``. This is the
+    relocation half of the DST yards/sacks gap.
+    """
+    team_rows = [
+        # nflverse codes the Chargers ``LAC`` even for this pre-2017 season.
+        _team_row("LAC", week=3, passing_yards=180, rushing_yards=70, sacks_suffered=4),
+        _team_row("SF", week=3, passing_yards=300, rushing_yards=120, def_sacks=2),
+    ]
+    # The schedule still calls them ``SD`` (the pre-2017 era code); the fold is
+    # season-agnostic, so the row's season only has to match the team rows.
+    schedule_rows = [
+        {
+            "season": 2024,
+            "week": 3,
+            "game_type": "REG",
+            "home_team": "SF",
+            "away_team": "SD",
+            "home_score": 27,
+            "away_score": 3,
+        }
+    ]
+    out = {
+        t.nfl_team: t
+        for t in build_team_defense_stats(team_rows=team_rows, schedule_rows=schedule_rows)
+    }
+    sf = out["SF"]
+    # The opponent folds to the canonical code and the lookups resolve.
+    assert sf.nfl_opponent == "LAC"
+    assert sf.stats["total_yards_allowed"] == 250.0  # LAC's 180 + 70 net yards
+    assert sf.stats["sacks"] == 4.0  # from LAC's sacks_suffered, not SF's def_sacks (2)
+    assert sf.stats["points_allowed"] == 3.0
+    # The relocated team's own row still gets its points_allowed from the schedule.
+    assert out["LAC"].stats["points_allowed"] == 27.0
+
+
 @pytest.mark.parametrize(
     ("points_allowed", "expected"),
     [(0, 10.0), (6, 7.0), (7, 4.0), (20, 1.0), (21, 0.0), (28, -1.0), (35, -4.0), (52, -4.0)],

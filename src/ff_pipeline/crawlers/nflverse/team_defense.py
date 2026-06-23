@@ -35,6 +35,17 @@ The nflverse column names for the ``def_*`` family have shifted across
 mirroring the tolerant projection in ``stat_keys.py``. Columns that are
 absent are reported once by :func:`expected_team_columns` so a rename is
 visible in the logs without crashing a run.
+
+**Relocated-franchise codes.** The two nflverse frames disagree on which
+code a relocated franchise carries: ``load_team_stats`` (and ``load_pbp``)
+normalize every season to the franchise's *current* code (``LAC``/``LV``/
+``LA``), but ``load_schedules`` keeps the *era* code (``SD`` pre-2017,
+``OAK`` pre-2020, ``STL`` pre-2016). Joining the schedule's opponent
+identity back into the team-stats index therefore silently missed for those
+games, dropping ``points_allowed`` / ``total_yards_allowed`` (and the
+opponent-sourced ``sacks``) for both the relocated team and its opponents.
+Every team code read from a frame is folded through
+:func:`canonical_franchise` so both frames key on one stable code.
 """
 
 from __future__ import annotations
@@ -43,6 +54,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ff_pipeline.logging_config import get_logger
+from ff_pipeline.nfl_teams import canonical_franchise
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -246,8 +258,8 @@ def _index_schedule(
     for row in schedule_rows:
         season = _as_opt_int(row.get("season"))
         week = _as_opt_int(row.get("week"))
-        home = _as_opt_str(row.get("home_team"))
-        away = _as_opt_str(row.get("away_team"))
+        home = canonical_franchise(_as_opt_str(row.get("home_team")))
+        away = canonical_franchise(_as_opt_str(row.get("away_team")))
         if season is None or week is None or home is None or away is None:
             continue
         home_score = _as_opt_float(row.get("home_score"))
@@ -280,8 +292,8 @@ def _index_fantasy_points_allowed(
         game_id = _as_opt_str(row.get("game_id"))
         season = _as_opt_int(row.get("season"))
         week = _as_opt_int(row.get("week"))
-        home = _as_opt_str(row.get("home_team"))
-        away = _as_opt_str(row.get("away_team"))
+        home = canonical_franchise(_as_opt_str(row.get("home_team")))
+        away = canonical_franchise(_as_opt_str(row.get("away_team")))
         home_score = _as_opt_float(row.get("total_home_score"))
         away_score = _as_opt_float(row.get("total_away_score"))
         if (
@@ -327,8 +339,8 @@ def _score_counts_against_dst(
     last_td_counts_by_game_team: dict[tuple[str, str], bool],
     game_id: str,
 ) -> bool:
-    posteam = _as_opt_str(row.get("posteam"))
-    td_team = _as_opt_str(row.get("td_team"))
+    posteam = canonical_franchise(_as_opt_str(row.get("posteam")))
+    td_team = canonical_franchise(_as_opt_str(row.get("td_team")))
     if _as_float(row.get("touchdown")):
         counts = td_team == posteam or _is_special_teams_return_touchdown(row)
         last_td_counts_by_game_team[(game_id, scoring_team)] = counts
@@ -352,7 +364,7 @@ def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
 def _team_key(row: Mapping[str, object]) -> tuple[int, int, str] | None:
     season = _as_opt_int(row.get("season"))
     week = _as_opt_int(row.get("week"))
-    team = _as_opt_str(row.get("team"))
+    team = canonical_franchise(_as_opt_str(row.get("team")))
     if season is None or week is None or team is None:
         return None
     return (season, week, team)
