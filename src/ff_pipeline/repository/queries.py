@@ -25,6 +25,7 @@ from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
     PlayerAvailability,
+    PlayerIdentityLink,
     PlayerInjuryReport,
     PlayerStatsRaw,
     PlayerStatsScored,
@@ -36,6 +37,7 @@ from ff_pipeline.repository.models import (
     TeamRoster,
     Transaction,
 )
+from ff_pipeline.repository.player_identity_integrity import source_identity_mismatches
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -387,6 +389,42 @@ def player_scored_stats(
         .limit(1)
     )
     return session.execute(stmt).scalars().first()
+
+
+def player_identity_cluster(session: Session, player_id: int) -> dict[str, object] | None:
+    """Return canonical identity and member ids for one player.
+
+    When no crosswalk row exists, the player is its own canonical cluster. This
+    lets downstream read services consume the helper before the curated link
+    table is populated, while still getting the full member set as soon as links
+    land.
+    """
+    if session.get(Player, player_id) is None:
+        return None
+
+    link = session.execute(
+        select(PlayerIdentityLink).where(PlayerIdentityLink.member_player_id == player_id).limit(1)
+    ).scalar_one_or_none()
+    canonical_id = int(link.canonical_player_id) if link is not None else player_id
+    member_ids = {
+        int(pid)
+        for pid in session.execute(
+            select(PlayerIdentityLink.member_player_id).where(
+                PlayerIdentityLink.canonical_player_id == canonical_id
+            )
+        ).scalars()
+    }
+    member_ids.add(canonical_id)
+    return {
+        "player_id": player_id,
+        "canonical_player_id": canonical_id,
+        "member_player_ids": sorted(member_ids),
+    }
+
+
+def player_source_identity_mismatches(session: Session) -> list[dict[str, Any]]:
+    """Strong NFL.com external-ID ownership conflicts for downstream observability."""
+    return source_identity_mismatches(session)
 
 
 def player_season_teams(

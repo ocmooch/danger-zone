@@ -206,6 +206,17 @@ def test_runner_populates_rosters_with_pre_kickoff_flag(session: Session) -> Non
     # and they are non-starters.
     bn = [r for r in rosters if r.roster_slot == "BN"]
     assert bn and all(r.is_starter is False for r in bn)
+    status_rows = [
+        r
+        for r in rosters
+        if (r.extra_data or {}).get("player_status")
+        and (r.extra_data or {}).get("snapshot_kind") == "pre_kickoff"
+    ]
+    assert status_rows
+    assert {r.extra_data["player_status_label"] for r in status_rows if r.extra_data} >= {
+        "Inactive",
+        "Injured Reserve",
+    }
 
 
 @pytest.mark.integration
@@ -390,6 +401,78 @@ def test_runner_creates_player_stubs_for_new_nfl_com_ids(session: Session) -> No
 # ---------------------------------------------------------------------------
 # Snapshot-kind heuristic
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_runner_audit_does_not_overwrite_authoritative_roster(session: Session) -> None:
+    """An audit sync must not clobber an existing authoritative roster.
+
+    The live NFL.com roster page is not week-aware (always returns today's
+    roster), so an audit run pointed at a week that already holds a
+    week-accurate snapshot (pre_kickoff / draft / history) must quarantine the
+    roster write rather than stamp the current rosters onto that week — the
+    2025/2026 week-1 corruption. The authoritative rows must survive byte-for
+    -byte and the run must surface a warning.
+    """
+    run_nfl_com(
+        session,
+        league_id="36271",
+        year=2025,
+        week=7,
+        fetcher=_StubFetcher(),
+        snapshot_kind="pre_kickoff",
+    )
+    session.commit()
+
+    before = {
+        (r.team_id, r.player_id): (r.roster_slot, (r.extra_data or {}).get("snapshot_kind"))
+        for r in session.execute(select(TeamRoster)).scalars().all()
+    }
+    assert before  # sanity: the pre_kickoff run wrote rosters
+    assert all(kind == "pre_kickoff" for _, kind in before.values())
+
+    result = run_nfl_com(
+        session,
+        league_id="36271",
+        year=2025,
+        week=7,
+        fetcher=_StubFetcher(),
+        snapshot_kind="audit",
+    )
+    session.commit()
+
+    after = {
+        (r.team_id, r.player_id): (r.roster_slot, (r.extra_data or {}).get("snapshot_kind"))
+        for r in session.execute(select(TeamRoster)).scalars().all()
+    }
+    # Roster write was quarantined: the authoritative snapshot is untouched and
+    # no audit row was written.
+    assert after == before
+    assert result.rosters_added == 0
+    assert result.rosters_updated == 0
+    assert any("audit roster write skipped" in w for w in result.warnings)
+
+
+@pytest.mark.integration
+def test_runner_audit_seeds_an_empty_week(session: Session) -> None:
+    """The quarantine is precedence-only: an audit sync still writes rosters
+    when the target week has no authoritative snapshot yet (otherwise an audit
+    run could never seed an in-progress week's first roster)."""
+    result = run_nfl_com(
+        session,
+        league_id="36271",
+        year=2025,
+        week=7,
+        fetcher=_StubFetcher(),
+        snapshot_kind="audit",
+    )
+    session.commit()
+
+    rosters = session.execute(select(TeamRoster)).scalars().all()
+    assert len(rosters) == 192
+    assert all((r.extra_data or {}).get("snapshot_kind") == "audit" for r in rosters)
+    assert result.rosters_added == 192
+    assert not any("audit roster write skipped" in w for w in result.warnings)
 
 
 def test_default_snapshot_kind_sunday_morning_is_pre_kickoff() -> None:

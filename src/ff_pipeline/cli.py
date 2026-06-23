@@ -204,6 +204,11 @@ def run_cmd(
                     _run_team_defense(ss, seasons=[target_year])
                 else:  # sleeper
                     _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
+            # Deterministic post-ingest overrides re-apply on every run so a
+            # fresh scrape never reverts a league ruling (e.g. the 2022 wk17
+            # no-contest resolution).
+            _apply_overrides(ss, league_id=settings.nfl_league_id)
+            ss.commit()
     finally:
         engine.dispose()
 
@@ -340,6 +345,52 @@ def _run_sleeper(ss: Session, *, settings: Settings, target_year: int, week: int
             fg="yellow",
             err=True,
         )
+
+
+def _apply_overrides(ss: Session, *, league_id: str | None) -> None:
+    """Apply deterministic post-ingest overrides and record a pipeline run.
+
+    Overrides are idempotent corrections that sit on top of the scraped/scored
+    data and must re-apply on every ingest so a fresh scrape never reverts a
+    league ruling. A ``pipeline_runs`` row is recorded only when an override
+    actually changed something, so the dashboard ``AnalyticsCache`` (keyed on
+    the latest run id) invalidates.
+    """
+    from datetime import UTC, datetime
+
+    from ff_pipeline.overrides import apply_hamlin_2022_wk17_override
+    from ff_pipeline.repository.models import PipelineRun
+
+    hamlin = apply_hamlin_2022_wk17_override(ss, league_id=league_id)
+    if not hamlin.applied:
+        return
+
+    if hamlin.unexpected_flips:
+        for flip in hamlin.unexpected_flips:
+            typer.secho(f"warning: hamlin override unexpected flip: {flip}", fg="yellow", err=True)
+
+    ss.add(
+        PipelineRun(
+            status="success",
+            mode="override",
+            finished_at=datetime.now(tz=UTC),
+            sources_summary={
+                "hamlin_2022_wk17": {
+                    "slots_written": hamlin.slots_written,
+                    "matchups_recomputed": hamlin.matchups_recomputed,
+                    "champion_team_id": hamlin.champion_team_id,
+                    "runner_up_team_id": hamlin.runner_up_team_id,
+                    "standings_swapped": list(hamlin.standings_swapped)
+                    if hamlin.standings_swapped
+                    else None,
+                }
+            },
+        )
+    )
+    typer.echo(
+        f"overrides: hamlin_2022_wk17 slots={hamlin.slots_written} "
+        f"matchups={hamlin.matchups_recomputed} champion={hamlin.champion_team_id}"
+    )
 
 
 def _resolve_current_week(year: int) -> int:
@@ -518,6 +569,94 @@ def backfill_cmd(
         )
         if failed is not None and failed.detail and "AuthFailureError" in failed.detail:
             raise typer.Exit(code=77)
+        raise typer.Exit(code=1)
+
+
+@app.command("backfill-projections")
+def backfill_projections_cmd(
+    start: int | None = typer.Option(
+        None, "--start", help="Earliest season year (default: LEAGUE_START_YEAR)."
+    ),
+    end: int | None = typer.Option(
+        None, "--end", help="Latest season year (inclusive). Default: current calendar year."
+    ),
+    season: int | None = typer.Option(
+        None, "--season", help="Backfill only this season (sets --start and --end)."
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Re-fetch weeks that already have projections (default: skip populated weeks).",
+    ),
+) -> None:
+    """Backfill Sleeper projections across every fantasy week, playoffs included.
+
+    The original crawl stopped at the fantasy regular-season boundary, leaving
+    playoff/consolation weeks (e.g. 2022/2025 W15-17) with no projections. This
+    walks the full matchup schedule per season and fills the missing cells.
+    """
+    _bootstrap_settings_and_logging()
+
+    from datetime import datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.projection_backfill import run_projection_backfill
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import get_settings
+
+    settings = get_settings()
+    if season is not None:
+        start_year = season
+        end_year = season
+    else:
+        start_year = start if start is not None else settings.league_start_year
+        end_year = end if end is not None else datetime.now().year
+
+    if start_year > end_year:
+        typer.secho(
+            f"--start ({start_year}) must be <= --end ({end_year}).",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            result = run_projection_backfill(
+                ss,
+                league_id=settings.nfl_league_id,
+                start_year=start_year,
+                end_year=end_year,
+                skip_populated_weeks=not force,
+            )
+    finally:
+        engine.dispose()
+
+    for outcome in result.per_week:
+        if outcome.status == "fetched":
+            color = "green"
+        elif outcome.status == "skipped":
+            color = "yellow"
+        else:
+            color = "red"
+        typer.secho(
+            f"  {outcome.year} W{outcome.week}: {outcome.status}"
+            + (
+                f" (+{outcome.projections_added}~{outcome.projections_updated})"
+                if outcome.status == "fetched"
+                else ""
+            )
+            + (f" — {outcome.detail}" if outcome.detail else ""),
+            fg=color,
+        )
+    typer.echo(
+        f"Projection backfill: fetched={result.fetched}, skipped={result.skipped}, "
+        f"failed={result.failed}, projections +{result.projections_added}"
+        f"~{result.projections_updated}"
+    )
+    if result.failed:
         raise typer.Exit(code=1)
 
 
@@ -891,6 +1030,9 @@ def rescore_cmd(
                 dry_run=dry_run,
             )
             if not dry_run:
+                # Re-apply deterministic overrides that sit on top of the
+                # freshly-scored values (e.g. the 2022 wk17 no-contest ruling).
+                _apply_overrides(ss, league_id=settings.nfl_league_id)
                 ss.commit()
     finally:
         engine.dispose()

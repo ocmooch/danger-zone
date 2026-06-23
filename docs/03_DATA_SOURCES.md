@@ -160,14 +160,26 @@ Sleeper offers the best **free** projection API. Their data is competitive with 
 
 ### Historical depth
 
-Probed 2026-06-11: Sleeper returns real per-stat projections (`pass_yd`, `rush_yd`,
-`rec_yd`, etc.) back to **2018**. Seasons 2017 and earlier return ADP-only payloads
-(`adp_dd_ppr`) with no usable projection stats — those map to all-zero stat dicts after
-the engine projection step and are not backfilled.
+Re-probed 2026-06-16: Sleeper's projection endpoint serves historical regular-season
+payloads well beyond the weeks originally crawled (for example, 2017 W7 returned
+9,361 rows, and 2020/2021/2023/2024 all returned roughly 9.4k rows). The sparse
+`projections` table was therefore a crawl-coverage gap, not a source-depth gap:
+run the existing Sleeper pipeline across the historical season/week grid to
+populate missing cells.
 
-For leagues active before 2018, projection data is absent; the dashboard falls back to
-`null` projection display. Alternative sources (nflverse nflreadr projections parquet,
-FantasyPros API) would be needed to cover 2010–2017 — tracked in `docs/10_OPEN_QUESTIONS.md`.
+**Fantasy-playoff weeks (resolved 2026-06-18).** The original crawl capped each
+season at the fantasy *regular-season* boundary (`seasons.regular_season_weeks` —
+week 13 for 2018-2020, week 14 for 2021-2025), so fantasy playoff and consolation
+matchups (weeks 15-17) had no projections and the dashboard reported
+`projections_not_captured` for every playoff box score. Sleeper does serve real
+projections for those NFL weeks — they are NFL **regular-season** weeks, so the
+request stays `season_type=regular` (never `post`, which is the NFL postseason).
+`ff-pipeline backfill-projections` now walks the *full* fantasy schedule: the week
+ceiling per season is derived from the matchup schedule (`max(matchups.week)`,
+falling back to `regular_season_weeks + playoff_weeks`) rather than the
+regular-season boundary, so playoff/consolation weeks are covered without
+hardcoding week 17. The live DB was backfilled for 2018-2025; pre-2018 seasons
+predate Sleeper projection coverage and yield only hollow rows (filtered out).
 
 ### Limitations
 

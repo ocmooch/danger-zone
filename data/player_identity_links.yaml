@@ -1,0 +1,70 @@
+# Curated player identity links.
+#
+# The 2026-06-16 duplicate-name triage found 18 league-rostered duplicate-name
+# groups. Most are true namesakes or ghosts, not safe merges. The only
+# high-confidence stranded split in that set is Mike Williams: NFL.com roster
+# rows point at 1032, while nflverse stats/injuries point at 25239.
+links:
+  - member_player_id: 25239
+    canonical_player_id: 1032
+    source: manual
+    confidence: high
+    notes: "2017 LAC WR Mike Williams cross-source split; roster/NFL.com side is 1032, nflverse stats/injuries side is 25239."
+
+triage_decisions:
+  - name_full: Alex Smith
+    decision: no_link
+    notes: "QB and TE namesakes; rostered row already has stats/injuries."
+  - name_full: Anthony Miller
+    decision: no_link
+    notes: "WR and TE namesakes/ghost; rostered row already has stats/injuries."
+  - name_full: Cam Johnson
+    decision: no_link
+    notes: "OLB and WR namesakes/ghost; rostered row already has stats/injuries."
+  - name_full: Chris Givens
+    decision: no_link
+    notes: "Same-name rows have distinct external IDs; rostered row already has stats/injuries."
+  - name_full: Chris Thompson
+    decision: no_link
+    notes: "RB and WR namesakes; rostered row already has stats/injuries."
+  - name_full: David Johnson
+    decision: no_link
+    notes: "RB and TE namesakes; rostered row already has stats/injuries."
+  - name_full: Ed Williams
+    decision: no_link
+    notes: "Both league-rostered rows are low-signal historical artifacts with no stranded stats/injuries to union."
+  - name_full: Jacoby Jones
+    decision: no_link
+    notes: "2007 WR and 2025 WR namesakes; rostered row already has stats/injuries."
+  - name_full: Kevin Smith
+    decision: no_link
+    notes: "RB and WR namesakes; rostered row already has stats/injuries."
+  - name_full: Michael Cox
+    decision: no_link
+    notes: "Rostered stats row and separate NFL.com-only row; no stranded scored/injury data under the twin."
+  - name_full: Mike Thomas
+    decision: no_link
+    notes: "2009 and 2016 WR namesakes; rostered row already has stats/injuries."
+  - name_full: Mike Williams
+    decision: link
+    member_player_id: 25239
+    canonical_player_id: 1032
+    notes: "Only high-confidence stranded split in the triage set."
+  - name_full: Pat Williams
+    decision: no_link
+    notes: "DT rostered row and WR ghost/namesake; no stranded scored/injury data under the twin."
+  - name_full: Ryan Grant
+    decision: no_link
+    notes: "RB and WR namesakes plus an NFL.com-only ghost."
+  - name_full: Ryan Griffin
+    decision: no_link
+    notes: "TE and QB namesakes; rostered row already has stats/injuries."
+  - name_full: Steve Smith
+    decision: no_link
+    notes: "Two real league-rostered WR namesakes; both have their own stats/injuries."
+  - name_full: Tom Brown
+    decision: no_link
+    notes: "Both league-rostered rows have no stranded scored/injury data to union."
+  - name_full: Zach Miller
+    decision: no_link
+    notes: "Two real league-rostered TE namesakes; both have their own stats/injuries."

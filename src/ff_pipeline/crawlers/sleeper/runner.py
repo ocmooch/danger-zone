@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ff_pipeline.crawlers.sleeper.client import LiveSleeperSource
 from ff_pipeline.crawlers.sleeper.endpoints import (
@@ -49,6 +49,7 @@ from ff_pipeline.normalizer.player_ids import PlayerIdentity, PlayerResolver
 from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
+    PlayerIdentityLink,
     Projection,
     ScoringRule,
     Season,
@@ -302,7 +303,14 @@ def _sync_sleeper_ids(
 
 
 def _build_sleeper_to_player_id_map(session: Session) -> dict[str, int]:
-    stmt = select(Player.sleeper_id, Player.player_id).where(Player.sleeper_id.isnot(None))
+    stmt = (
+        select(
+            Player.sleeper_id,
+            func.coalesce(PlayerIdentityLink.canonical_player_id, Player.player_id),
+        )
+        .outerjoin(PlayerIdentityLink, PlayerIdentityLink.member_player_id == Player.player_id)
+        .where(Player.sleeper_id.isnot(None))
+    )
     return {sid: pid for sid, pid in session.execute(stmt).all() if sid}
 
 
@@ -368,6 +376,22 @@ def _load_scoring_rules(
 # ---------------------------------------------------------------------------
 
 
+def _is_hollow_projection(stats: dict[str, float] | None, projected_points: float | None) -> bool:
+    """True for a projection that carries no real forecast.
+
+    Sleeper returns full rosters of all-zero rows for seasons before its
+    projection coverage begins (~2018) and for players it didn't project in a
+    covered week. Persisting them advertises coverage the source never had and
+    renders downstream as a bogus ``0.0``. A projection is real when it has a
+    nonzero ``projected_points`` or at least one nonzero stat; otherwise hollow.
+    """
+    if projected_points not in (None, 0, 0.0):
+        return False
+    return not (
+        stats and any(isinstance(v, (int, float)) and v not in (0, 0.0) for v in stats.values())
+    )
+
+
 def _upsert_projections(
     session: Session,
     projections: list[SleeperProjection],
@@ -385,6 +409,7 @@ def _upsert_projections(
     now = datetime.now(tz=UTC)
     rows: list[dict[str, object]] = []
     unresolved = 0
+    hollow = 0
 
     for proj in projections:
         pid = sleeper_to_player_id.get(proj.sleeper_id)
@@ -394,6 +419,12 @@ def _upsert_projections(
         projected_points: float | None = None
         if scoring_rules is not None and scoring_rules.rules:
             projected_points = apply_rules(proj.stats, scoring_rules).total_points
+        # Drop hollow rows at the source so the DB never advertises empty
+        # projection coverage (e.g. all of 2010-2017, and unprojected players in
+        # covered weeks). See ``_is_hollow_projection``.
+        if _is_hollow_projection(proj.stats, projected_points):
+            hollow += 1
+            continue
         rows.append(
             {
                 "player_id": pid,
@@ -405,6 +436,9 @@ def _upsert_projections(
                 "fetched_at": now,
             }
         )
+
+    if hollow:
+        log.info("Skipped %d hollow Sleeper projection rows", hollow)
 
     counts = upsert(
         session,

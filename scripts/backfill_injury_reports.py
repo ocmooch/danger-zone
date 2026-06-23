@@ -72,7 +72,7 @@ def main() -> None:
 
     wall_ms = int((time.perf_counter() - wall_start) * 1000)
     engine.dispose()
-    print(f"\nDone. Total rows added={total_added}, updated={total_updated} " f"in {wall_ms} ms.")
+    print(f"\nDone. Total rows added={total_added}, updated={total_updated} in {wall_ms} ms.")
 
 
 if __name__ == "__main__":

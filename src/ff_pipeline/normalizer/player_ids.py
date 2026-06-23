@@ -128,6 +128,10 @@ class PlayerIdentity:
     yahoo_id: str | None = None
 
 
+class PlayerIdentityConflict(RuntimeError):
+    """An exact external ID points at a player incompatible with the observation."""
+
+
 @dataclass(slots=True)
 class ResolveStats:
     """Aggregate counters from one resolver instance's lifetime.
@@ -148,6 +152,7 @@ class ResolveStats:
     merged_fields: int = 0
     fuzzy_rejected_below_threshold: int = 0
     fuzzy_rejected_conflicting_id: int = 0
+    fuzzy_rejected_ambiguous: int = 0
     last_identity_source_by_player: dict[int, Source] = field(default_factory=dict)
 
 
@@ -225,14 +230,16 @@ class PlayerResolver:
         are exact, are never season-constrained).
         """
         # Override and direct-ID are exact and season-independent.
-        for label, lookup in (
-            ("override", self._lookup_override),
-            ("direct_id", self._lookup_direct),
-        ):
-            pid = lookup(identity)
-            if pid is not None:
-                self._record_match(label, identity, pid, source=source)
-                return pid
+        pid = self._lookup_override(identity)
+        if pid is not None:
+            self._record_match("override", identity, pid, source=source)
+            return pid
+
+        pid = self._lookup_direct(identity)
+        if pid is not None:
+            self._raise_if_direct_match_conflicts(pid, identity, source=source, season=season)
+            self._record_match("direct_id", identity, pid, source=source)
+            return pid
         # Fuzzy is name-similarity only, so it gets the era guard.
         pid = self._lookup_fuzzy(identity, season=season)
         if pid is not None:
@@ -306,6 +313,7 @@ class PlayerResolver:
 
         best_score = 0
         best_pid: int | None = None
+        abbreviated_candidates: list[int] = []
         abbreviated = _abbreviated_initial_last(identity.name_full)
         for pid, name_full, position, rookie_year, last_season in index:
             if target_position and position and position.upper() != target_position:
@@ -318,6 +326,8 @@ class PlayerResolver:
             # Smith" lineup skips the 2021-rookie Smith and lands on Steve Smith.
             if season is not None and not _career_contains(season, rookie_year, last_season):
                 continue
+            if abbreviated is not None:
+                abbreviated_candidates.append(pid)
             score = fuzz.token_sort_ratio(identity.name_full, name_full)
             if abbreviated is not None:
                 score = max(score, FUZZY_MATCH_THRESHOLD)
@@ -328,6 +338,17 @@ class PlayerResolver:
         if best_pid is None or best_score < FUZZY_MATCH_THRESHOLD:
             if best_pid is not None:
                 self.stats.fuzzy_rejected_below_threshold += 1
+            return None
+
+        if abbreviated is not None and len(abbreviated_candidates) > 1:
+            self.stats.fuzzy_rejected_ambiguous += 1
+            log.warning(
+                "Fuzzy match rejected: abbreviated name has multiple equal candidates",
+                identity_name=identity.name_full,
+                candidate_player_ids=abbreviated_candidates,
+                score=best_score,
+                season=season,
+            )
             return None
 
         # Final safety check: don't accept a fuzzy match if the candidate
@@ -352,6 +373,41 @@ class PlayerResolver:
             score=best_score,
         )
         return best_pid
+
+    def _raise_if_direct_match_conflicts(
+        self,
+        player_id: int,
+        identity: PlayerIdentity,
+        *,
+        source: Source,
+        season: int | None,
+    ) -> None:
+        """Stop an already-corrupt exact ID from silently reinforcing itself.
+
+        Overrides remain authoritative and bypass this check. Direct IDs are
+        normally definitive, but legacy fuzzy matches stamped NFL.com IDs onto
+        namesakes from impossible eras and positions. Once stamped, every later
+        reconstruction took the direct-ID path and made the error permanent.
+        """
+        if source != "nfl_com" or season is None:
+            return
+        player = self._session.get(Player, player_id)
+        if player is None:  # pragma: no cover - direct index came from this table
+            return
+        career_conflict = not _career_contains(season, player.rookie_year, player.last_season)
+        position_conflict = not _positions_compatible(identity.position, player.position)
+        if not career_conflict and not position_conflict:
+            return
+        if _same_normalized_name(identity.name_full, player.name_full):
+            return
+        raise PlayerIdentityConflict(
+            "Exact NFL.com player ID conflicts with stored identity: "
+            f"id={identity.nfl_com_player_id!r}, incoming={identity.name_full!r}/"
+            f"{identity.position!r}/{season}, stored=player_id {player_id} "
+            f"{player.name_full!r}/{player.position!r}/"
+            f"{player.rookie_year}-{player.last_season}. "
+            "Repair or override the external-ID ownership before ingesting."
+        )
 
     def _has_conflicting_id(self, player_id: int, identity: PlayerIdentity) -> bool:
         player = self._session.get(Player, player_id)
@@ -555,6 +611,20 @@ def _career_contains(season: int, rookie_year: int | None, last_season: int | No
     return last_season is None or season <= last_season + 1
 
 
+def _same_normalized_name(left: str, right: str) -> bool:
+    return _name_tokens(left) == _name_tokens(right)
+
+
+def _positions_compatible(incoming: str | None, existing: str | None) -> bool:
+    if incoming is None or existing is None or incoming == existing:
+        return True
+    offensive_families = (
+        frozenset({"RB", "FB"}),
+        frozenset({"WR", "RB"}),
+    )
+    return any(incoming in family and existing in family for family in offensive_families)
+
+
 _SUFFIX_TOKENS = frozenset({"jr", "sr", "ii", "iii", "iv", "v"})
 
 
@@ -615,6 +685,7 @@ def _effective_position(identity: PlayerIdentity) -> str | None:
 __all__ = [
     "FUZZY_MATCH_THRESHOLD",
     "PlayerIdentity",
+    "PlayerIdentityConflict",
     "PlayerResolver",
     "ResolveStats",
 ]

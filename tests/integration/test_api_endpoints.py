@@ -34,6 +34,7 @@ from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
     PlayerAvailability,
+    PlayerInjuryReport,
     PlayerStatsRaw,
     PlayerStatsScored,
     Projection,
@@ -765,12 +766,19 @@ def test_box_score_classifies_missing_scores(db_engine: Engine) -> None:
         ss.add_all([team, opp])
         ss.flush()
 
-        # Four rostered players, each a different missing-score story.
+        # Five rostered players: missing-score explanations plus the rare
+        # scored-while-still-in-RES case NFL.com allows historically.
         played = Player(name_full="Played Guy", position="QB", nfl_team="BAL", is_active=True)
         dnp = Player(name_full="Inactive Guy", position="RB", nfl_team="KC", is_active=True)
         bye = Player(name_full="Bye Guy", position="WR", nfl_team="CLE", is_active=True)
         ir = Player(name_full="Hurt Guy", position="TE", nfl_team="HOU", is_active=True)
-        ss.add_all([played, dnp, bye, ir])
+        reserve_played = Player(
+            name_full="Reserve Played Guy",
+            position="WR",
+            nfl_team="BAL",
+            is_active=True,
+        )
+        ss.add_all([played, dnp, bye, ir, reserve_played])
         ss.flush()
 
         for player, slot, starter in [
@@ -778,6 +786,7 @@ def test_box_score_classifies_missing_scores(db_engine: Engine) -> None:
             (dnp, "BN", False),
             (bye, "BN", False),
             (ir, "RES", False),
+            (reserve_played, "RES", False),
         ]:
             ss.add(
                 TeamRoster(
@@ -787,35 +796,64 @@ def test_box_score_classifies_missing_scores(db_engine: Engine) -> None:
                     week=1,
                     roster_slot=slot,
                     is_starter=starter,
+                    extra_data={
+                        "opponent": "KC",
+                        "game_status": "Win,20-10",
+                        "player_status": "IR" if slot == "RES" else None,
+                        "player_status_label": "Injured Reserve" if slot == "RES" else None,
+                    },
                 )
             )
 
-        # Only the played player has stats. The week's played-set is built from
-        # nfl_opponent values, so recording BAL-vs-KC puts KC in the set: the
-        # inactive KC player resolves to "did_not_play", while CLE — absent from
-        # the set — resolves to "bye".
-        raw = PlayerStatsRaw(
-            player_id=played.player_id,
-            season_year=2025,
-            week=1,
-            source="nflverse",
-            nfl_opponent="KC",
-            stats={"passing_yards": 300},
-            is_primary=True,
-            ingested_at=now,
+        ss.add_all(
+            [
+                PlayerInjuryReport(
+                    player_id=dnp.player_id,
+                    season_year=2025,
+                    week=1,
+                    game_type="REG",
+                    report_status="Out",
+                    report_primary_injury="Hamstring",
+                    practice_status="Did Not Participate In Practice",
+                ),
+                PlayerInjuryReport(
+                    player_id=ir.player_id,
+                    season_year=2025,
+                    week=1,
+                    game_type="REG",
+                    report_status="Questionable",
+                    report_primary_injury="Knee",
+                    practice_status="Limited Participation In Practice",
+                ),
+            ]
         )
-        ss.add(raw)
-        ss.flush()
-        ss.add(
-            PlayerStatsScored(
-                stat_id=raw.stat_id,
-                season_id=season.season_id,
-                player_id=played.player_id,
+
+        # The week's played-set is built from nfl_opponent values, so recording
+        # BAL-vs-KC puts KC in the set: the inactive KC player resolves to
+        # "did_not_play", while CLE — absent from the set — resolves to "bye".
+        for player, total_points in [(played, 0.0), (reserve_played, 7.5)]:
+            raw = PlayerStatsRaw(
+                player_id=player.player_id,
+                season_year=2025,
                 week=1,
-                total_points=0.0,  # an honest zero: still "played", not missing
-                points_breakdown={},
+                source="nflverse",
+                nfl_opponent="KC",
+                stats={"passing_yards": 300},
+                is_primary=True,
+                ingested_at=now,
             )
-        )
+            ss.add(raw)
+            ss.flush()
+            ss.add(
+                PlayerStatsScored(
+                    stat_id=raw.stat_id,
+                    season_id=season.season_id,
+                    player_id=player.player_id,
+                    week=1,
+                    total_points=total_points,
+                    points_breakdown={},
+                )
+            )
 
         matchup = Matchup(
             season_id=season.season_id,
@@ -837,8 +875,20 @@ def test_box_score_classifies_missing_scores(db_engine: Engine) -> None:
     assert status_by_name["Played Guy"]["status"] == "played"
     assert status_by_name["Played Guy"]["league_points"] == 0.0  # real zero, not null
     assert status_by_name["Inactive Guy"]["status"] == "did_not_play"
+    assert status_by_name["Inactive Guy"]["injury_status"] == "Out"
+    assert status_by_name["Inactive Guy"]["injury_primary_injury"] == "Hamstring"
     assert status_by_name["Bye Guy"]["status"] == "bye"
     assert status_by_name["Hurt Guy"]["status"] == "ir"
+    assert status_by_name["Hurt Guy"]["injury_status"] == "Questionable"
+    assert status_by_name["Hurt Guy"]["roster_status"] == "IR"
+    assert status_by_name["Hurt Guy"]["roster_status_label"] == "Injured Reserve"
+    assert status_by_name["Hurt Guy"]["reserve_eligibility_status"] == "Injured Reserve"
+    assert status_by_name["Reserve Played Guy"]["status"] == "played"
+    assert status_by_name["Reserve Played Guy"]["league_points"] == 7.5
+    assert status_by_name["Reserve Played Guy"]["roster_slot"] == "RES"
+    assert status_by_name["Reserve Played Guy"]["reserve_eligibility_status"] == ("Injured Reserve")
+    assert status_by_name["Reserve Played Guy"]["nfl_opponent"] == "KC"
+    assert status_by_name["Reserve Played Guy"]["nfl_game_status"] == "Win,20-10"
     for name in ("Inactive Guy", "Bye Guy", "Hurt Guy"):
         assert status_by_name[name]["league_points"] is None
 

@@ -250,6 +250,87 @@ def test_parse_transactions_maps_lm_commish_row_to_setting_change() -> None:
     assert txn.extra_data == {"raw_type": "lm", "description": "harry updated playoff teams"}
 
 
+def test_parse_transactions_captures_faab_bid_on_waiver_adds() -> None:
+    # Real 2024 FAAB-era page: a winning waiver bid renders in the To cell as a
+    # trailing ``(N pts)`` after the team anchor (the unit is mislabelled "pts"
+    # but is waiver-budget dollars). Only ``From=Waivers`` legs carry it.
+    txns = parse_transactions(_read("transactions_faab.html"))
+
+    waiver_adds = [t for t in txns if t.transaction_type == "waiver_add"]
+    free_agent_adds = [t for t in txns if t.transaction_type == "free_agent_add"]
+    assert waiver_adds, "fixture must contain waiver claims"
+    assert free_agent_adds, "fixture must contain free-agent adds"
+
+    # Every waiver claim carries an integer faab_bid; a contested claim and an
+    # unopposed ($0) claim are both present in this page.
+    waiver_bids = {(t.extra_data or {}).get("faab_bid") for t in waiver_adds}
+    assert all(isinstance(b, int) for b in waiver_bids)
+    assert 0 in waiver_bids  # unopposed claim
+    assert 51 in waiver_bids  # Dontayvion Wicks, a contested $51 claim
+
+    wicks = next(t for t in waiver_adds if t.player_name == "Dontayvion Wicks")
+    assert wicks.extra_data == {"faab_bid": 51}
+
+    # Free agents are free — no bid parenthetical, so no faab_bid is attached.
+    assert all(t.extra_data is None for t in free_agent_adds)
+
+
+def test_parse_transactions_faab_bid_extraction_edge_cases() -> None:
+    # A waiver claim with a bid, a free-agent add without one, and a drop (whose
+    # To cell is "Waivers", never a bid) — confirm the bid attaches only to the
+    # waiver claim and a $0 claim still yields an explicit 0.
+    html = """
+    <table class="tableType-transaction"><tbody>
+      <tr class="transaction-add-10-1 odd">
+        <td class="transactionDate first">Sep 24, 1:00am</td>
+        <td class="transactionWeek">3</td>
+        <td class="transactionType">Add</td>
+        <td class="playerNameAndInfo"><div class="c"><a class="playerName playerNameId-111">A Player</a> <em>WR - X</em></div></td>
+        <td class="transactionFrom">Waivers</td>
+        <td class="transactionTo"><a href="/x" class="teamName teamId-7">Team Seven</a> (12 pts)</td>
+        <td class="transactionOwner"><div class="teamOwner"><span class="userName">al</span></div></td>
+      </tr>
+      <tr class="transaction-add-11 even">
+        <td class="transactionDate first">Sep 24, 1:00am</td>
+        <td class="transactionWeek">3</td>
+        <td class="transactionType">Add</td>
+        <td class="playerNameAndInfo"><div class="c"><a class="playerName playerNameId-222">B Player</a> <em>RB - Y</em></div></td>
+        <td class="transactionFrom">Waivers</td>
+        <td class="transactionTo"><a href="/x" class="teamName teamId-7">Team Seven</a> (0 pts)</td>
+        <td class="transactionOwner"><div class="teamOwner"><span class="userName">al</span></div></td>
+      </tr>
+      <tr class="transaction-add-12 odd">
+        <td class="transactionDate first">Sep 24, 1:00am</td>
+        <td class="transactionWeek">3</td>
+        <td class="transactionType">Add</td>
+        <td class="playerNameAndInfo"><div class="c"><a class="playerName playerNameId-333">C Player</a> <em>TE - Z</em></div></td>
+        <td class="transactionFrom">Free Agents</td>
+        <td class="transactionTo"><a href="/x" class="teamName teamId-7">Team Seven</a></td>
+        <td class="transactionOwner"><div class="teamOwner"><span class="userName">al</span></div></td>
+      </tr>
+      <tr class="transaction-drop-13 even">
+        <td class="transactionDate first">Sep 24, 1:00am</td>
+        <td class="transactionWeek">3</td>
+        <td class="transactionType">Drop</td>
+        <td class="playerNameAndInfo"><div class="c"><a class="playerName playerNameId-444">D Player</a> <em>QB - W</em></div></td>
+        <td class="transactionFrom"><a href="/x" class="teamName teamId-7">Team Seven</a></td>
+        <td class="transactionTo">Waivers</td>
+        <td class="transactionOwner"><div class="teamOwner"><span class="userName">al</span></div></td>
+      </tr>
+    </tbody></table>
+    """
+    by_player = {t.player_name: t for t in parse_transactions(html)}
+    assert by_player["A Player"].transaction_type == "waiver_add"
+    assert by_player["A Player"].extra_data == {"faab_bid": 12}
+    # A $0 (unopposed) claim is captured as an explicit 0, not dropped.
+    assert by_player["B Player"].extra_data == {"faab_bid": 0}
+    # Free-agent add and drop carry no bid.
+    assert by_player["C Player"].transaction_type == "free_agent_add"
+    assert by_player["C Player"].extra_data is None
+    assert by_player["D Player"].transaction_type == "drop"
+    assert by_player["D Player"].extra_data is None
+
+
 def test_parse_transactions_missing_table_raises() -> None:
     with pytest.raises(ParseError, match="tableType-transaction"):
         parse_transactions("<html><body></body></html>")
@@ -319,6 +400,14 @@ def test_parse_gamecenter_extracts_both_sides_and_full_rosters() -> None:
     home_slots = {e.roster_slot for e in gc.home.entries}
     assert "BN" in home_slots
     assert "RES" in home_slots
+
+    inactive = next(e for e in gc.home.entries if e.player_name == "D. Adams")
+    assert inactive.player_status == "IA"
+    assert inactive.player_status_label == "Inactive"
+
+    reserve = next(e for e in gc.home.entries if e.roster_slot == "RES")
+    assert reserve.player_status == "IR"
+    assert reserve.player_status_label == "Injured Reserve"
 
 
 def test_parse_gamecenter_missing_team_wraps_raises() -> None:

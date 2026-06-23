@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ff_pipeline.crawlers.nflverse.client import (
     LiveNflverseSource,
@@ -26,6 +26,7 @@ from ff_pipeline.logging_config import get_logger
 from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
+    PlayerIdentityLink,
     PlayerStatsRaw,
     SourceHealth,
     TeamRoster,
@@ -273,7 +274,14 @@ def _upsert_players(session: Session, meta: list[NflversePlayerMeta]) -> UpsertC
 def _gsis_id_to_player_id(session: Session, gsis_ids: list[str]) -> dict[str, int]:
     if not gsis_ids:
         return {}
-    stmt = select(Player.gsis_id, Player.player_id).where(Player.gsis_id.in_(gsis_ids))
+    stmt = (
+        select(
+            Player.gsis_id,
+            func.coalesce(PlayerIdentityLink.canonical_player_id, Player.player_id),
+        )
+        .outerjoin(PlayerIdentityLink, PlayerIdentityLink.member_player_id == Player.player_id)
+        .where(Player.gsis_id.in_(gsis_ids))
+    )
     return {gsis: pid for gsis, pid in session.execute(stmt).all() if gsis}
 
 

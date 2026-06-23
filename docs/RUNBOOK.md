@@ -85,6 +85,31 @@ ff-pipeline reconstruct --start 2010 --end 2025
 
 **Verify**: after a run, `ff-pipeline status` shows the latest reconstruct run `success`; spot-check with the API (`/seasons`, `/matchups`, lineups) or SQL (`seasons.status='completed'`, `team_rosters` has multiple weeks per season). Then `rescore` + `verify --sweep` the scored seasons (2016–2025) since real lineups now carry `nfl_com_player_id`.
 
+Run the maintained player-source integrity audit after any NFL.com reconstruction:
+
+```bash
+uv run python scripts/audit_source_player_identities.py --strict
+```
+
+It must report zero mismatches. For a reviewed legacy mismatch, update the
+source-backed ledger and dry-run `scripts/repair_source_player_identities.py`
+before applying it; the repair snapshots SQLite and is idempotent.
+
+---
+
+## Transactions have a blank week (`effective_week` NULL)
+
+**Signal**: a season's `transactions` rows have `effective_week` NULL while `executed_at` is set — NFL.com left the `.transactionWeek` cell blank, so the parser stored nothing. Notably all of 2010's early-season moves: the season has full transaction data but its first *week-labeled* non-draft row is week 6, so any pre-week-6 pickup looks like a late add to week-aware consumers (e.g. the dashboard's "roster drift" flag).
+
+**Fix**: derive the week from the date against that season's schedule.
+
+```bash
+uv run python scripts/backfill_transaction_weeks.py --dry-run   # preview counts
+uv run python scripts/backfill_transaction_weeks.py             # apply
+```
+
+Idempotent — only NULL-week rows with a date are touched, and the week is the regular-season week whose games are the first on or after `executed_at` (drafts at week 0 and post-season-dated moves are left alone). Re-runnable; safe to scope with `--start/--end`.
+
 ---
 
 ## Scoring or stats look wrong

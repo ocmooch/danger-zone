@@ -28,6 +28,33 @@ the state at kickoff" record per (player, week). The runner accepts a
 When ``snapshot_kind`` is not provided, the runner derives it from the
 current UTC time via ``_default_snapshot_kind``: Sunday before 18:00 UTC
 (approx 1pm ET kickoff) is pre-kickoff; everything else is audit.
+
+Audit captures are NOT week-accurate
+------------------------------------
+
+The live NFL.com roster page is *not* week-aware — it always returns
+*today's* roster. ``run_nfl_com(year, week=N, ...)`` writes that current
+roster into the ``week=N`` slot. An ``audit`` sync run mid/late-season but
+pointed at an early week would therefore stamp the *current* rosters onto
+that early week (this is the 2025/2026 week-1 corruption, where every team's
+week-1 roster was overwritten with its end-of-season roster).
+
+To prevent recurrence, ``_scrape_and_upsert_rosters`` quarantines an audit
+roster write whenever the target (season, week) already holds an
+authoritative snapshot (``AUTHORITATIVE_SNAPSHOT_KINDS`` — draft /
+pre_kickoff / history): the roster write is skipped so an audit capture can
+never become a week's sole authoritative roster.
+
+Remediating existing bad rows: prevention does not repair rows already in
+the DB (2025 wk1, 2026 wk1 — entirely ``audit``). Overwrite them by
+re-running the history reconstruction for that week, which owns the whole
+(season, week) snapshot and replaces every row with week-accurate
+``history`` data::
+
+    uv run ff-pipeline reconstruct --year 2025   # or the per-week path in
+    # ff_pipeline.crawlers.nfl_com.history.reconstruct_lineups(weeks=[1])
+
+(Requires live NFL.com access; do not run offline.)
 """
 
 from __future__ import annotations
@@ -35,9 +62,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from ff_pipeline.crawlers.nfl_com.availability import sweep_availability
 from ff_pipeline.crawlers.nfl_com.client import (
@@ -90,6 +117,16 @@ log = get_logger(__name__)
 
 SOURCE_NAME = "nfl_com"
 SnapshotKind = Literal["pre_kickoff", "audit"]
+
+# Snapshot kinds that are *week-accurate* and therefore authoritative for a
+# given (season, week): the draft (week 0), the live pre-kickoff lock, and the
+# post-hoc history reconstruction. An ``audit`` capture is NOT week-accurate —
+# the live NFL.com roster page is not week-aware and always returns *today's*
+# roster (see ``_default_snapshot_kind``), so an audit sync pointed at an early
+# week would otherwise stamp the current roster onto that week. ``audit`` may
+# only fill a (season, week) that has no authoritative snapshot yet; it must
+# never overwrite one. Enforced in ``_scrape_and_upsert_rosters``.
+AUTHORITATIVE_SNAPSHOT_KINDS: frozenset[str] = frozenset({"pre_kickoff", "draft", "history"})
 
 
 class _HtmlFetcher(Protocol):
@@ -604,7 +641,26 @@ def _scrape_and_upsert_rosters(
     warnings: list[str],
     resolver: PlayerResolver,
 ) -> tuple[int, int]:
-    _ = year  # roster is fetched as "current", not year-tagged — kept for symmetry
+    # Precedence guard: an ``audit`` capture is the current (not week-accurate)
+    # roster, because the live NFL.com roster page ignores the requested week.
+    # If this (season, week) already holds an authoritative snapshot
+    # (draft / pre_kickoff / history), an audit write would clobber it and the
+    # week would read as today's rosters stamped onto an earlier week — exactly
+    # the 2025/2026 week-1 corruption. Quarantine the audit roster write in that
+    # case: skip it entirely so audit can never become a week's sole
+    # authoritative roster. (Non-roster facets — matchups / transactions /
+    # availability — are unaffected and still sync.)
+    if snapshot_kind == "audit" and _week_has_authoritative_roster(
+        session, season_year=year, week=week
+    ):
+        msg = (
+            f"audit roster write skipped for week={week}: an authoritative "
+            f"snapshot already exists; audit captures are not week-accurate and "
+            f"must not overwrite draft/pre_kickoff/history rows"
+        )
+        log.info("roster audit write quarantined", year=year, week=week)
+        warnings.append(msg)
+        return 0, 0
     total_added = 0
     total_updated = 0
     for nfl_team_id, internal_team_id in team_id_by_nfl_team_id.items():
@@ -626,6 +682,28 @@ def _scrape_and_upsert_rosters(
         total_added += counts.rows_added
         total_updated += counts.rows_updated
     return total_added, total_updated
+
+
+def _week_has_authoritative_roster(session: Session, *, season_year: int, week: int) -> bool:
+    """True if any roster row for ``(season_year, week)`` is week-accurate.
+
+    Week-accurate kinds are ``AUTHORITATIVE_SNAPSHOT_KINDS`` (draft /
+    pre_kickoff / history). ``snapshot_kind`` lives in ``extra_data`` JSON,
+    which is read back as a Python dict, so we inspect the tag in Python rather
+    than via a dialect-specific JSON path (this runs once per sync, not per
+    row). Rows missing the tag (legacy / unexpected) are treated as
+    non-authoritative so an audit sync can still seed an otherwise-empty week.
+    """
+    existing = session.execute(
+        select(TeamRoster.extra_data).where(
+            TeamRoster.season_year == season_year,
+            TeamRoster.week == week,
+        )
+    ).scalars()
+    return any(
+        isinstance(extra, dict) and extra.get("snapshot_kind") in AUTHORITATIVE_SNAPSHOT_KINDS
+        for extra in existing
+    )
 
 
 def _upsert_team_roster(
@@ -663,6 +741,8 @@ def _upsert_team_roster(
                     "snapshot_kind": snapshot_kind,
                     "game_status": entry.game_status,
                     "opponent": entry.opponent,
+                    "player_status": entry.player_status,
+                    "player_status_label": entry.player_status_label,
                 },
             }
         )
@@ -787,6 +867,12 @@ def _upsert_transactions(
     skipped = 0
     rows_to_insert: list[dict[str, object]] = []
     fingerprints_seen: set[tuple[object, ...]] = set()
+    # transaction_id + current extra_data of already-stored rows, keyed by the
+    # same fingerprint, so a re-run can *enrich* a matched row in place (e.g.
+    # backfill a ``faab_bid`` onto a waiver claim first ingested before the bid
+    # was parsed) without inserting a duplicate leg.
+    existing_by_fp: dict[tuple[object, ...], tuple[int, dict[str, Any] | None]] = {}
+    faab_updates: list[tuple[int, dict[str, Any]]] = []
 
     # Read the season's existing fingerprints in one query. ``executed_at``
     # is normalized to a UTC-isoformat string for the fingerprint because
@@ -800,12 +886,13 @@ def _upsert_transactions(
             Transaction.direction,
             Transaction.executed_at,
             Transaction.extra_data,
+            Transaction.transaction_id,
         ).where(Transaction.season_id == season_id)
     ).all()
     for row in existing:
-        fingerprints_seen.add(
-            (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
-        )
+        fingerprint = (row[0], row[1], row[2], row[3], _fingerprint_dt(row[4]), _extra_sig(row[5]))
+        fingerprints_seen.add(fingerprint)
+        existing_by_fp.setdefault(fingerprint, (row[6], row[5]))
 
     for t in parsed:
         team_id = team_id_by_nfl_team_id.get(t.team_id) if t.team_id is not None else None
@@ -834,6 +921,7 @@ def _upsert_transactions(
         )
         if fingerprint in fingerprints_seen:
             skipped += 1
+            _collect_faab_enrich(existing_by_fp.get(fingerprint), t.extra_data, faab_updates)
             continue
         fingerprints_seen.add(fingerprint)
         rows_to_insert.append(
@@ -854,8 +942,42 @@ def _upsert_transactions(
         for new_row in rows_to_insert:
             session.add(Transaction(**new_row))
         inserted = len(rows_to_insert)
+    for txn_id, merged_extra in faab_updates:
+        session.execute(
+            update(Transaction)
+            .where(Transaction.transaction_id == txn_id)
+            .values(extra_data=merged_extra)
+        )
+    if faab_updates:
+        log.info("transactions faab_bid enriched", season_id=season_id, rows=len(faab_updates))
     _ = warnings  # reserved hook
     return _Counts(inserted, skipped)
+
+
+def _collect_faab_enrich(
+    existing: tuple[int, dict[str, Any] | None] | None,
+    parsed_extra: dict[str, Any] | None,
+    out: list[tuple[int, dict[str, Any]]],
+) -> None:
+    """Queue an in-place ``faab_bid`` backfill for a fingerprint-matched row.
+
+    The append-only upsert otherwise *skips* a matched row, so a waiver claim
+    first ingested before the bid parser existed would never gain its bid. When
+    the freshly parsed leg carries a ``faab_bid`` the stored row lacks (or that
+    differs), merge it onto the stored ``extra_data``. ``faab_bid`` is kept out
+    of ``_extra_sig`` so adding it never splits the fingerprint into a duplicate
+    leg; re-running once the bid is stored is a no-op (idempotent).
+    """
+    if existing is None or parsed_extra is None:
+        return
+    bid = parsed_extra.get("faab_bid")
+    if bid is None:
+        return
+    txn_id, stored_extra = existing
+    stored_extra = stored_extra or {}
+    if stored_extra.get("faab_bid") == bid:
+        return
+    out.append((txn_id, {**stored_extra, "faab_bid": bid}))
 
 
 def _extra_sig(extra_data: dict[str, object] | None) -> tuple[object, ...] | None:

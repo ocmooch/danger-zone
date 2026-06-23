@@ -2,19 +2,26 @@
 
 A DEF "player" in our DB is one NFL franchise (e.g. *San Francisco 49ers*
 → ``nfl_team = "SF"``). To attach team-defense stats we have to match that
-franchise to the ``team`` abbreviation nflverse used **for the season in
-question**, which is not always today's abbreviation:
+franchise to the ``team`` abbreviation nflverse uses for it. nflverse
+normalizes every relocated franchise to its **current** code across all of
+history — a 2015 Rams row is ``LA`` (never ``STL``), a 2016 Chargers row is
+``LAC`` (never ``SD``), a 2019 Raiders row is ``LV`` (never ``OAK``) —
+verified directly against ``load_team_stats``. So matching is purely a
+current-code lookup; the season does not change which abbreviation to match.
+
+Two wrinkles remain:
 
 * Several DEF rows have a blank ``nfl_team`` and only a partial name
   (``Cowboys``, ``Jets``, ``Panthers``, ``Raiders``); we recover the
   abbreviation from the nickname.
-* Franchises that relocated carry their *current* code in our DB but
-  nflverse keys historical rows under the old code:
-  Raiders ``OAK`` → ``LV`` (2020), Chargers ``SD`` → ``LAC`` (2017),
-  Rams ``STL`` → ``LA`` (2016).
+* Our ``players`` table stores the Rams under ``LAR`` while nflverse uses
+  ``LA``; that single stored-code alias is folded before matching.
 
-:func:`resolve_def_team_abbrev` returns the season-correct abbreviation so
-the rollup keyed on nflverse codes lines up with the DEF player_id.
+:func:`resolve_def_team_abbrev` returns that current code so the rollup
+keyed on nflverse codes lines up with the DEF player_id. (The reverse
+mapping — current code → the abbreviation a season *displayed* under, e.g.
+``STL`` for 2015 — lives in :func:`historical_team_code`, for presentation
+only; it must never be used to key ingest.)
 """
 
 from __future__ import annotations
@@ -104,13 +111,21 @@ def historical_team_code(current_code: str, season_year: int) -> str:
     return current_code
 
 
-def resolve_def_team_abbrev(player: Player, season_year: int) -> str | None:
-    """Return the nflverse team abbreviation for ``player`` in ``season_year``.
+def resolve_def_team_abbrev(player: Player, _season_year: int) -> str | None:
+    """Return the nflverse team abbreviation for ``player``.
 
-    Prefers the player's stored ``nfl_team``; falls back to the nickname in
-    ``name_full``. Applies the relocation table so the abbreviation matches
-    what nflverse used that season. Returns ``None`` when neither source
-    yields a recognizable franchise (logged once per unresolved player).
+    Prefers the player's stored ``nfl_team`` (folding the ``LAR``→``LA``
+    storage alias); falls back to the nickname in ``name_full``. Returns
+    ``None`` when neither source yields a recognizable franchise (logged once
+    per unresolved player).
+
+    The season is accepted (for the year-indexed call site) but does **not**
+    change the result: nflverse keys every season of a relocated franchise
+    under its current code, so the index must too. Back-mapping to the pre-move
+    code
+    here (the historical bug) keyed pre-relocation DST stats under ``STL`` /
+    ``SD`` / ``OAK`` while nflverse delivered ``LA`` / ``LAC`` / ``LV``,
+    silently dropping every relocated DST's pre-move seasons.
     """
 
     base = _current_abbrev(player)
@@ -122,12 +137,6 @@ def resolve_def_team_abbrev(player: Player, season_year: int) -> str | None:
             nfl_team=getattr(player, "nfl_team", None),
         )
         return None
-
-    reloc = _RELOCATIONS.get(base)
-    if reloc is not None:
-        cutover_year, old_abbrev = reloc
-        if season_year < cutover_year:
-            return old_abbrev
     return base
 
 
