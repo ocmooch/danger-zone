@@ -417,10 +417,15 @@ def _score_counts_against_dst(
 
 
 def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
+    play_type = _as_opt_str(row.get("play_type"))
+    if play_type in _SPECIAL_TEAMS_TD_PLAY_TYPES:
+        return True
+    # nflverse labels some aborted field-goal-formation return TDs as
+    # ``play_type='run'``. NFL.com is not consistent about charging these to
+    # D/ST PA, so this narrow legacy signal is retained instead of widening all
+    # return TDs on scrimmage-play types.
     desc = (_as_opt_str(row.get("desc")) or "").lower()
-    return any(
-        marker in desc for marker in (" punt", " punts ", " kicks ", " kickoff", "field goal")
-    )
+    return "(field goal formation)" in desc
 
 
 def _team_key(row: Mapping[str, object]) -> tuple[int, int, str] | None:
