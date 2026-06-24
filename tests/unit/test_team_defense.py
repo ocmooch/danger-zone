@@ -330,8 +330,19 @@ def test_points_allowed_counts_kickoff_return_against_dst() -> None:
         _pbp_score("g", 2010, 1, "NE", "CIN", home=7, away=0, posteam="NE", td_team="NE"),
         _pbp_score("g", 2010, 1, "NE", "CIN", home=14, away=0, posteam="CIN", td_team="NE"),
         _pbp_score("g", 2010, 1, "NE", "CIN", home=24, away=0, posteam="NE", td_team="NE"),
-        # Kickoff return TD: td_team == posteam, so it is charged to CIN D/ST.
-        _pbp_score("g", 2010, 1, "NE", "CIN", home=31, away=0, posteam="NE", td_team="NE"),
+        # Kickoff return TD: td_team == posteam, but play_type is what marks it as special teams.
+        _pbp_score(
+            "g",
+            2010,
+            1,
+            "NE",
+            "CIN",
+            home=31,
+            away=0,
+            posteam="NE",
+            td_team="NE",
+            play_type="kickoff",
+        ),
         _pbp_score("g", 2010, 1, "NE", "CIN", home=38, away=0, posteam="NE", td_team="NE"),
     ]
 
@@ -374,6 +385,7 @@ def test_points_allowed_counts_punt_return_against_dst() -> None:
             posteam="CAR",
             td_team="IND",
             return_td=1.0,
+            play_type="punt",
             desc="M.Palardy punts 53 yards. N.Hines for 71 yards, TOUCHDOWN.",
         ),
     ]
@@ -416,6 +428,7 @@ def test_points_allowed_counts_blocked_punt_return_against_dst() -> None:
             away=34,
             posteam="TEN",
             td_team="IND",
+            play_type="punt",
             desc="T.Daniel punt is BLOCKED, RECOVERED by IND. T.Carrie for 6 yards, TOUCHDOWN.",
         ),
     ]
@@ -431,6 +444,93 @@ def test_points_allowed_counts_blocked_punt_return_against_dst() -> None:
     )
 
     assert ten.stats["points_allowed"] == 34.0
+
+
+def test_points_allowed_counts_blocked_field_goal_return_against_dst() -> None:
+    team_rows = [_team_row("CHI", week=9, season=2024), _team_row("ARI", week=9, season=2024)]
+    schedule_rows = [
+        {
+            "season": 2024,
+            "week": 9,
+            "home_team": "ARI",
+            "away_team": "CHI",
+            "home_score": 29,
+            "away_score": 9,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2024, 9, "ARI", "CHI", home=0, away=0),
+        _pbp_score("g", 2024, 9, "ARI", "CHI", home=21, away=0, posteam="ARI", td_team="ARI"),
+        _pbp_score(
+            "g",
+            2024,
+            9,
+            "ARI",
+            "CHI",
+            home=27,
+            away=0,
+            posteam="CHI",
+            td_team="ARI",
+            play_type="field_goal",
+        ),
+        _pbp_score("g", 2024, 9, "ARI", "CHI", home=29, away=0, posteam="ARI", two_pt="success"),
+    ]
+
+    chi = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "CHI"
+    )
+
+    assert chi.stats["points_allowed"] == 29.0
+
+
+def test_points_allowed_counts_aborted_field_goal_formation_return_against_dst() -> None:
+    team_rows = [_team_row("SEA", week=6, season=2013), _team_row("TEN", week=6, season=2013)]
+    schedule_rows = [
+        {
+            "season": 2013,
+            "week": 6,
+            "home_team": "SEA",
+            "away_team": "TEN",
+            "home_score": 20,
+            "away_score": 13,
+        }
+    ]
+    play_by_play_rows = [
+        _pbp_score("g", 2013, 6, "SEA", "TEN", home=0, away=0),
+        _pbp_score("g", 2013, 6, "SEA", "TEN", home=0, away=6, posteam="TEN", td_team="TEN"),
+        _pbp_score(
+            "g",
+            2013,
+            6,
+            "SEA",
+            "TEN",
+            home=0,
+            away=13,
+            posteam="SEA",
+            td_team="TEN",
+            play_type="run",
+            return_td=1.0,
+            desc="(Field Goal formation) aborted snap is returned for a TOUCHDOWN.",
+        ),
+    ]
+
+    sea = next(
+        t
+        for t in build_team_defense_stats(
+            team_rows=team_rows,
+            schedule_rows=schedule_rows,
+            play_by_play_rows=play_by_play_rows,
+        )
+        if t.nfl_team == "SEA"
+    )
+
+    assert sea.stats["points_allowed"] == 13.0
 
 
 def test_points_allowed_excludes_safety_against_offense() -> None:
@@ -668,6 +768,7 @@ def _pbp_score(
     td_team: str | None = None,
     fg: str | None = None,
     xp: str | None = None,
+    two_pt: str | None = None,
     safety: float = 0.0,
     return_td: float = 0.0,
     desc: str | None = None,
@@ -687,6 +788,7 @@ def _pbp_score(
         "return_touchdown": return_td,
         "field_goal_result": fg,
         "extra_point_result": xp,
+        "two_point_conv_result": two_pt,
         "safety": safety,
         "desc": desc,
         "play_type": play_type,

@@ -157,7 +157,7 @@ name vs canonical name) — deferred to Phase 2.
 
 ### P1-V5. Reconstruction team-total trust-check not closed
 
-**State (open, updated 2026-06-15)**: per-player scored rows are useful, but the
+**State (open, updated 2026-06-24)**: per-player scored rows are useful, but the
 summed-starters → NFL.com team-total invariant is not yet reliable enough to
 close the UP/F27 trust gate, so the reconstruction stays marked **not final**.
 `ff-pipeline verify --season 2010 --reconcile` compared 183 team-weeks and
@@ -172,6 +172,37 @@ exist. This resolved the NFL.com-0/nflverse-nonzero exceptions without evidence
 of an in-season 2010 scoring-setting change or manual score edit. The broader
 team-total reconcile gate remains open because starter-set reconstruction and
 long-TD bonuses are separate residuals.
+
+Follow-up D/ST PA re-derivation on 2026-06-24 found no safe systematic shrink
+for the remaining PA class. A pure `play_type` classifier for special-teams
+return TDs resolved ARI 2016 week 3 but regressed SEA 2013 week 6; copy
+validation over 2010–2025 showed `RESOLVED=0`, `WORSENED=0`, `REGRESSED=0`,
+census unchanged at 127 diverging rows (79 PA + 48 OTHER).
+
+A deeper offline audit the same day **proved** the PA class is irreducible
+source noise rather than a classifier bug, and showed the `play_type` angle was
+a red herring. Every one of the 79 PA rows is a game where
+`_score_counts_against_dst` excluded an opponent **scrimmage defensive return
+TD** (pick-six / fumble-six, `play_type='pass'/'run'`, `td_team != posteam`),
+leaving the derived PA exactly 7/8/9 below the opponent's final score; the rows
+are smeared evenly across all 16 seasons. Special-teams `play_type` cannot move
+them — which is why the change resolved nothing. Two whole-DEF-week tests settle
+it: (1) where an exclusion moves the PA bracket it is **correct in 287 rows and
+wrong in only 94** (the 79 PA + ~15 bracket-edge OTHERs), so sourcing PA from
+the opponent's full final score would break 287 currently-correct rows — "PA =
+final score" is refuted, reproducing the GB 2020 wk6 canary at scale; (2) the 94
+wrong-exclusions and 287 correct-exclusions carry the **same INT:FUM mix**
+(DIVERGE 47 INT / 33 FUM vs MATCH 158 INT / 83 FUM), so no nflverse-PBP feature
+distinguishes them. The "year-to-year scoring-rule change" hypothesis was tested
+and rejected: every season is an 11–44% charged/excluded mix (no season near
+0/100%, no transition year). The decisive canary is HOU 2013 wk2 vs wk5 — the
+same defense, same season, a Matt Schaub pick-six in both games, which NFL.com
+excluded from points-allowed in wk2 (PA 17, matches) but included in wk5 (PA 34,
+diverges); a rule cannot change between week 2 and week 5. So NFL.com charged
+~25% of defensive-return TDs to D/ST points allowed and excluded ~75%,
+inconsistently, in its own historical box-score feed.
+**Leave `_index_fantasy_points_allowed` untouched; do not override rows; the PA
+workstream is closed as a documented genuine-source residual.**
 
 **Owner**: Phase 2. **Fix path**: investigate the offline team-total sanity
 check (starters set, bench exclusion, DST/long-TD deltas) before any downstream
