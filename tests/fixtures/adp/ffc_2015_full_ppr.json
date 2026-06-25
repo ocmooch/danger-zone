@@ -1,0 +1,6 @@
+[
+  {"source_player_key": "1001", "name": "Antonio Brown", "position": "WR", "nfl_team": "PIT", "adp": 3.2, "adp_stdev": 1.1, "adp_high": 1, "adp_low": 7, "times_drafted": 120},
+  {"source_player_key": "1002", "name": "Adrian Peterson", "position": "RB", "nfl_team": "MIN", "adp": 5.5, "times_drafted": 110},
+  {"source_player_key": "1003", "name": "Mike Williams", "position": "WR", "nfl_team": "TB", "adp": 140.0, "times_drafted": 12},
+  {"source_player_key": "1004", "name": "Nonexistent Player", "position": "TE", "nfl_team": "FA", "adp": 200.0, "times_drafted": 2}
+]
