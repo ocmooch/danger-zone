@@ -20,6 +20,7 @@ from ff_pipeline.crawlers.nflverse.client import (
     NflverseClient,
     NflversePlayerMeta,
     NflversePlayerStat,
+    NflverseRosterPosition,
 )
 from ff_pipeline.crawlers.nflverse.franchises import resolve_def_team_abbrev
 from ff_pipeline.logging_config import get_logger
@@ -27,6 +28,7 @@ from ff_pipeline.repository.models import (
     PipelineRun,
     Player,
     PlayerIdentityLink,
+    PlayerSeasonPosition,
     PlayerStatsRaw,
     SourceHealth,
     TeamRoster,
@@ -133,6 +135,20 @@ def run_nflverse(
             gsis_to_player_id = _gsis_id_to_player_id(session, [s.gsis_id for s in player_stats])
 
         stat_counts = _upsert_player_stats(session, player_stats, gsis_to_player_id)
+        # Season-correct positions come from the *roster* frame, not weekly stats
+        # (whose position is the same canonical value as ``players.position``).
+        # Tolerate a source that can't supply rosters (e.g. a parquet fixture
+        # without a roster file) the same way the long-TD PBP step does — the
+        # season position is an enrichment, not core to the stats ingest.
+        try:
+            roster_positions = client.rosters(seasons)
+        except (FileNotFoundError, NotImplementedError):
+            log.info(
+                "nflverse rosters unavailable; skipping season positions",
+                seasons=list(seasons),
+            )
+        else:
+            _upsert_season_positions(session, roster_positions, gsis_to_player_id)
 
     except Exception as exc:
         duration_ms = int((time.perf_counter() - start) * 1000)
@@ -371,6 +387,65 @@ def _upsert_player_stats(
         PlayerStatsRaw,
         rows,
         conflict_cols=("player_id", "season_year", "week", "source"),
+    )
+
+
+# Positions that fold onto a single fantasy home, so the stored season position
+# matches how ``players.position`` and the fantasy slots are spelled.
+_POSITION_FOLD = {"HB": "RB", "FB": "RB"}
+
+
+def _fold_position(position: str) -> str:
+    return _POSITION_FOLD.get(position, position)
+
+
+def _upsert_season_positions(
+    session: Session,
+    roster_positions: list[NflverseRosterPosition],
+    gsis_to_player_id: dict[str, int],
+) -> UpsertCounts:
+    """Derive one season-correct NFL position per (player, season) from rosters.
+
+    nflverse's *roster* frame records the position a player was listed at that
+    season, so it is season-aware where the all-time snapshot on
+    ``players.position`` is not (and where weekly ``player_stats`` is not — its
+    position carries the same current/canonical value). We take the position the
+    player appears at in the most roster rows that season (ties broken by the
+    latest week, so a mid-season conversion resolves to where they finished) and
+    upsert it into ``player_season_positions``. Players with no roster row that
+    season are absent — box scores fall back to ``players.position`` for them,
+    exactly as the season-correct NFL-team path does.
+    """
+    # (player_id, season) -> position -> (rows, last_week)
+    tally: dict[tuple[int, int], dict[str, tuple[int, int]]] = {}
+    for s in roster_positions:
+        if s.position is None:
+            continue
+        pid = gsis_to_player_id.get(s.gsis_id)
+        if pid is None:
+            continue
+        pos = _fold_position(s.position)
+        bucket = tally.setdefault((pid, s.season_year), {})
+        rows_seen, last_week = bucket.get(pos, (0, 0))
+        bucket[pos] = (rows_seen + 1, max(last_week, s.week))
+
+    rows = []
+    for (pid, season_year), positions in tally.items():
+        # (weeks, last_week) descending wins.
+        best_pos = max(positions.items(), key=lambda kv: kv[1])[0]
+        rows.append(
+            {
+                "player_id": pid,
+                "season_year": season_year,
+                "position": best_pos,
+                "source": SOURCE_NAME,
+            }
+        )
+    return upsert(
+        session,
+        PlayerSeasonPosition,
+        rows,
+        conflict_cols=("player_id", "season_year"),
     )
 
 

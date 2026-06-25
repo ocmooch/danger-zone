@@ -654,6 +654,42 @@ class PlayerStatsScored(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class PlayerSeasonPosition(Base):
+    """The NFL position a player actually played in a given season.
+
+    A player's ``players.position`` is a single current/last-known snapshot, so
+    it misrepresents any season before a position change (a 2014 WR shown as a
+    later-career TE) or any plain mislabel. This is the season-correct
+    counterpart — one row per (player, season), sourced from nflverse's per-season
+    rosters (``load_rosters``), which are season-aware where the all-time players
+    table is not. Symmetric with the season-correct NFL team derived from
+    ``player_stats_raw.nfl_team``. Absent player-seasons fall back to the snapshot
+    on ``players.position``.
+    """
+
+    __tablename__ = "player_season_positions"
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id",
+            "season_year",
+            name="uq_player_season_positions_player_season",
+        ),
+        Index("ix_player_season_positions_season", "season_year"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_season_positions_player"),
+        nullable=False,
+    )
+    season_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    position: Mapped[str] = mapped_column(String(8), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="nflverse")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class Projection(Base):
     __tablename__ = "projections"
     __table_args__ = (

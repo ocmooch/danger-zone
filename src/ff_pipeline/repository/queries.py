@@ -27,6 +27,7 @@ from ff_pipeline.repository.models import (
     PlayerAvailability,
     PlayerIdentityLink,
     PlayerInjuryReport,
+    PlayerSeasonPosition,
     PlayerStatsRaw,
     PlayerStatsScored,
     Projection,
@@ -38,6 +39,7 @@ from ff_pipeline.repository.models import (
     Transaction,
 )
 from ff_pipeline.repository.player_identity_integrity import source_identity_mismatches
+from ff_pipeline.repository.player_position_integrity import season_position_divergences
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -427,6 +429,11 @@ def player_source_identity_mismatches(session: Session) -> list[dict[str, Any]]:
     return source_identity_mismatches(session)
 
 
+def player_season_position_divergences(session: Session) -> list[dict[str, Any]]:
+    """Players whose static position disagrees with a rostered season's position."""
+    return season_position_divergences(session)
+
+
 def player_season_teams(
     session: Session, player_ids: Sequence[int], season_year: int
 ) -> dict[int, str]:
@@ -481,6 +488,41 @@ def player_nfl_team(session: Session, player_id: int, season_year: int) -> str |
     ``None`` when no per-week team is stored for that player-season.
     """
     return player_season_teams(session, [player_id], season_year).get(player_id)
+
+
+def player_season_positions(
+    session: Session, player_ids: Sequence[int], season_year: int
+) -> dict[int, str]:
+    """Map each player to their season-correct NFL position for ``season_year``.
+
+    Read from the stored ``player_season_positions`` table (one row per
+    player-season, sourced from nflverse's per-season rosters). This is the
+    season-aware counterpart to the single current/last-known snapshot on
+    ``players.position`` — a player who lined up at WR in 2014 reads "WR" even if
+    his stored snapshot later became "TE". Players with no stored row that season
+    are absent from the map; callers fall back to ``players.position``.
+
+    Batched so a whole box score / leaderboard page resolves in one query.
+    """
+    if not player_ids:
+        return {}
+    stmt = select(
+        PlayerSeasonPosition.player_id,
+        PlayerSeasonPosition.position,
+    ).where(
+        PlayerSeasonPosition.player_id.in_(player_ids),
+        PlayerSeasonPosition.season_year == season_year,
+    )
+    return {row.player_id: row.position for row in session.execute(stmt).all()}
+
+
+def player_position(session: Session, player_id: int, season_year: int) -> str | None:
+    """Season-correct NFL position for one player-season.
+
+    Thin single-player wrapper over :func:`player_season_positions`; returns
+    ``None`` when no per-season position is stored for that player-season.
+    """
+    return player_season_positions(session, [player_id], season_year).get(player_id)
 
 
 def player_ownership(session: Session, player_id: int) -> list[tuple[TeamRoster, Team]]:

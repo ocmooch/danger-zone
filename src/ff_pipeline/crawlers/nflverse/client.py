@@ -62,6 +62,19 @@ class NflversePlayerStat:
 
 
 @dataclass(frozen=True, slots=True)
+class NflverseRosterPosition:
+    """One ``load_rosters()`` row, projected to the position a player was listed
+    at that season. Unlike weekly ``player_stats`` (whose position carries the
+    same current/canonical value as ``players.position``), the roster frame is
+    season-aware — a 2014 WR who later converts reads "WR" for 2014."""
+
+    gsis_id: str
+    season_year: int
+    week: int
+    position: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class NflversePlayerMeta:
     """One row from ``load_players()`` — used to upsert into ``players``."""
 
@@ -330,6 +343,27 @@ class NflverseClient:
                 )
             )
         log.info("Loaded nflverse players", row_count=len(out))
+        return out
+
+    # ----- rosters (season-correct positions) -----
+
+    def rosters(self, seasons: Sequence[int]) -> list[NflverseRosterPosition]:
+        df = self._source.load_rosters(seasons)
+        out: list[NflverseRosterPosition] = []
+        for row in df.iter_rows(named=True):
+            gsis = row.get("gsis_id")
+            if not gsis:
+                continue
+            week = _opt_int(row.get("week"))
+            out.append(
+                NflverseRosterPosition(
+                    gsis_id=str(gsis),
+                    season_year=int(row["season"]),
+                    week=week if week is not None else 0,
+                    position=_opt_str(row.get("position")),
+                )
+            )
+        log.info("Loaded nflverse rosters", seasons=list(seasons), row_count=len(out))
         return out
 
     # ----- internals -----
