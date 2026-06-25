@@ -123,6 +123,62 @@ def test_sweep_stitches_trade_counterparts_across_pages() -> None:
         assert {leg.team_id, leg.counterpart_team_id} == {3, 7}
 
 
+def _trade_side(
+    txn_id: str,
+    suffix: int,
+    players: list[tuple[str, str]],
+    *,
+    from_cell: str,
+    to_cell: str,
+) -> str:
+    # One <tr> per *side* of a trade, whose player cell can list several
+    # anchors (a 2-for-2, 2-for-3, …). Mirrors NFL.com's real markup:
+    # class transaction-trade-{id}-{1|2}, multiple a.playerName in one cell.
+    anchors = "".join(
+        f'<a class="playerName" href="/players/card?playerId={pid}">{name}</a>'
+        for pid, name in players
+    )
+    return (
+        f'<tr class="transaction-trade-{txn_id}-{suffix} odd">'
+        f'<td class="transactionDate first">Nov 10, 5:16pm</td>'
+        f'<td class="transactionWeek">10</td>'
+        f'<td class="transactionType">Trade</td>'
+        f'<td class="playerNameAndInfo">{anchors}</td>'
+        f'<td class="transactionFrom">{from_cell}</td>'
+        f'<td class="transactionTo">{to_cell}</td>'
+        f'<td class="transactionOwner last"><span class="userName">owner</span></td>'
+        f"</tr>"
+    )
+
+
+def test_sweep_captures_all_players_on_a_multi_player_trade_side() -> None:
+    # A 2-for-2: T3 sends {Alpha, Bravo} to T7, T7 sends {Charlie, Delta} to T3.
+    # Each side is a single row with two player anchors; reading only the
+    # first anchor (the historical bug) dropped Bravo and Delta entirely.
+    page = _page(
+        _trade_side(
+            "70", 1, [("300", "Alpha"), ("301", "Bravo")], from_cell=_team(3), to_cell=_team(7)
+        )
+        + _trade_side(
+            "70", 2, [("302", "Charlie"), ("303", "Delta")], from_cell=_team(7), to_cell=_team(3)
+        ),
+        next_offset=None,
+    )
+    fetcher = _StubFetcher({"__page0__": page})
+    result = sweep_transactions(fetcher, league_id="36271", year=2025)
+    trades = [r for r in result.rows if r.transaction_type == "trade"]
+    # Four players x (one out + one in) = 8 legs, none dropped.
+    assert len(trades) == 8
+    names = {r.player_name for r in trades}
+    assert names == {"Alpha", "Bravo", "Charlie", "Delta"}
+    # Each player has exactly one out leg and one in leg, counterpart stitched.
+    for name in names:
+        legs = [r for r in trades if r.player_name == name]
+        assert {leg.direction for leg in legs} == {"in", "out"}
+        for leg in legs:
+            assert {leg.team_id, leg.counterpart_team_id} == {3, 7}
+
+
 def test_sweep_captures_lineup_change_payload() -> None:
     page0 = _page(
         _row("60", "roster", "400", "Delta", from_cell="RB", to_cell="BN"),

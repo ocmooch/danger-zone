@@ -712,6 +712,29 @@ def _first_player_anchor(node: Tag) -> Tag | None:
     return None
 
 
+def _all_player_anchors(node: Tag | None) -> list[Tag]:
+    """Every player-card anchor in ``node``, in document order.
+
+    A trade renders one row per *side*, but a side's player cell can list
+    several players (a 2-for-2, a 2-for-3, …). ``_first_player_anchor``
+    only ever returned the first, so every player after the first on a side
+    was silently dropped. Prefer the ``a.playerName`` anchors; fall back to
+    any anchor whose href carries a player id (the standalone ``/player/NNN``
+    or in-page ``playerId=`` card link).
+    """
+    if node is None:
+        return []
+    named = node.select("a.playerName")
+    if named:
+        return list(named)
+    out: list[Tag] = []
+    for a in node.find_all("a", href=True):
+        href = a.get("href")
+        if isinstance(href, str) and ("playerId=" in href or "/player/" in href):
+            out.append(a)
+    return out
+
+
 def _player_id_from_anchor(anchor: Tag) -> str | None:
     href = anchor.get("href", "")
     if isinstance(href, str):
@@ -1092,8 +1115,9 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
     Real NFL.com history-page row shape (one ``<tr>`` per move):
         Date | Week | Type | Player(s) | From | To | By
 
-    Add / Drop emit a single record; Trade rows emit two records (one
-    for each side of the move) and rely on the runner to stitch
+    Add / Drop emit a single record; a Trade row covers one *side* of the
+    move (From → To) and can list several players, so it emits an out/in
+    pair *per player* and relies on the runner to stitch
     ``counterpart_team_id`` together via the shared NFL.com txn id
     pulled from the row's CSS class. Lineup-change rows are *skipped*
     here — they belong in team_rosters, not transactions.
@@ -1143,32 +1167,41 @@ def _parse_transaction_row(tr: Tag) -> list[ParsedTransaction]:
     nfl_txn_id = _txn_id_from_row_classes(tr)
 
     if txn_type == "trade":
-        # Two records, one per side of the move. The runner stitches
-        # counterpart_team_id by matching nfl_transaction_id.
-        return [
-            _make_txn(
-                nfl_txn_id,
-                "trade",
-                executed_at,
-                effective_week,
-                team_id=from_team_id,
-                player_id=player_id,
-                player_name=player_name,
-                direction="out",
-                notes=notes,
-            ),
-            _make_txn(
-                nfl_txn_id,
-                "trade",
-                executed_at,
-                effective_week,
-                team_id=to_team_id,
-                player_id=player_id,
-                player_name=player_name,
-                direction="in",
-                notes=notes,
-            ),
-        ]
+        # One out/in pair per player on this side of the move. NFL.com can
+        # list multiple players in a single side's cell (2-for-2, 2-for-3,
+        # …); reading only the first dropped every other player's leg. The
+        # runner stitches counterpart_team_id by matching nfl_transaction_id.
+        legs: list[ParsedTransaction] = []
+        for anchor in _all_player_anchors(player_node):
+            anchor_player_id = _player_id_from_anchor(anchor)
+            anchor_player_name = anchor.get_text(strip=True)
+            legs.append(
+                _make_txn(
+                    nfl_txn_id,
+                    "trade",
+                    executed_at,
+                    effective_week,
+                    team_id=from_team_id,
+                    player_id=anchor_player_id,
+                    player_name=anchor_player_name,
+                    direction="out",
+                    notes=notes,
+                )
+            )
+            legs.append(
+                _make_txn(
+                    nfl_txn_id,
+                    "trade",
+                    executed_at,
+                    effective_week,
+                    team_id=to_team_id,
+                    player_id=anchor_player_id,
+                    player_name=anchor_player_name,
+                    direction="in",
+                    notes=notes,
+                )
+            )
+        return legs
 
     # Add / Waiver-add: player goes To a team; team_id comes from the To cell.
     # Drop: player comes From a team; team_id comes from the From cell.
