@@ -763,6 +763,81 @@ class TrendingPlayer(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class PlayerAdp(Base):
+    """Average Draft Position for one (season, source, source-player).
+
+    The *market* counterpart to a draft pick: where the consensus drafted a
+    player vs where this league actually did. Rows are stored **source-faithful
+    and raw** (one per source per player) — the weighted multi-source blend and
+    the reach/value delta are computed downstream in the dashboard, so the
+    weighting stays tunable without a re-ingest.
+
+    ``player_id`` is nullable: an ADP row whose source player could not be
+    resolved to a canonical ``players`` row is still stored (with its source
+    name/team/position) so coverage is auditable and matching can be re-run
+    later without re-pulling. Unresolved rows are also counted in
+    ``source_health.parse_failures`` for visibility, mirroring the Sleeper
+    crawler's ``unresolved_*`` convention.
+
+    ``requested_format`` is what the per-season league map asked for (2010 →
+    half-PPR, 2011+ → full-PPR); ``actual_format`` is what the source could
+    actually serve. When they differ, ``format_fallback`` is set so the
+    substitution is surfaced loudly downstream rather than silently degrading
+    the signal.
+    """
+
+    __tablename__ = "player_adp"
+    __table_args__ = (
+        UniqueConstraint(
+            "season_id",
+            "source",
+            "source_player_key",
+            name="uq_player_adp_season_source_key",
+        ),
+        Index("ix_player_adp_season", "season_id"),
+        Index("ix_player_adp_player", "player_id"),
+    )
+
+    adp_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("seasons.season_id", name="fk_player_adp_season"),
+        nullable=False,
+    )
+    # NULL ⇒ source player unresolved to a canonical id (kept for re-match + audit).
+    player_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_adp_player"),
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)  # 'ffc' | 'mfl' | 'sleeper'
+    # Source-stable key for the upsert: the source's own player id, else a
+    # synthesized name|team|pos slug for sources (FFC) that expose no id.
+    source_player_key: Mapped[str] = mapped_column(String, nullable=False)
+    source_player_name: Mapped[str | None] = mapped_column(String)
+    source_position: Mapped[str | None] = mapped_column(String(8))
+    source_nfl_team: Mapped[str | None] = mapped_column(String(8))
+    requested_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    actual_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    format_fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    teams: Mapped[int | None] = mapped_column(Integer)
+    adp: Mapped[float] = mapped_column(Float, nullable=False)
+    adp_stdev: Mapped[float | None] = mapped_column(Float)
+    adp_high: Mapped[float | None] = mapped_column(Float)
+    adp_low: Mapped[float | None] = mapped_column(Float)
+    times_drafted: Mapped[int | None] = mapped_column(Integer)
+    pulled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("pipeline_runs.run_id", name="fk_player_adp_run"),
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 # ---------------------------------------------------------------------------
 # Injury reports
 # ---------------------------------------------------------------------------
@@ -849,6 +924,7 @@ __all__ = [
     "OwnerIdentityOverride",
     "PipelineRun",
     "Player",
+    "PlayerAdp",
     "PlayerAvailability",
     "PlayerIdOverride",
     "PlayerInjuryReport",

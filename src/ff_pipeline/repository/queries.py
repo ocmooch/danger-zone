@@ -24,6 +24,7 @@ from ff_pipeline.repository.models import (
     Owner,
     PipelineRun,
     Player,
+    PlayerAdp,
     PlayerAvailability,
     PlayerIdentityLink,
     PlayerInjuryReport,
@@ -767,6 +768,36 @@ def injury_reports_for_week(
         .all()
     )
     return {r.player_id: r for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# Average draft position (ADP)
+# ---------------------------------------------------------------------------
+
+
+def player_adp_rows_for_season(session: Session, season_id: int) -> dict[int, list[PlayerAdp]]:
+    """Return ``player_id → [PlayerAdp, ...]`` (one per source) for a season.
+
+    Raw, source-faithful rows for the BFF to blend (the weighted composite and
+    the reach/value delta are dashboard math, kept out of storage so the
+    weighting stays tunable). Unresolved rows (``player_id`` NULL) are coverage
+    audit only and are omitted here — they cannot attach to a pick.
+    """
+    rows = (
+        session.execute(
+            select(PlayerAdp).where(
+                PlayerAdp.season_id == season_id,
+                PlayerAdp.player_id.is_not(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out: dict[int, list[PlayerAdp]] = {}
+    for row in rows:
+        assert row.player_id is not None  # guaranteed by the WHERE above
+        out.setdefault(row.player_id, []).append(row)
+    return out
 
 
 # ---------------------------------------------------------------------------

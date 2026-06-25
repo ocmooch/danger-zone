@@ -123,7 +123,7 @@ def run_cmd(
     source: str | None = typer.Option(
         None,
         "--source",
-        help="Sync only one source: nflverse | nfl_com | sleeper.",
+        help="Sync only one source: nflverse | nfl_com | sleeper | team_defense | adp.",
     ),
     season: int | None = typer.Option(
         None,
@@ -170,7 +170,13 @@ def run_cmd(
         )
         raise typer.Exit(code=2)
 
-    if source is not None and source not in {"nflverse", "nfl_com", "sleeper", "team_defense"}:
+    if source is not None and source not in {
+        "nflverse",
+        "nfl_com",
+        "sleeper",
+        "team_defense",
+        "adp",
+    }:
         _stub(f"run --source {source}", "unknown source")
 
     from sqlalchemy.orm import Session
@@ -202,6 +208,8 @@ def run_cmd(
                     )
                 elif src == "team_defense":
                     _run_team_defense(ss, seasons=[target_year])
+                elif src == "adp":
+                    _run_adp(ss, settings=settings, target_year=target_year)
                 else:  # sleeper
                     _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
             # Deterministic post-ingest overrides re-apply on every run so a
@@ -344,6 +352,33 @@ def _run_sleeper(ss: Session, *, settings: Settings, target_year: int, week: int
             "projected_points left NULL. Run `ff-pipeline scoring load` first.",
             fg="yellow",
             err=True,
+        )
+
+
+def _run_adp(ss: Session, *, settings: Settings, target_year: int) -> None:
+    """Pull consensus ADP (FFC + MFL) for one season, then commit.
+
+    Opt-in only (``--source adp``); it is not part of the default all-source
+    sequence because it hits external mock-draft aggregators on a separate
+    cadence. Backfill every season with ``scripts/backfill_adp.py``.
+    """
+    from ff_pipeline.crawlers.adp.runner import run_adp
+
+    result = run_adp(ss, league_id=settings.nfl_league_id, year=target_year)
+    ss.commit()
+    if not result.outcomes:
+        typer.secho(
+            f"adp year={target_year}: no season row; nothing stored.",
+            fg="yellow",
+            err=True,
+        )
+        return
+    for o in result.outcomes:
+        fb = f" (fallback→{o.actual_format})" if o.format_fallback else ""
+        typer.echo(
+            f"adp {o.source} {target_year} [{o.actual_format or o.requested_format}{fb}]: "
+            f"+{o.rows_added}~{o.rows_updated}, matched {o.matched}, "
+            f"unresolved {o.unresolved} ({o.status})"
         )
 
 
