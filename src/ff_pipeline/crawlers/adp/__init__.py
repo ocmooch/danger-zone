@@ -1,7 +1,7 @@
 """Average Draft Position (ADP) ingestion.
 
-Pulls consensus ADP from public sources (Fantasy Football Calculator, MyFantasy
-League, and — deferred — Sleeper), resolves each source player to a canonical
+Pulls consensus ADP from public sources (Fantasy Football Calculator,
+MyFantasyLeague, and Sleeper), resolves each source player to a canonical
 ``players.player_id``, and stores raw per-source rows in ``player_adp``. The
 weighted multi-source blend and the reach/value delta are computed downstream in
 the dashboard, so the weighting stays tunable without re-ingesting.

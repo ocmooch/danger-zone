@@ -3,7 +3,7 @@
 Drives ``run_adp`` against ``LocalFixtureAdpSource`` (no network) and a fresh
 sqlite DB built via the alembic migrations. Verifies:
 
-* Raw per-source rows land in ``player_adp`` (FFC + MFL), keyed by
+* Raw per-source rows land in ``player_adp`` (FFC + MFL + Sleeper), keyed by
   ``(season, source, source_player_key)``.
 * Source players resolve to canonical ``player_id`` by name+position, with the
   era guard disambiguating same-name players (two "Mike Williams").
@@ -65,15 +65,23 @@ def _seed(session: Session) -> dict[str, int]:
         session.add(Season(league_id=LEAGUE_ID, year=year))
     session.flush()
 
-    def player(name: str, pos: str, rookie: int, last: int) -> Player:
-        p = Player(name_full=name, position=pos, rookie_year=rookie, last_season=last)
+    def player(
+        name: str, pos: str, rookie: int, last: int, *, sleeper_id: str | None = None
+    ) -> Player:
+        p = Player(
+            name_full=name,
+            position=pos,
+            rookie_year=rookie,
+            last_season=last,
+            sleeper_id=sleeper_id,
+        )
         session.add(p)
         session.flush()
         return p
 
     ids = {
-        "ab": player("Antonio Brown", "WR", 2010, 2021).player_id,
-        "ap": player("Adrian Peterson", "RB", 2007, 2021).player_id,
+        "ab": player("Antonio Brown", "WR", 2010, 2021, sleeper_id="s-ab").player_id,
+        "ap": player("Adrian Peterson", "RB", 2007, 2021, sleeper_id="s-ap").player_id,
         # Two same-name players; only the 2010-2017 one is active in 2015.
         "mw_old": player("Mike Williams", "WR", 2010, 2017).player_id,
         "mw_new": player("Mike Williams", "WR", 2017, 2024).player_id,
@@ -86,6 +94,7 @@ def _sources() -> list[LocalFixtureAdpSource]:
     return [
         LocalFixtureAdpSource(name="ffc", directory=FIXTURE_DIR),
         LocalFixtureAdpSource(name="mfl", directory=FIXTURE_DIR),
+        LocalFixtureAdpSource(name="sleeper", directory=FIXTURE_DIR),
     ]
 
 
@@ -104,10 +113,13 @@ def test_adp_run_stores_and_resolves(session: Session) -> None:
     # MFL fixture: 2 rows, both resolve (comma name handled).
     assert by_source["mfl"].matched == 2
     assert by_source["mfl"].unresolved == 0
+    # Sleeper fixture: 2 rows, both resolve by direct sleeper_id.
+    assert by_source["sleeper"].matched == 2
+    assert by_source["sleeper"].unresolved == 0
 
     # The unresolved FFC row is stored with a NULL player_id (kept, not dropped).
     total = session.execute(select(func.count()).select_from(PlayerAdp)).scalar_one()
-    assert total == 6
+    assert total == 8
     null_rows = session.execute(
         select(func.count()).select_from(PlayerAdp).where(PlayerAdp.player_id.is_(None))
     ).scalar_one()
@@ -128,9 +140,9 @@ def test_queries_helper_groups_sources_per_player(session: Session) -> None:
     season_id = session.execute(select(Season.season_id).where(Season.year == 2015)).scalar_one()
     rows = player_adp_rows_for_season(session, season_id)
 
-    # Antonio Brown has both an FFC and an MFL row → blendable downstream.
+    # Antonio Brown has FFC, MFL, and Sleeper rows → blendable downstream.
     ab_sources = {r.source for r in rows[ids["ab"]]}
-    assert ab_sources == {"ffc", "mfl"}
+    assert ab_sources == {"ffc", "mfl", "sleeper"}
     # The unresolved player is absent from the per-player map (audit-only).
     assert all(pid is not None for pid in rows)
 
@@ -168,7 +180,7 @@ def test_bookkeeping_written(session: Session) -> None:
         .all()
     )
     sources = {h.source for h in health}
-    assert sources == {"adp:ffc", "adp:mfl"}
+    assert sources == {"adp:ffc", "adp:mfl", "adp:sleeper"}
     ffc_health = next(h for h in health if h.source == "adp:ffc")
     assert ffc_health.status == "success"
     assert ffc_health.parse_failures == 1  # the unresolved FFC row

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Backfill ``player_adp`` for every season from consensus ADP sources.
 
-Pulls Average Draft Position from Fantasy Football Calculator + MyFantasyLeague
-(Sleeper ADP is a deferred follow-up) for each season, resolves source players to
-canonical ``players`` rows, and stores raw per-source rows. The dashboard blends
-the sources and derives the reach/value delta downstream.
+Pulls Average Draft Position from Fantasy Football Calculator, MyFantasyLeague,
+and Sleeper for each season, resolves source players to canonical ``players``
+rows, and stores raw per-source rows. The dashboard blends the sources and
+derives the reach/value delta downstream.
 
 ADP is format-specific: 2010 is pulled half-PPR, every later season full-PPR, with
 a loud fallback (half → standard) recorded on the row when a source can't serve
@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backfill player_adp from FFC + MFL.")
+    parser = argparse.ArgumentParser(description="Backfill player_adp from FFC + MFL + Sleeper.")
     parser.add_argument("--start", type=int, default=2010, help="First season year (default 2010)")
     parser.add_argument("--end", type=int, default=2025, help="Last season year (default 2025)")
     parser.add_argument("--teams", type=int, default=12, help="League size for ADP (default 12)")

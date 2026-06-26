@@ -114,15 +114,20 @@ def run_adp(
 
 
 def _live_sources(stack: ExitStack) -> list[AdpSource]:
-    """Default production sources: FFC + MFL (Sleeper ADP is a deferred follow-up).
+    """Default production sources: FFC + MFL + Sleeper.
 
     Imported lazily so the httpx-backed clients aren't constructed when a caller
     injects its own (fixture) sources — the common path in tests.
     """
     from ff_pipeline.crawlers.adp.ffc import LiveFfcSource
     from ff_pipeline.crawlers.adp.mfl import LiveMflSource
+    from ff_pipeline.crawlers.adp.sleeper import LiveSleeperAdpSource
 
-    return [stack.enter_context(LiveFfcSource()), stack.enter_context(LiveMflSource())]
+    return [
+        stack.enter_context(LiveFfcSource()),
+        stack.enter_context(LiveMflSource()),
+        stack.enter_context(LiveSleeperAdpSource()),
+    ]
 
 
 def _do_run(
