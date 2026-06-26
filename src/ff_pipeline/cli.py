@@ -356,7 +356,7 @@ def _run_sleeper(ss: Session, *, settings: Settings, target_year: int, week: int
 
 
 def _run_adp(ss: Session, *, settings: Settings, target_year: int) -> None:
-    """Pull consensus ADP (FFC + MFL) for one season, then commit.
+    """Pull consensus ADP (FFC + MFL + Sleeper) for one season, then commit.
 
     Opt-in only (``--source adp``); it is not part of the default all-source
     sequence because it hits external mock-draft aggregators on a separate
