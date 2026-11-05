@@ -107,10 +107,10 @@ off-machine copy is one `age`-encrypted tarball (`seal-vN.tar.age`, ≈ 25–30 
 full live DB compresses to ~24 MB with `gzip -1`). The passphrase lives in the user's password
 manager, never in `.env` or a repo. `verify.py` checks the decrypted copy.
 
-The user owns all three cloud accounts; the pipeline never holds cloud credentials. S0 produces the
-archive and prints the upload commands, and the user (or an approved session) runs them. A
-`legacy vault-status` check records the sha256 of the archive each copy should hold so a later
-session can confirm each copy by downloading and hashing it.
+Encryption uses two `age` public keys, so the weekly job never holds a decryption secret. Uploads
+are automated (weekly via Windows Task Scheduler, and right after every seal), verified by hash per
+destination, and rotated to at most 5 copies per destination with seal-v1 pinned. Full design,
+setup checklist and the key/passphrase guidance: **`05_VAULT_OFFSITE_SYNC.md`**.
 
 ### 4.3 Seal versions
 

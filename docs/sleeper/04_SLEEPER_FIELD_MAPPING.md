@@ -144,6 +144,43 @@ score identically.
 The derived 2026 set is diffed against 2025 and presented for sign-off (D-10). Keys with `v == 0`
 are skipped.
 
+### 5.1 D-10 preparation — live league `scoring_settings` vs 2025 NFL.com rules (2026-11-05)
+
+Source: `GET /v1/league/1393640392104099840` → `scoring_settings` (non-zero keys only), compared
+with the 51 rules stored for 2025. **Status: TBD — awaiting user sign-off.**
+
+**Same as 2025 (once mapped):** passing 0.04/yd (= 1 per 25), 4/TD, −2/INT, 2/2-pt; rushing and
+receiving 0.1/yd (= 1 per 10), 6/TD, 2/2-pt; **full PPR** (`rec = 1`); 100/200-yard rush and receiving
+bonuses (+1/+3) and 300/400-yard passing bonuses (+1/+3); long-TD bonuses 40+ (+1) and 50+ (+3)
+for passing, rushing and receiving; fumble lost −2; XP 1; DEF TD 6, INT 2, fumble recovery 2, sack 1,
+safety 2, special-teams TD 6; points-allowed brackets 10/7/4/1/0/−1/−4 (same breakpoints);
+yards-allowed values (Sleeper splits 300–399 and 500+ into finer brackets with the same points).
+
+**Equivalent if Sleeper stacks keys as expected (⚑ confirm from S5 `players_points`):**
+
+| Sleeper | Effect | 2025 NFL.com |
+|---------|--------|--------------|
+| `fgm 3` + `fgm_50_59 2` + `fgm_60p 2` | 3 for any FG, +2 at 50+ → 5 | 0–49 = 3, 50+ = 5 |
+| `bonus_pass_yd_300 1` + `bonus_pass_yd_400 3` (likewise 100/200 rush/rec) | Sleeper bonuses stack: a 400-yard game = 1 + 3 = **4** | stored as tiers (+1 at 300, +3 at 400); the existing engine and `verify` history decide whether NFL.com paid 3 or 4 |
+| `pass_td_40p 1` + `pass_td_50p 3` (and rush/rec) | a 55-yard TD = 1 + 3 = **4** if stacked | same question as above |
+
+**New on Sleeper (no 2025 equivalent):**
+
+| Key | Points | Meaning | Data needed |
+|-----|--------|---------|-------------|
+| `pass_cmp_40p` | +1 | each completion of 40+ yards (QB) | count from nflverse play-by-play (same approach as the long-TD backfill) |
+| `rush_40p` | +1 | each rush of 40+ yards | PBP |
+| `rec_40p` | +1 | each reception of 40+ yards | PBP |
+| `fum_rec_td` | +6 | offensive player recovers a fumble for a TD | PBP |
+| `blk_kick` | +2 | DEF blocks a kick | nflverse team-defense / PBP |
+| `def_2pt` | +2 | DEF returns a 2-pt try | PBP |
+| `st_fum_rec`, `def_st_fum_rec` | +2 | special-teams fumble recovery | PBP |
+
+So the 2026 rules are "2025 + big-play (40+) bonuses on non-TD plays + a few rare DEF/ST events".
+The 40+ yard play bonuses are the ones that will move scores most; they need a PBP-derived stat key
+in `player_stats_raw` before the reconstruction can match Sleeper's official points. Plan for that
+in S6 (new stat keys `passing_completions_40p`, `rushing_plays_40p`, `receptions_40p`).
+
 ## 6. Transactions → `transactions`
 
 Sleeper groups one move as one transaction with `adds{player: roster}` / `drops{player: roster}`.

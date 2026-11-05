@@ -9,7 +9,8 @@ both repos. Status: **planned, not started.**
 | [01_PIPELINE_ARCHITECTURE.md](01_PIPELINE_ARCHITECTURE.md) | ff-pipeline design: Sleeper league adapter, raw archive, schema additions, identity, scoring |
 | [02_PIPELINE_BUILD_PLAN.md](02_PIPELINE_BUILD_PLAN.md) | Milestones S0–S9 |
 | [03_LEGACY_PRESERVATION.md](03_LEGACY_PRESERVATION.md) | **Start here.** Sealing and protecting the NFL.com era (S0/S1) |
-| [04_SLEEPER_FIELD_MAPPING.md](04_SLEEPER_FIELD_MAPPING.md) | Sleeper endpoint/field → canonical schema crosswalk (confirm ⚑ items in S2) |
+| [04_SLEEPER_FIELD_MAPPING.md](04_SLEEPER_FIELD_MAPPING.md) | Sleeper endpoint/field → canonical schema crosswalk (confirm ⚑ items in S2); §5.1 compares 2026 scoring with 2025 |
+| [05_VAULT_OFFSITE_SYNC.md](05_VAULT_OFFSITE_SYNC.md) | Automated encrypted uploads to Google Drive, iCloud and the private vault repo; retention; encryption keys and passphrase |
 
 Dashboard side: `../../../dz-dashboard/docs/sleeper/` (architecture, build plan D0–D8, cross-platform UX rules).
 
