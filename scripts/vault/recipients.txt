@@ -1,0 +1,6 @@
+# age recipients for the legacy vault — PUBLIC keys only (safe to commit).
+# Every archive is encrypted to both; either private key can decrypt.
+# primary  — passphrase-wrapped, stored in Apple Passwords (created 2026-11-07)
+age1h8sj96fdcgt22fmz0y6l2uhqhm40t36n3mmwpm3deydqzpsqs3lsn8lrfk
+# recovery — paper copy, stored offline (created 2026-11-07)
+age1wjtgzqpw6nmppx8rws6lsarcew7yuzf46qee8rjvjumsznczjuxsf0kc4n

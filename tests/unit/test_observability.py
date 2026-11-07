@@ -21,6 +21,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from ff_pipeline.observability import (
+    HISTORICAL_BACKUP_DIRNAME,
     BackupError,
     collect_status,
     perform_backup,
@@ -340,6 +341,35 @@ def test_perform_backup_prunes_milestone_backups_by_count(tmp_path: Path) -> Non
     assert not milestones[1].exists()
     assert milestones[2].exists()
     assert daily.exists()
+
+
+def test_perform_backup_never_prunes_historical_dir(tmp_path: Path) -> None:
+    db_path = tmp_path / "fantasy.db"
+    engine = create_app_engine(f"sqlite:///{db_path}")
+    upgrade_to_head(engine=engine)
+    engine.dispose()
+
+    backup_dir = tmp_path / "backups"
+    historical = backup_dir / HISTORICAL_BACKUP_DIRNAME
+    historical.mkdir(parents=True)
+    # Names that would match both sweeps if they sat directly in backup_dir.
+    old_daily = historical / "fantasy-2020-01-01.db"
+    milestone = historical / "fantasy-pre-anything-20200101T000000Z.db"
+    loose_bak = historical / "fantasy.db.bak-20260616-135228"
+    for path in (old_daily, milestone, loose_bak):
+        path.write_bytes(b"placeholder")
+
+    result = perform_backup(
+        database_url=f"sqlite:///{db_path}",
+        backup_dir=backup_dir,
+        today=date(2026, 5, 28),
+        keep_days=1,
+        keep_milestones=1,
+    )
+    assert result.pruned_files == ()
+    assert old_daily.exists()
+    assert milestone.exists()
+    assert loose_bak.exists()
 
 
 def test_perform_backup_keep_milestones_none_keeps_all(tmp_path: Path) -> None:

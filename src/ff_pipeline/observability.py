@@ -51,6 +51,10 @@ _BACKUP_DATE_RE = re.compile(r"fantasy-(\d{4}-\d{2}-\d{2})\.db$")
 # date, so the daily-retention sweep deliberately leaves them alone — which is
 # why they accumulate without bound. ``keep_milestones`` caps them by count.
 _BACKUP_MILESTONE_RE = re.compile(r"fantasy-.*\.db$")
+# Old one-off backups kept forever (legacy seal S0). Both prune sweeps only look
+# at files directly inside the backup dir, so nothing in this subdirectory —
+# or any other subdirectory — is ever pruned.
+HISTORICAL_BACKUP_DIRNAME = "historical"
 
 
 # ---------------------------------------------------------------------------
