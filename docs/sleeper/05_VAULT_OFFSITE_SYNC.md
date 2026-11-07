@@ -1,6 +1,6 @@
 # 05 — Vault Off-site Sync and Encryption Keys
 
-**Status:** designed 2026-11-05; scripts built in S0 · **Repo:** `danger-zone`
+**Status:** designed 2026-11-05; built + first sync verified 2026-11-07 (S0) — `scripts/vault/` · **Repo:** `danger-zone`
 **Parent:** `03_LEGACY_PRESERVATION.md` §4 (vault) · **Decision:** D-7
 
 This covers how encrypted vault archives get from this machine to Google Drive, iCloud Drive and the
@@ -15,7 +15,7 @@ decision only the user can make: **the encryption keys and passphrase.**
  producers                          ~/ff-legacy-vault/
  ─────────                          ├── seals/seal-v1-…/           (plain, read-only, local only)
  legacy seal / amend   ─┐           ├── outbox/                    (encrypted archives ready to ship)
- weekly snapshot job   ─┼─► tar ─► age (public keys only) ─► outbox/dz-vault_<kind>_<date>_<sha8>.tar.age
+ weekly snapshot job   ─┼─► tar ─► age (public keys only) ─► outbox/dz-vault_<kind>_<date>_<sha8>.tar.gz.age
                         │                                         │
                         │              vault_sync (weekly + after every seal)
                         │      ┌──────────────────┬───────────────┴──────────┬────────────────────────┐
@@ -39,8 +39,8 @@ decision only the user can make: **the encryption keys and passphrase.**
 
 | Kind | Name | Produced by | Contents |
 |------|------|-------------|----------|
-| Seal | `dz-vault_seal-v1_20261106_<sha8>.tar.age` | `legacy seal` / `legacy amend` | the full seal directory (`03` §4.1) |
-| Snapshot | `dz-vault_snap_20261108_<sha8>.tar.age` | weekly job | online backup of the live DB + `data/assets/` + seeds + `data/raw/sleeper/` + manifest |
+| Seal | `dz-vault_seal-v1_20261106_<sha8>.tar.gz.age` | `legacy seal` / `legacy amend` | the full seal directory (`03` §4.1) |
+| Snapshot | `dz-vault_snap_20261108_<sha8>.tar.gz.age` | weekly job | online backup of the live DB + `data/assets/` + seeds + `data/raw/sleeper/` + manifest |
 
 Snapshots carry the growing Sleeper era between seals; seals are the certified checkpoints.
 
@@ -128,8 +128,10 @@ Register-ScheduledTask -TaskName "dz-vault-sync" -Action $action -Trigger $trigg
 ## 7. Restore drill (monthly while in season, quarterly otherwise)
 
 1. Download the newest archive from **one** destination (rotate: Drive → iCloud → GitHub).
-2. `age -d -i <identity> archive.tar.age | tar -x -C <scratch>`.
-3. `python verify.py` in the extracted directory.
+2. `scripts/vault/restore_check.sh primary|recovery <archive>` — decrypts to a temp dir, runs
+   `verify.py`, deletes the temp dir. (By hand: `age -d -i <identity> -o a.tar.gz <archive>`,
+   `tar -xzf a.tar.gz -C <scratch>`, `python3 <scratch>/<dir>/verify.py`.)
+3. (included in step 2)
 4. Record the result in `sync-status.json` (`last_drill`).
 
 ## 8. The encryption decision (needed before S0 runs)
@@ -170,8 +172,9 @@ plain Ubuntu terminal:
 sudo apt install -y age
 mkdir -p ~/vault-keys && chmod 700 ~/vault-keys && cd ~/vault-keys
 
-# Primary key: generated, then wrapped with your passphrase. Prints the public key.
-age-keygen -o primary.key && age -p -o primary.key.age primary.key
+# Primary key: generated, then wrapped with a passphrase (age suggests one). ASCII-armored (-a)
+# so the whole file can be pasted as text into a password-manager note.
+age-keygen -o primary.key && age -p -a -o primary.key.age primary.key
 grep 'public key' primary.key        # copy this age1… line
 shred -u primary.key                 # keep only the passphrase-protected copy
 
@@ -184,10 +187,12 @@ shred -u recovery.key
 
 Then:
 
-1. Upload `primary.key.age` to your password manager as an attachment; save the passphrase there.
+1. Paste the armored `primary.key.age` text into your password manager entry (as done 2026-11-07:
+   Apple Passwords, in the entry's Notes — it has no attachments) and save the passphrase there.
 2. Store the paper recovery key (with the passphrase written on it) somewhere physically safe.
 3. Give Claude **only the two `age1…` public keys**. They go into `scripts/vault/recipients.txt`.
-4. S0 runs a decrypt test with each key before the first upload is trusted.
+4. S0 runs a decrypt test with each key (`scripts/vault/restore_check.sh`) before the first upload
+   is trusted.
 
 ## 9. One-time setup checklist (user)
 

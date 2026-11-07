@@ -40,7 +40,7 @@ Tasks
    guarded table, assets, seeds, NFL.com fixtures, dictionary docs, `MANIFEST.json` (`03` §5),
    `verify.py`.
 4. Run it → `~/ff-legacy-vault/seal-v1-<date>/`; `python verify.py`; `chmod -R a-w`.
-5. `age`-encrypt the seal directory into `seal-v1.tar.age`; upload to Google Drive, iCloud Drive
+5. `age`-encrypt the seal directory into `seal-v1.tar.gz.age`; upload to Google Drive, iCloud Drive
    and a release on the private `ff-legacy-vault` repo (D-7); download each once, decrypt and run
    `verify.py`.
 6. Commit `docs/sleeper/seals/seal-v1.manifest.json` (counts + hashes only).

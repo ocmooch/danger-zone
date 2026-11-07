@@ -94,16 +94,16 @@ Decided 2026-11-05 (D-7): off-machine copies go to cloud accounts the user contr
 | Copy | Location | Medium | Mutability |
 |------|----------|--------|------------|
 | A | `~/ff-legacy-vault/` inside WSL, **outside** the repo `data/` dir | WSL VHDX | `chmod -R a-w` after write |
-| B | Google Drive — `ff-legacy-vault/seal-vN.tar.age` | cloud | keep every version; enable Drive file versioning |
+| B | Google Drive — `ff-legacy-vault/seal-vN.tar.gz.age` | cloud | keep every version; enable Drive file versioning |
 | C | iCloud Drive — same archive | cloud | keep every version |
-| D | Separate **private** GitHub repo `ocmooch/ff-legacy-vault` — archive attached as a release asset per seal (`gh release create seal-v1 seal-v1.tar.age`), plus `MANIFEST.json` and `verify.py` committed in plain text | cloud | releases are never deleted; repo stays private |
+| D | Separate **private** GitHub repo `ocmooch/ff-legacy-vault` — archive attached as a release asset per seal (`gh release create seal-v1 seal-v1.tar.gz.age`), plus `MANIFEST.json` and `verify.py` committed in plain text | cloud | releases are never deleted; repo stays private |
 
 **Not in `danger-zone` or `dz-dashboard`.** Both repos are **public**. Anything committed there,
 even in a "protected" directory, is publicly readable and stays in git history forever. Only the
 hash manifest (no names, no data) is committed to `danger-zone` (D-8).
 
 **Encryption.** The vault contains league members' names, usernames and avatars, so every
-off-machine copy is one `age`-encrypted tarball (`seal-vN.tar.age`, ≈ 25–30 MB compressed; the
+off-machine copy is one `age`-encrypted tarball (`seal-vN.tar.gz.age`, ≈ 25–30 MB compressed; the
 full live DB compresses to ~24 MB with `gzip -1`). The passphrase lives in the user's password
 manager, never in `.env` or a repo. `verify.py` checks the decrypted copy.
 
