@@ -263,6 +263,28 @@ If a `pre_kickoff` row is missing for a week the games have already played, the 
 
 ---
 
+## Legacy vault
+
+The NFL.com era (2010–2025 + the 2026 stub) is sealed as **seal-v1** (2026-11-07). Full design:
+`docs/sleeper/03_LEGACY_PRESERVATION.md` and `docs/sleeper/05_VAULT_OFFSITE_SYNC.md`.
+
+- **Local copy:** `~/ff-legacy-vault/seal-v1-2026-11-07/` (read-only). Check it any time with
+  `python3 ~/ff-legacy-vault/seal-v1-2026-11-07/verify.py`.
+- **Off-machine copies** (age-encrypted, same bytes everywhere): Google Drive
+  `ff-legacy-vault/`, iCloud Drive `ff-legacy-vault/`, and a release on the private
+  `ocmooch/ff-legacy-vault` repo. seal-v1 is pinned forever; up to 4 newer archives are kept.
+- **Tamper evidence:** the seal's `MANIFEST.json` is committed at
+  `docs/sleeper/seals/seal-v1.manifest.json` (hashes and counts only; sha256
+  `d11c9ff0b39e032e093cccab958224cdce97a9ea1ab4ec6d778599bba6178830`).
+- **Sync:** `scripts/vault/vault_sync.sh` (no args = weekly snapshot + sync; also
+  `pack-seal`, `snapshot`, `sync`, `status`). Per-destination status:
+  `~/ff-legacy-vault/sync-status.json`; logs: `data/logs/vault_sync-<date>.log`.
+- **Restore drill:** download one archive, then in a plain terminal (never through Claude)
+  `scripts/vault/restore_check.sh primary <archive>` (passphrase) or `… recovery <archive>`
+  (paste the paper key). Restore procedure: `03_LEGACY_PRESERVATION.md` §12.
+- **Old one-off DB backups** live in `data/backups/historical/`; backup pruning never touches
+  that folder.
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):
