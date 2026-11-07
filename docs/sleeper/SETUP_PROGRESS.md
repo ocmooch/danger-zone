@@ -31,8 +31,8 @@ paper key is kept).
 | Encrypted `dz-vault_seal-v1_20261107_5ade3104.tar.gz.age` (22.5 MB) | ☑ |
 | Uploaded + hash-verified: Google Drive, iCloud, GitHub release | ☑ |
 | Drive + GitHub copies downloaded back to `~/ff-legacy-vault/drill/`, sha256 identical | ☑ |
-| **Decrypt test, primary key** — user runs `scripts/vault/restore_check.sh primary ~/ff-legacy-vault/drill/gdrive/dz-vault_seal-v1_20261107_5ade3104.tar.gz.age` | ☐ |
-| **Decrypt test, recovery key** — user runs `scripts/vault/restore_check.sh recovery ~/ff-legacy-vault/drill/github/dz-vault_seal-v1_20261107_5ade3104.tar.gz.age` | ☐ |
+| **Decrypt test, primary key** — user runs `scripts/vault/restore_check.sh primary ~/ff-legacy-vault/drill/gdrive/dz-vault_seal-v1_20261107_5ade3104.tar.gz.age` | ☑ 2026-11-07 |
+| **Decrypt test, recovery key** — user runs `scripts/vault/restore_check.sh recovery ~/ff-legacy-vault/drill/github/dz-vault_seal-v1_20261107_5ade3104.tar.gz.age` | ☑ 2026-11-07 |
 | Manifest committed: `docs/sleeper/seals/seal-v1.manifest.json` (sha256 `d11c9ff0…8830`) | ☑ |
 | 15 loose `data/*.bak*` → `data/backups/historical/` (none deleted); prune skip tested | ☑ |
 | RUNBOOK "Legacy vault" section | ☑ |
@@ -51,3 +51,4 @@ After both decrypt tests pass → step 6 (scheduled task), then delete `~/ff-leg
 - 2026-11-07 — step 4 verified (iCloudDrive/ff-legacy-vault exists). Step 2 verified: ~/vault-keys (700) holds only armored primary.key.age, no secret keys on disk; both public keys validated + written to scripts/vault/recipients.txt. Pending user confirms: primary saved in Apple Passwords, paper key stored. Next: step 3 rclone.
 - 2026-11-07 — step 3 verified (gdrive-vault: type drive, scope drive.file, lsd OK). Key-storage confirmations done. **Steps 1–5 complete → next: build S0** (seal + sync scripts, decrypt test with each key, first verified uploads), then step 6.
 - 2026-11-07 — **S0 built.** Seal-v1 sealed locally, encrypted, uploaded to all three destinations, each hash-verified; cloud copies downloaded back and identical. Archive name changed to `.tar.gz.age` (gzip inside); §8.3 updated for armored primary in Apple Passwords. Waiting on the user's two decrypt tests (restore_check.sh, separate terminal), then step 6.
+- 2026-11-07 — **both decrypt tests PASSED** (primary via passphrase on the Drive copy; recovery via paper key on the GitHub copy). Note: recovery mode needs the `AGE-SECRET-KEY-1…` line — pasting an `age1…` public key gives "unknown identity type"; `age-keygen -y` confirms a paper key matches the recovery recipient. Next: step 6 (scheduled task), then delete `~/ff-legacy-vault/drill/`.
