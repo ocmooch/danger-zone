@@ -12,7 +12,7 @@ paper key is kept).
 | 3 | `rclone config` → remote `gdrive-vault`, type `drive`, blank client ID, scope `drive.file`, auto config yes, no shared drive | user, Ubuntu terminal | `rclone listremotes` shows `gdrive-vault:`; `rclone lsd gdrive-vault:` succeeds | ☑ 2026-11-07 |
 | 4 | iCloud for Windows: sign in, enable iCloud Drive, create `iCloudDrive\ff-legacy-vault`, **Always keep on this device** | user, Windows | `ls /mnt/c/Users/MainUser/iCloudDrive/ff-legacy-vault` | ☑ 2026-11-07 |
 | 5 | `ff-legacy-vault` repo is PRIVATE | — | `gh repo view ocmooch/ff-legacy-vault --json visibility` | ☑ 2026-11-05 |
-| 6 | Register scheduled task (§5) — **after S0 builds `scripts/vault/vault_sync.sh`** | user, Windows PowerShell | `schtasks.exe /Query /TN dz-vault-sync` | ☐ |
+| 6 | Register scheduled task (§5) — **after S0 builds `scripts/vault/vault_sync.sh`** | user, Windows PowerShell | `schtasks.exe /Query /TN dz-vault-sync` | ☑ 2026-11-07 |
 
 ## Open confirmations (non-secret)
 
@@ -52,3 +52,4 @@ After both decrypt tests pass → step 6 (scheduled task), then delete `~/ff-leg
 - 2026-11-07 — step 3 verified (gdrive-vault: type drive, scope drive.file, lsd OK). Key-storage confirmations done. **Steps 1–5 complete → next: build S0** (seal + sync scripts, decrypt test with each key, first verified uploads), then step 6.
 - 2026-11-07 — **S0 built.** Seal-v1 sealed locally, encrypted, uploaded to all three destinations, each hash-verified; cloud copies downloaded back and identical. Archive name changed to `.tar.gz.age` (gzip inside); §8.3 updated for armored primary in Apple Passwords. Waiting on the user's two decrypt tests (restore_check.sh, separate terminal), then step 6.
 - 2026-11-07 — **both decrypt tests PASSED** (primary via passphrase on the Drive copy; recovery via paper key on the GitHub copy). Note: recovery mode needs the `AGE-SECRET-KEY-1…` line — pasting an `age1…` public key gives "unknown identity type"; `age-keygen -y` confirms a paper key matches the recovery recipient. Next: step 6 (scheduled task), then delete `~/ff-legacy-vault/drill/`.
+- 2026-11-07 — **step 6 done.** `dz-vault-sync` registered (weekly Sun 03:00, StartWhenAvailable); manual `schtasks /Run` → Last Result 0: seal skipped as already present everywhere, first weekly snapshot `dz-vault_snap_20261107_8040d8b8` uploaded + verified to gdrive/icloud/github. `~/ff-legacy-vault/drill/` deleted. **Vault setup complete.** Remaining: `ff-legacy-vault` MANIFEST/verify.py PR; D-10 waits on 2026 data.
