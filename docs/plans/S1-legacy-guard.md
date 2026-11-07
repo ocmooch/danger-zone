@@ -214,8 +214,16 @@ After the sweep, full `legacy verify` still PASSED against seal-v1.
 Backup `data/backups/fantasy-pre-s1-legacy-guard.db` (integrity ok, revision `d4e6f8a0b2c4`) →
 `migrate up` → `legacy seal --adopt` (seal-v1, 2010–2025, 112,279 rows) → full verify PASSED →
 `run --source nflverse` OK → `rescore --season 2015` OK → `sqlite3` UPDATE on 2015 refused →
-full verify PASSED. Remaining: dz-dashboard gate against the guarded DB (install the new
-package there only now that the live DB is migrated).
+full verify PASSED.
+
+dz-dashboard gate (its `ff-pipeline` dependency is an editable path to this checkout, so it
+already runs the S1 code): backend pytest 494 passed (fixture DB built by this repo's
+migrations, incl. S1), ruff clean, mypy clean, write-check empty; frontend typecheck clean,
+vitest 210 passed, `gen:api` contract no drift (BFF on :8800 against the live guarded DB).
+Live smoke: all 53 GET routes of the BFF against the live DB (season routes for sealed 2015 and
+2025) → 67/67 HTTP 200, no errors in the server log; full `legacy verify` still PASSED after.
+Not S1: `npm run lint` is listed in dz-dashboard's CLAUDE.md but `web/package.json` has no
+`lint` script.
 
 ## Decisions (defaults approved by the user 2026-11-07)
 
