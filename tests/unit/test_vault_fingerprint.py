@@ -43,7 +43,8 @@ ROWS = [
 COLS = ["matchup_id", "season_id", "team_score", "is_win", "extra"]
 
 
-def _db(rows: list[tuple], path: Path) -> sqlite3.Connection:
+def _fingerprint(rows: list[tuple], path: Path) -> dict:
+    """Build a tiny DB from ``rows``, fingerprint ``matchups``, and close it."""
     conn = sqlite3.connect(path)
     conn.executescript(
         """
@@ -55,17 +56,20 @@ def _db(rows: list[tuple], path: Path) -> sqlite3.Connection:
     )
     conn.executemany("INSERT INTO matchups VALUES (?,?,?,?,?,?)", rows)
     conn.commit()
-    return conn
+    try:
+        return vfy.fingerprint_table(conn, "matchups", COLS)
+    finally:
+        conn.close()
 
 
 @pytest.fixture
 def base(tmp_path: Path) -> dict:
-    return vfy.fingerprint_table(_db(ROWS, tmp_path / "a.db"), "matchups", COLS)
+    return _fingerprint(ROWS, tmp_path / "a.db")
 
 
 def test_deterministic_and_insertion_order_independent(tmp_path: Path, base: dict) -> None:
-    again = vfy.fingerprint_table(_db(ROWS, tmp_path / "b.db"), "matchups", COLS)
-    shuffled = vfy.fingerprint_table(_db(ROWS[::-1], tmp_path / "c.db"), "matchups", COLS)
+    again = _fingerprint(ROWS, tmp_path / "b.db")
+    shuffled = _fingerprint(ROWS[::-1], tmp_path / "c.db")
     assert again == base == shuffled
     assert base["row_count"] == 3
     assert set(base["by_season"]) == {"2014", "2015"}
@@ -75,14 +79,14 @@ def test_json_key_order_and_bookkeeping_do_not_matter(tmp_path: Path, base: dict
     rows = [list(r) for r in ROWS]
     rows[0][4] = '{"a": 1, "b": 2}'  # same JSON, different key order
     rows[1][5] = "2030-12-31"  # updated_at is not a legacy column
-    got = vfy.fingerprint_table(_db([tuple(r) for r in rows], tmp_path / "d.db"), "matchups", COLS)
+    got = _fingerprint([tuple(r) for r in rows], tmp_path / "d.db")
     assert got == base
 
 
 def test_change_is_localised_to_its_season(tmp_path: Path, base: dict) -> None:
     rows = [list(r) for r in ROWS]
     rows[2][2] = 0.1000001
-    got = vfy.fingerprint_table(_db([tuple(r) for r in rows], tmp_path / "e.db"), "matchups", COLS)
+    got = _fingerprint([tuple(r) for r in rows], tmp_path / "e.db")
     assert got["table_sha256"] != base["table_sha256"]
     assert got["by_season"]["2014"] == base["by_season"]["2014"]
     assert got["by_season"]["2015"] != base["by_season"]["2015"]
