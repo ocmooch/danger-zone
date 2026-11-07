@@ -205,7 +205,7 @@ Un-sealing 2015 and deleting a sealed owner were refused the same way.
 | `export` | unchanged stub (exit 64) |
 | `scoring load` into a sealed year | **refused (intended)** — `legacy_guard: scoring_rules row belongs to a sealed season` |
 | `prune-players` | **pre-existing failure, not S1** — `FOREIGN KEY constraint failed` on the same 5 players with the old code on an unguarded copy; `--dry-run` works |
-| `reconstruct`, `reconstruct-owners`, `draft`, `avatars`, `run/backfill --source nfl_com` | **refused on sealed years (intended)**; not run live (NFL.com cookie + network). The NFL.com league upsert also writes the sealed `leagues` row, so a default `run` (which still includes `nfl_com`) would be refused if NFL.com reports a new season — retire `nfl_com` from the default `run` in the Sleeper work. |
+| `reconstruct`, `reconstruct-owners`, `draft`, `avatars`, `run/backfill --source nfl_com` | **cannot run — NFL.com is defunct and unreachable.** Their writes to sealed years are refused by the triggers anyway (covered by the integration tests). A default `run` still includes the dead `nfl_com` step; retire it from the default `run` in the Sleeper work. |
 
 After the sweep, full `legacy verify` still PASSED against seal-v1.
 

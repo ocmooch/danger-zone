@@ -308,9 +308,11 @@ keep refreshing on those years.
   it fails, records a `legacy_amendments` row and stores the next seal baseline (`seal-v2`, …).
   It then prints the vault follow-up: build and sync an archive for the new seal
   (`scripts/vault/build_vault_dir.py`, `scripts/vault/vault_sync.sh`; automated in S9).
-- Commands that rewrite NFL.com-era facts (`reconstruct`, `reconstruct-owners`, `draft`,
-  `avatars`, `scoring load`, the NFL.com path of `run`/`backfill`) are refused on sealed years by
-  design — wrap them in `legacy amend` if a correction is really needed.
+- NFL.com is defunct and unreachable, so the sealed data cannot be re-crawled: the DB and the
+  vault copies are the only record. The NFL.com commands (`reconstruct`, `reconstruct-owners`,
+  `draft`, `avatars`, the NFL.com path of `run`/`backfill`) can no longer run, and `scoring load`
+  into a sealed year is refused. Corrections are scripted fixes or overlays run through
+  `legacy amend`, never a re-crawl.
 
 ## When to escalate to development work
 
