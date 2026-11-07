@@ -1,6 +1,6 @@
 # S1 — Legacy guard (plan)
 
-Status: **PLAN** · branch `feature/s1-legacy-guard` · written 2026-11-07
+Status: **PLAN — approved 2026-11-07, ready to BUILD** · branch `feature/s1-legacy-guard` · written 2026-11-07
 Source docs: `docs/sleeper/02_PIPELINE_BUILD_PLAN.md` §S1, `docs/sleeper/03_LEGACY_PRESERVATION.md`
 §3, §5–§9. This plan is the build contract; where it deviates from those docs it says so.
 
@@ -150,7 +150,7 @@ Integration (`tests/integration/test_legacy_guard.py`, tiny sealed fixture DB):
 - [ ] RUNBOOK "Legacy vault" section gains `legacy verify/status/amend`.
 - [ ] `SETUP_PROGRESS`-style note not needed; `02` §S1 marked done; PR → `dev`.
 
-## Open questions (defaults apply unless the user overrides)
+## Decisions (defaults approved by the user 2026-11-07)
 
 1. Global identity tables: allow INSERT of new rows, block changes to sealed rows — **default yes**.
 2. Sealing via an explicit `legacy seal --adopt` step instead of inside the migration — **default yes**.
