@@ -1,19 +1,15 @@
-"""Legacy-vault fingerprint serializer and archive retention (S0, shared with S1).
+"""Legacy-vault archive retention (S0).
 
-The fingerprint must be deterministic across runs and insertion order, and
-stable under JSON key order; it must ignore bookkeeping columns and localise a
-change to the season it happened in.
+The fingerprint serializer tests moved to ``test_legacy_fingerprint.py``, which
+runs them against both this script and ``ff_pipeline.legacy.fingerprint``.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import sqlite3
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-import pytest
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -31,76 +27,7 @@ def _load(name: str) -> ModuleType:
     return module
 
 
-vfy = _load("verify")
 sync = _load("vault_sync")
-
-ROWS = [
-    # matchup_id, season_id, team_score, is_win, extra, updated_at
-    (1, 1, 101.5, 1, '{"b": 2, "a": 1}', "2026-01-01"),
-    (2, 1, 88.25, 0, None, "2026-01-01"),
-    (3, 2, 0.1, 1, '{"x": [1, 2]}', "2026-01-01"),
-]
-COLS = ["matchup_id", "season_id", "team_score", "is_win", "extra"]
-
-
-def _fingerprint(rows: list[tuple], path: Path) -> dict:
-    """Build a tiny DB from ``rows``, fingerprint ``matchups``, and close it."""
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE seasons (season_id INTEGER PRIMARY KEY, year INTEGER);
-        INSERT INTO seasons VALUES (1, 2014), (2, 2015);
-        CREATE TABLE matchups (matchup_id INTEGER PRIMARY KEY, season_id INTEGER,
-            team_score FLOAT, is_win BOOLEAN, extra JSON, updated_at DATETIME);
-        """
-    )
-    conn.executemany("INSERT INTO matchups VALUES (?,?,?,?,?,?)", rows)
-    conn.commit()
-    try:
-        return vfy.fingerprint_table(conn, "matchups", COLS)
-    finally:
-        conn.close()
-
-
-@pytest.fixture
-def base(tmp_path: Path) -> dict:
-    return _fingerprint(ROWS, tmp_path / "a.db")
-
-
-def test_deterministic_and_insertion_order_independent(tmp_path: Path, base: dict) -> None:
-    again = _fingerprint(ROWS, tmp_path / "b.db")
-    shuffled = _fingerprint(ROWS[::-1], tmp_path / "c.db")
-    assert again == base == shuffled
-    assert base["row_count"] == 3
-    assert set(base["by_season"]) == {"2014", "2015"}
-
-
-def test_json_key_order_and_bookkeeping_do_not_matter(tmp_path: Path, base: dict) -> None:
-    rows = [list(r) for r in ROWS]
-    rows[0][4] = '{"a": 1, "b": 2}'  # same JSON, different key order
-    rows[1][5] = "2030-12-31"  # updated_at is not a legacy column
-    got = _fingerprint([tuple(r) for r in rows], tmp_path / "d.db")
-    assert got == base
-
-
-def test_change_is_localised_to_its_season(tmp_path: Path, base: dict) -> None:
-    rows = [list(r) for r in ROWS]
-    rows[2][2] = 0.1000001
-    got = _fingerprint([tuple(r) for r in rows], tmp_path / "e.db")
-    assert got["table_sha256"] != base["table_sha256"]
-    assert got["by_season"]["2014"] == base["by_season"]["2014"]
-    assert got["by_season"]["2015"] != base["by_season"]["2015"]
-
-
-def test_canonical_row_types() -> None:
-    line = vfy.canonical_row(
-        ["b", "f", "j", "n", "x"],
-        ["BOOLEAN", "FLOAT", "JSON", "VARCHAR", "BLOB"],
-        [1, 0.1, '{"z": 1, "a": null}', None, b"\x01\xff"],
-    )
-    assert line == '{"b":true,"f":0.1,"j":{"a":null,"z":1},"n":null,"x":"01ff"}'
-    # Malformed JSON is kept verbatim rather than crashing the fingerprint.
-    assert vfy.canonical_value("{not json", "JSON") == "{not json"
 
 
 def test_retention_pins_seal_v1_and_keeps_four_newest() -> None:

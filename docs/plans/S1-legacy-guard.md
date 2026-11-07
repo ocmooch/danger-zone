@@ -1,6 +1,6 @@
 # S1 — Legacy guard (plan)
 
-Status: **PLAN — approved 2026-11-07, ready to BUILD** · branch `feature/s1-legacy-guard` · written 2026-11-07
+Status: **BUILT 2026-11-07** (rehearsed on a copy of the live DB; live rollout pending user approval) · branch `feature/s1-legacy-guard` · written 2026-11-07
 Source docs: `docs/sleeper/02_PIPELINE_BUILD_PLAN.md` §S1, `docs/sleeper/03_LEGACY_PRESERVATION.md`
 §3, §5–§9. This plan is the build contract; where it deviates from those docs it says so.
 
@@ -145,10 +145,69 @@ Integration (`tests/integration/test_legacy_guard.py`, tiny sealed fixture DB):
 - [ ] Live DB has the guard; `legacy verify` (full) passes against seal-v1.
 - [ ] `ff-pipeline run --source nflverse` and `rescore --season 2015` still succeed.
 - [ ] `UPDATE matchups SET team_score = 0 WHERE season_id = <2015>` in the `sqlite3` shell is refused.
-- [ ] Command sweep table (§5) recorded in this file; nothing in "must keep working" is broken.
-- [ ] Unit + integration tests above pass; CI green (Python 3.14 — close every sqlite connection).
-- [ ] RUNBOOK "Legacy vault" section gains `legacy verify/status/amend`.
+- [x] Command sweep table (§5) recorded in this file; nothing in "must keep working" is broken.
+- [x] Unit + integration tests above pass (636 total, Python 3.12 locally). [ ] CI green (Python 3.14 — close every sqlite connection) — on the PR.
+- [x] RUNBOOK "Legacy vault" section gains `legacy verify/status/amend`.
 - [ ] `SETUP_PROGRESS`-style note not needed; `02` §S1 marked done; PR → `dev`.
+
+## As built (2026-11-07)
+
+Code: `src/ff_pipeline/legacy/` (`spec`, `fingerprint`, `triggers`, `verify`, `seal`, `amend`,
+`cli`), `repository/legacy_guard.py`, migration `e2a4c6e8f0b1_s1_legacy_guard` (41 triggers).
+
+### Deviations from the design above
+
+1. **Verify compares a sealed-scope baseline, not the whole-table manifest.** The committed
+   seal-v1 manifest hashes every row (incl. 2026 rows and all 4,286 players), but new owners,
+   new players and 2026 writes are allowed — so the live tables legitimately drift from it.
+   `legacy seal --adopt` checks the live DB against the committed manifest **exactly**
+   (whole tables), then stores a baseline over the sealed scope only: rows of sealed seasons,
+   plus registered global rows. It also asserts the sealed seasons' per-season hashes equal the
+   committed manifest's (same rows, same algorithm). `legacy verify` compares against that.
+2. **`legacy_sealed_rows` holds every sealed row (112,279), with a 16-hex row hash**
+   (`row_hash` column; WITHOUT ROWID). The design had ~130 global rows only. Without per-row
+   data, verify cannot "print the first differing PKs"; the hashes make that exact
+   (changed / missing / added). Table and season hashes stay full sha256.
+3. **`players` guard uses the registry** (the 1,875 players with an `nfl_com_player_id` at seal
+   time) instead of `OLD.nfl_com_player_id IS NOT NULL`. Same rows on the live DB, but inert on
+   a fresh/test DB with no seal.
+4. **UPDATE guards fire only when a guarded value actually changes** (`NEW.c IS NOT OLD.c`),
+   rather than on `UPDATE OF <cols>`. Idempotent re-writes of identical values (upsert re-runs)
+   pass; any real change is refused.
+5. **`team_rosters` checks both links** (`team_id → teams.season_id` *or* `season_year`), so a
+   row can't slip into a sealed year through either column.
+6. **Also guarded:** `legacy_seals` is append-only like `legacy_amendments`;
+   `legacy_sealed_rows` changes only inside an unlock.
+7. **Hamlin 2022 override** no-ops when 2022 is sealed (its result is already in the seal), so
+   `rescore`/`run` never try to rewrite sealed rows. Unit test added.
+8. Sealing/re-seal logic lives in `legacy/seal.py` (not listed in §3). Full verify does not hash
+   assets (03 §7 mentions it; the vault's `verify.py` covers asset bytes).
+9. The amend backup goes to `data/backups/amendments/` — pruning only scans the top level of
+   `data/backups/`, so it is never pruned.
+
+### Command sweep (§5) — on a guarded copy of the live DB, 2026-11-07
+
+Copy: `sqlite3 .backup` of `data/fantasy.db` → `migrate up` → `legacy seal --adopt` (PASSED,
+112,279 rows) → full verify 2.3 s, quick 1.6 s (the preflight cost).
+`sqlite3` shell: `UPDATE matchups SET team_score = 0 WHERE season_id = <2015>` →
+`legacy_guard: matchups row belongs to a sealed season; use ff-pipeline legacy amend`.
+Un-sealing 2015 and deleting a sealed owner were refused the same way.
+
+| Command | Result |
+|---------|--------|
+| `run --source nflverse` | **keeps working** (players +176 ~3,732, stats +3,007) |
+| `rescore --season 2015`; `rescore` (all) | **keeps working** (Hamlin override skips sealed 2022) |
+| `backfill-projections --season 2015` | **keeps working** |
+| `injury-reports --season 2015` | **keeps working** |
+| `team-defense --season 2015` | **keeps working** |
+| `status`, `backup`, `serve` | **keep working** (`/health`, `/seasons/{id}`, standings, teams → 200) |
+| `verify --season 2015 --reconcile` | **unchanged** — 178 pass / 6 fail, exit 1, identical on the unguarded DB (pre-existing drift) |
+| `export` | unchanged stub (exit 64) |
+| `scoring load` into a sealed year | **refused (intended)** — `legacy_guard: scoring_rules row belongs to a sealed season` |
+| `prune-players` | **pre-existing failure, not S1** — `FOREIGN KEY constraint failed` on the same 5 players with the old code on an unguarded copy; `--dry-run` works |
+| `reconstruct`, `reconstruct-owners`, `draft`, `avatars`, `run/backfill --source nfl_com` | **refused on sealed years (intended)**; not run live (NFL.com cookie + network). The NFL.com league upsert also writes the sealed `leagues` row, so a default `run` (which still includes `nfl_com`) would be refused if NFL.com reports a new season — retire `nfl_com` from the default `run` in the Sleeper work. |
+
+After the sweep, full `legacy verify` still PASSED against seal-v1.
 
 ## Decisions (defaults approved by the user 2026-11-07)
 

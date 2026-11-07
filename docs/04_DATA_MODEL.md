@@ -84,6 +84,9 @@ One row per (league, year). 13 years on NFL.com → 13 rows.
 | `runner_up_team_id` | INTEGER FK → teams | NULL if not completed |
 | `last_place_team_id` | INTEGER FK → teams | NULL if not completed |
 | `created_at`, `updated_at` | TIMESTAMP | |
+| `is_sealed` | BOOLEAN NOT NULL DEFAULT 0 | Legacy guard (S1): 1 = frozen; see *Legacy guard tables* |
+| `sealed_at` | TEXT | UTC ISO time the season was sealed |
+| `seal_id` | TEXT | Seal that sealed it (e.g. `seal-v1`) |
 
 UNIQUE(`league_id`, `year`)
 
@@ -492,6 +495,29 @@ One row per (run, source) — lightweight per-source health record.
 | `error_message` | TEXT | NULL on success |
 | `duration_ms` | INTEGER | |
 | `created_at` | TIMESTAMP | |
+
+### Legacy guard tables (S1)
+
+Protect the sealed NFL.com era (2010–2025). Timestamps are UTC ISO text
+(`YYYY-MM-DDTHH:MM:SSZ`) so the guard triggers can compare them. Design:
+`docs/sleeper/03_LEGACY_PRESERVATION.md` §6–§8, `docs/plans/S1-legacy-guard.md`.
+
+| Table | Purpose |
+|-------|---------|
+| `legacy_guard(id = 1, unlocked_until, unlocked_reason)` | Single-row lock. Guard triggers are bypassed only while `unlocked_until` is in the future (`legacy amend` opens a 10-minute window). |
+| `legacy_seals(seal_id PK, created_at, kind, git_commit, alembic_revision, manifest_sha256, manifest JSON)` | Fingerprint baselines (`adopt` = seal-v1, `amend` = seal-vN+1). Newest row is current. Append-only. |
+| `legacy_sealed_rows(table_name, pk, row_hash)` PK(`table_name`, `pk`), WITHOUT ROWID | Every row the current seal protects, with a 16-hex hash of its legacy columns. Global-table guards check membership; `legacy verify` uses the hashes to name changed rows. Changes only inside an unlock. |
+| `legacy_amendments(amendment_id PK, created_at, reason, command, git_commit, before_seal, after_seal, tables_changed JSON, rows_changed JSON)` | Audit log of every change to sealed data. Append-only. |
+
+**Guard triggers** (SQLite, `legacy_guard_<table>_<event>`): sealed seasons refuse INSERT, DELETE
+and any UPDATE that changes a legacy column, for `teams`, `matchups`, `transactions`,
+`scoring_rules`, `team_rosters`, `player_availability`; sealed `seasons` rows refuse edits
+(including un-sealing) and deletes; sealed rows of `leagues`, `owners`, `commissioners`,
+`owner_identity_overrides`, `player_id_overrides`, `player_identity_links` and the
+`players.player_id/nfl_com_player_id` mapping refuse changes and deletes, while new rows are
+allowed. Columns outside the seal's legacy column set (later additive columns, `updated_at`,
+re-derivable `players` columns) stay writable. Re-derivable tables (`player_stats_*`,
+`projections`, …) are not guarded.
 
 ---
 

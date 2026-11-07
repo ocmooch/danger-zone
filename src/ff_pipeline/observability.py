@@ -516,6 +516,10 @@ def _sqlite_path_from_url(url: str) -> Path | None:
     return Path(raw).resolve()
 
 
+# Public name for callers outside this module (the legacy guard).
+sqlite_path_from_url = _sqlite_path_from_url
+
+
 __all__ = [
     "DEFAULT_BACKUP_RETENTION_DAYS",
     "BackupError",
@@ -526,4 +530,5 @@ __all__ = [
     "collect_status",
     "perform_backup",
     "render_status",
+    "sqlite_path_from_url",
 ]

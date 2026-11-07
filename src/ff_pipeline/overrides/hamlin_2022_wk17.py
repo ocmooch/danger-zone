@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from ff_pipeline.logging_config import get_logger
+from ff_pipeline.repository.legacy_guard import is_unlocked
 from ff_pipeline.repository.models import (
     Matchup,
     PlayerStatsRaw,
@@ -116,6 +117,10 @@ def apply_hamlin_2022_wk17_override(
     season = _season_for_year(session, year=SEASON_YEAR, league_id=league_id)
     if season is None:
         return HamlinOverrideResult(applied=False, reason="2022 season not present")
+    if season.is_sealed and not is_unlocked(session):
+        # The ruling is already part of the sealed 2022 data; re-deriving it
+        # from re-derivable stats must not try to rewrite sealed rows.
+        return HamlinOverrideResult(applied=False, reason="2022 season is sealed")
 
     rules = _load_rules(session, season.season_id)
     if not rules.rules:

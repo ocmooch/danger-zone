@@ -285,6 +285,33 @@ The NFL.com era (2010–2025 + the 2026 stub) is sealed as **seal-v1** (2026-11-
 - **Old one-off DB backups** live in `data/backups/historical/`; backup pruning never touches
   that folder.
 
+### Legacy guard (live DB)
+
+2010–2025 are sealed in the live DB (`seasons.is_sealed = 1`). SQLite triggers refuse any change
+to their league facts from any writer — the pipeline, a script, or the `sqlite3` shell
+(`legacy_guard: … use ff-pipeline legacy amend`). Stats, scoring, projections and nflverse data
+keep refreshing on those years.
+
+- `ff-pipeline legacy status` — current seal, sealed seasons, lock state, trigger count, last
+  amendment.
+- `ff-pipeline legacy verify` — full check against the current seal (triggers, sealed seasons,
+  per-table and per-season hashes, row registry, `integrity_check`); `--quick` skips the
+  row-by-row and integrity checks. Prints table, seasons and the changed / missing / added
+  primary keys. Never repairs; exit 1 on mismatch.
+- **Preflight:** `run`, `backfill`, `reconstruct`, `rescore` and `migrate up` run
+  `legacy verify --quick` first and stop (exit 1) on a mismatch. If that happens, do not
+  "fix forward": compare with the newest vault copy and restore or amend deliberately.
+- **Changing sealed data** (the only way):
+  `ff-pipeline legacy amend --reason "Correct 2019 wk7 trade (issue #NN)" -- uv run python scripts/fix_x.py --apply`.
+  It requires a clean verify, writes `data/backups/amendments/fantasy-pre-amend-<slug>-<ts>.db`
+  (never pruned), unlocks for 10 minutes (`--unlock-minutes`), runs the command, relocks even if
+  it fails, records a `legacy_amendments` row and stores the next seal baseline (`seal-v2`, …).
+  It then prints the vault follow-up: build and sync an archive for the new seal
+  (`scripts/vault/build_vault_dir.py`, `scripts/vault/vault_sync.sh`; automated in S9).
+- Commands that rewrite NFL.com-era facts (`reconstruct`, `reconstruct-owners`, `draft`,
+  `avatars`, `scoring load`, the NFL.com path of `run`/`backfill`) are refused on sealed years by
+  design — wrap them in `legacy amend` if a correction is really needed.
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):
