@@ -1,6 +1,6 @@
 # S1 — Legacy guard (plan)
 
-Status: **BUILT 2026-11-07** (rehearsed on a copy of the live DB; live rollout pending user approval) · branch `feature/s1-legacy-guard` · written 2026-11-07
+Status: **BUILT and APPLIED to the live DB 2026-11-07** (PR #67 → `dev`) · branch `feature/s1-legacy-guard` · written 2026-11-07
 Source docs: `docs/sleeper/02_PIPELINE_BUILD_PLAN.md` §S1, `docs/sleeper/03_LEGACY_PRESERVATION.md`
 §3, §5–§9. This plan is the build contract; where it deviates from those docs it says so.
 
@@ -142,9 +142,9 @@ Integration (`tests/integration/test_legacy_guard.py`, tiny sealed fixture DB):
 
 ## Done when
 
-- [ ] Live DB has the guard; `legacy verify` (full) passes against seal-v1.
-- [ ] `ff-pipeline run --source nflverse` and `rescore --season 2015` still succeed.
-- [ ] `UPDATE matchups SET team_score = 0 WHERE season_id = <2015>` in the `sqlite3` shell is refused.
+- [x] Live DB has the guard; `legacy verify` (full) passes against seal-v1.
+- [x] `ff-pipeline run --source nflverse` and `rescore --season 2015` still succeed.
+- [x] `UPDATE matchups SET team_score = 0 WHERE season_id = <2015>` in the `sqlite3` shell is refused.
 - [x] Command sweep table (§5) recorded in this file; nothing in "must keep working" is broken.
 - [x] Unit + integration tests above pass (636 total, Python 3.12 locally). [ ] CI green (Python 3.14 — close every sqlite connection) — on the PR.
 - [x] RUNBOOK "Legacy vault" section gains `legacy verify/status/amend`.
@@ -208,6 +208,14 @@ Un-sealing 2015 and deleting a sealed owner were refused the same way.
 | `reconstruct`, `reconstruct-owners`, `draft`, `avatars`, `run/backfill --source nfl_com` | **refused on sealed years (intended)**; not run live (NFL.com cookie + network). The NFL.com league upsert also writes the sealed `leagues` row, so a default `run` (which still includes `nfl_com`) would be refused if NFL.com reports a new season — retire `nfl_com` from the default `run` in the Sleeper work. |
 
 After the sweep, full `legacy verify` still PASSED against seal-v1.
+
+### Live rollout — 2026-11-07
+
+Backup `data/backups/fantasy-pre-s1-legacy-guard.db` (integrity ok, revision `d4e6f8a0b2c4`) →
+`migrate up` → `legacy seal --adopt` (seal-v1, 2010–2025, 112,279 rows) → full verify PASSED →
+`run --source nflverse` OK → `rescore --season 2015` OK → `sqlite3` UPDATE on 2015 refused →
+full verify PASSED. Remaining: dz-dashboard gate against the guarded DB (install the new
+package there only now that the live DB is migrated).
 
 ## Decisions (defaults approved by the user 2026-11-07)
 
