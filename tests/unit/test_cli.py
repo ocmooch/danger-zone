@@ -143,13 +143,20 @@ def _sources_run(manager: mock.Mock) -> list[str]:
     return [call[0] for call in manager.mock_calls]
 
 
-def test_run_no_source_sequences_all_three_in_order() -> None:
+def test_run_no_source_sequences_defaults_in_order() -> None:
     with _patch_run_machinery() as manager:
         result = runner.invoke(app, ["run"])
     assert result.exit_code == 0, result.stdout
-    # team_defense runs last: it matches against the DEF players the NFL.com
-    # roster sync creates earlier in the sequence.
-    assert _sources_run(manager) == ["nflverse", "nfl_com", "sleeper", "team_defense"]
+    # NFL.com is defunct (S2): it no longer runs by default. team_defense
+    # still runs last, after the player rows exist.
+    assert _sources_run(manager) == ["nflverse", "sleeper", "team_defense"]
+
+
+def test_run_source_nfl_com_still_runs_explicitly() -> None:
+    with _patch_run_machinery() as manager:
+        result = runner.invoke(app, ["run", "--source", "nfl_com"])
+    assert result.exit_code == 0, result.stdout
+    assert _sources_run(manager) == ["nfl_com"]
 
 
 def test_run_no_source_defaults_to_previous_season_before_september() -> None:

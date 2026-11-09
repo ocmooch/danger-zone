@@ -4,8 +4,7 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S2. Design sources: `01_PIPELIN
 §4 (raw archive) and §12 (settings), `04_SLEEPER_FIELD_MAPPING.md` (endpoints and ⚑ items),
 `01` §14 (fixture scenarios), `00` D-1 / D-10 / D-11.
 
-**Status:** PLAN. Nothing below is built. The decisions at the end need the user's approval before
-the BUILD session starts.
+**Status:** PLAN approved 2026-11-09 (all decisions S2-D1..D10 accepted as recommended). BUILD in progress.
 
 ## Goal
 
@@ -240,7 +239,7 @@ commit, the user also reviews the fixture diff.
 - Vault spec §6 says `ff-pipeline status` should warn on a stale vault copy, but that warning
   is not built. It is an S9 item (it could also surface `evergreen.ok`).
 
-## Decisions (recommended defaults — need the user's approval)
+## Decisions (defaults approved by the user 2026-11-09)
 
 | # | Decision | Recommended default | Alternative |
 |---|---|---|---|

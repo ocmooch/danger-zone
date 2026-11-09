@@ -409,7 +409,8 @@ def test_upgrade_downgrade_upgrade_keeps_fingerprints(tmp_path: Path) -> None:
         cfg = _make_config()
         with engine.connect() as connection, _fk_disabled_for_sqlite(connection):
             cfg.attributes["connection"] = connection
-            command.downgrade(cfg, "-1")
+            # Below S1 (its down_revision), not "-1": later migrations sit on top.
+            command.downgrade(cfg, "d4e6f8a0b2c4")
         assert _all_fingerprints(db) == before
         upgrade_to_head(engine=engine)
     finally:

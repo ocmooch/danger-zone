@@ -281,6 +281,42 @@ class Asset(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class SourcePayload(Base):
+    """Index row for one revision of one raw platform API response (S2).
+
+    The bytes live gzip'd on disk, content-addressed by ``sha256`` (see
+    ``ff_pipeline.archive.raw_store``); this table records which request
+    produced them and when. UNIQUE(``sha256``, ``request_url``): an identical
+    re-fetch bumps ``last_fetched_at`` / ``fetch_count`` on the existing row,
+    and changed bytes (stat corrections, late trades) become a new row — a
+    full revision history. Not legacy-guarded: it holds no sealed-season rows.
+    """
+
+    __tablename__ = "source_payloads"
+    __table_args__ = (
+        UniqueConstraint("sha256", "request_url", name="uq_source_payloads_sha256_url"),
+        Index("ix_source_payloads_url_last", "request_url", "last_fetched_at"),
+        Index("ix_source_payloads_endpoint", "source", "endpoint", "season_year", "week"),
+    )
+
+    payload_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)  # 'sleeper_league'
+    endpoint: Mapped[str] = mapped_column(String(32), nullable=False)
+    platform_league_id: Mapped[str | None] = mapped_column(String)
+    season_year: Mapped[int | None] = mapped_column(Integer)
+    week: Mapped[int | None] = mapped_column(Integer)
+    request_url: Mapped[str] = mapped_column(String, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    http_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetch_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 # ---------------------------------------------------------------------------
 # Scoring rules
 # ---------------------------------------------------------------------------
