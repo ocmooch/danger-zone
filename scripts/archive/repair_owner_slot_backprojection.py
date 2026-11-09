@@ -1,27 +1,27 @@
-"""Repair mike's back-projected slot (team_abbrev) and name on his 2010-2015 teams.
+"""Repair moved_owner's back-projected slot (team_abbrev) and name on his 2010-2015 teams.
 
-The lost-team reconstruction that restored mike's (owner 3) 2010-2015 team-seasons
+The lost-team reconstruction that restored moved_owner's (owner 3) 2010-2015 team-seasons
 stamped them with his *modern* franchise identity instead of the period-correct one:
 
-- ``team_abbrev = "12"`` (mike's current NFL.com slot) on rows whose real slot
+- ``team_abbrev = "12"`` (moved_owner's current NFL.com slot) on rows whose real slot
   those years was **"3"**.
-- ``team_name = "Batesohardithurts"`` (mike's current 2025 name) on those same
+- ``team_name = "Team 014"`` (moved_owner's current 2025 name) on those same
   rows, instead of the period-correct slot-3 name.
 
 This is the same back-projection class as the owner-identity / phantom-team repair
 (see ``scripts/archive/repair_owner_identity_and_phantom_teams.py``), but it landed
 in ``team_abbrev`` and the canonical name. The effect, in each of 2010-2015: a
-**duplicate ``team_abbrev = "12"``** (mike + the real slot-12 owner) and a
+**duplicate ``team_abbrev = "12"``** (moved_owner + the real slot-12 owner) and a
 **missing slot 3**.
 
 Source of truth for the corrected slot-3 names is per-season NFL.com history (the
 same path used for the reconstruction); they are cross-checked against the
 downstream dashboard's authoritative ``(year, slot) -> name`` table, where each
-season's surviving slot-12 name already matches the non-mike DB row exactly.
+season's surviving slot-12 name already matches the non-moved_owner DB row exactly.
 
 Only ``teams.team_abbrev`` and ``teams.team_name`` change. Matchups, rosters,
 transactions, draft position, and ``final_rank`` key on ``team_id`` and stay
-attached. mike's 2018-2025 rows are left alone -- slot 12 is correct there.
+attached. moved_owner's 2018-2025 rows are left alone -- slot 12 is correct there.
 
 Dry-run by default. ``--apply`` backs up the SQLite file, then commits.
 """
@@ -43,16 +43,16 @@ from ff_pipeline.settings import get_settings
 MIKE_OWNER_ID = 3
 CORRECT_SLOT = "3"
 BACKPROJECTED_SLOT = "12"
-BACKPROJECTED_NAME = "Batesohardithurts"
+BACKPROJECTED_NAME = "Team 014"
 
-# year -> period-correct NFL.com slot-3 team name (mike's real team those years).
+# year -> period-correct NFL.com slot-3 team name (moved_owner's real team those years).
 SLOT3_NAMES: dict[int, str] = {
-    2010: "ThisTeamMakesSullyNervous",
-    2011: "IAMTHESACKO",
-    2012: "Sulladismichaelbushleague",
-    2013: "Salty Caramel Sullad",
-    2014: "IStoleSulladsPick",
-    2015: "Snow and Mirrors",
+    2010: "Team 179",
+    2011: "Team 079",
+    2012: "Team 143",
+    2013: "Team 125",
+    2014: "Team 081",
+    2015: "Team 137",
 }
 
 
@@ -62,7 +62,7 @@ def main() -> None:
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as session:
-            print("== Repair: mike's back-projected slot + name (2010-2015) ==")
+            print("== Repair: moved_owner's back-projected slot + name (2010-2015) ==")
             _repair(session, league_id=args.league_id)
             print("\n== Validation (post-repair, in transaction) ==")
             ok = _validate(session, league_id=args.league_id)
@@ -77,7 +77,7 @@ def main() -> None:
 
             _backup_sqlite(settings.database_url)
             session.commit()
-            print("\nApplied: mike's 2010-2015 teams moved slot 12 -> 3 with slot-3 names.")
+            print("\nApplied: moved_owner's 2010-2015 teams moved slot 12 -> 3 with slot-3 names.")
     finally:
         engine.dispose()
 
@@ -101,7 +101,7 @@ def _repair(session: Session, *, league_id: str) -> None:
             )
         ).scalar_one_or_none()
         if team is None:
-            print(f"  {year}: mike has no team row (skipped)")
+            print(f"  {year}: moved_owner has no team row (skipped)")
             continue
         if team.team_abbrev == CORRECT_SLOT and team.team_name == correct_name:
             print(f"  {year}: already slot 3 / {correct_name!r} (no-op)")
@@ -151,21 +151,21 @@ def _validate(session: Session, *, league_id: str) -> bool:
     }
     ok &= _check("every played season 2010-2025 has slots 1-12 once each", not bad_slots, bad_slots)
 
-    # 3. mike's 2015 team is slot 3 / "Snow and Mirrors".
-    mike_2015 = session.execute(
+    # 3. moved_owner's 2015 team is slot 3 / "Team 137".
+    moved_owner_2015 = session.execute(
         select(Team)
         .join(Season, Season.season_id == Team.season_id)
         .where(Season.league_id == league_id, Season.year == 2015, Team.owner_id == MIKE_OWNER_ID)
     ).scalar_one_or_none()
-    mike_ok = (
-        mike_2015 is not None
-        and mike_2015.team_abbrev == CORRECT_SLOT
-        and mike_2015.team_name == "Snow and Mirrors"
+    moved_owner_ok = (
+        moved_owner_2015 is not None
+        and moved_owner_2015.team_abbrev == CORRECT_SLOT
+        and moved_owner_2015.team_name == "Team 137"
     )
     ok &= _check(
-        "mike's 2015 team is slot 3 / 'Snow and Mirrors'",
-        mike_ok,
-        f"abbrev={getattr(mike_2015, 'team_abbrev', None)} name={getattr(mike_2015, 'team_name', None)}",
+        "moved_owner's 2015 team is slot 3 / 'Team 137'",
+        moved_owner_ok,
+        f"abbrev={getattr(moved_owner_2015, 'team_abbrev', None)} name={getattr(moved_owner_2015, 'team_name', None)}",
     )
     return ok
 
@@ -186,7 +186,7 @@ def _backup_sqlite(database_url: str) -> None:
     backup_dir = db_path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    dest = backup_dir / f"{db_path.stem}-pre-mike-slot-repair-{stamp}{db_path.suffix}"
+    dest = backup_dir / f"{db_path.stem}-pre-moved_owner-slot-repair-{stamp}{db_path.suffix}"
     shutil.copy2(db_path, dest)
     print(f"  backup: {dest}")
 

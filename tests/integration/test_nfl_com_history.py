@@ -186,7 +186,7 @@ def test_reconstruct_standings_sets_finish_order_and_fixes_names(session: Sessio
     # Champion's record on the standings fixture is 8-6-0 → 14 reg weeks.
     assert season.regular_season_weeks == 14
 
-    # NFL team id 6 is the 2024 champion "Putting the CAP in CHAMP".
+    # NFL team id 6 is the 2024 champion "Team 112".
     nfl6 = session.execute(
         select(Team).where(Team.season_id == season_id, Team.team_abbrev == "6")
     ).scalar_one()
@@ -194,7 +194,7 @@ def test_reconstruct_standings_sets_finish_order_and_fixes_names(session: Sessio
     assert nfl6.final_rank == 1
     assert nfl6.playoff_finish == 1
     # The placeholder name must have been replaced with the real per-season one.
-    assert nfl6.team_name == "Putting the CAP in CHAMP"
+    assert nfl6.team_name == "Team 112"
     assert (nfl6.regular_season_wins, nfl6.regular_season_losses) == (8, 6)
     assert nfl6.regular_season_points_for == pytest.approx(1765.40)
 
@@ -624,8 +624,8 @@ def test_reconstruct_owners_identities_tenure_and_safe_repointing(session: Sessi
 
 class _AdamIllOwnersStub:
     _BY_YEAR: ClassVar[dict[int, dict[int, tuple[str, str]]]] = {
-        2023: {1: ("800", "Adam"), 2: ("900", "Ill"), 3: ("100", "bob")},
-        2024: {1: ("801", "adam"), 2: ("901", "ill"), 3: ("100", "bob")},
+        2023: {1: ("800", "Owner 01"), 2: ("900", "Owner 09"), 3: ("100", "bob")},
+        2024: {1: ("801", "Owner 16"), 2: ("901", "Owner 18"), 3: ("100", "bob")},
     }
 
     def get_html(self, url: str) -> str:
@@ -633,12 +633,12 @@ class _AdamIllOwnersStub:
         return _owners_html(self._BY_YEAR[year])
 
 
-def _seed_adam_ill_seasons(session: Session) -> dict[int, int]:
+def _seed_alder_birch_seasons(session: Session) -> dict[int, int]:
     session.add(League(league_id="36271", name="The Danger Zone", platform="nfl_com"))
-    adam = Owner(league_id="36271", display_name="adam", nfl_user_id="800", is_active=True)
-    ill = Owner(league_id="36271", display_name="ill", nfl_user_id="900", is_active=True)
+    alder = Owner(league_id="36271", display_name="Owner 16", nfl_user_id="800", is_active=True)
+    birch = Owner(league_id="36271", display_name="Owner 18", nfl_user_id="900", is_active=True)
     bob = Owner(league_id="36271", display_name="bob", nfl_user_id="100", is_active=True)
-    session.add_all([adam, ill, bob])
+    session.add_all([alder, birch, bob])
     session.flush()
     season_ids: dict[int, int] = {}
     for year in (2023, 2024):
@@ -650,13 +650,13 @@ def _seed_adam_ill_seasons(session: Session) -> dict[int, int]:
             [
                 Team(
                     season_id=season.season_id,
-                    owner_id=adam.owner_id,
+                    owner_id=alder.owner_id,
                     team_name="Team 1",
                     team_abbrev="1",
                 ),
                 Team(
                     season_id=season.season_id,
-                    owner_id=ill.owner_id,
+                    owner_id=birch.owner_id,
                     team_name="Team 2",
                     team_abbrev="2",
                 ),
@@ -672,22 +672,22 @@ def _seed_adam_ill_seasons(session: Session) -> dict[int, int]:
     return season_ids
 
 
-def _seed_adam_ill_overrides(session: Session) -> None:
+def _seed_alder_birch_overrides(session: Session) -> None:
     for canonical, values in (
         (
-            "adam",
+            "Owner 16",
             (
-                ("display_name", "Adam"),
-                ("display_name", "adam"),
+                ("display_name", "Owner 01"),
+                ("display_name", "Owner 16"),
                 ("nfl_user_id", "800"),
                 ("nfl_user_id", "801"),
             ),
         ),
         (
-            "ill",
+            "Owner 18",
             (
-                ("display_name", "Ill"),
-                ("display_name", "ill"),
+                ("display_name", "Owner 09"),
+                ("display_name", "Owner 18"),
                 ("nfl_user_id", "900"),
                 ("nfl_user_id", "901"),
             ),
@@ -705,11 +705,11 @@ def _seed_adam_ill_overrides(session: Session) -> None:
 
 
 @pytest.mark.integration
-def test_reconstruct_owners_keeps_adam_and_ill_separate(session: Session) -> None:
-    season_ids = _seed_adam_ill_seasons(session)
-    _seed_adam_ill_overrides(session)
-    adam = session.execute(select(Owner).where(Owner.display_name == "adam")).scalar_one()
-    adam.aliases = {"display_names": ["Ill", "ill"], "nfl_user_ids": ["800", "900"]}
+def test_reconstruct_owners_keeps_alder_and_birch_separate(session: Session) -> None:
+    season_ids = _seed_alder_birch_seasons(session)
+    _seed_alder_birch_overrides(session)
+    alder = session.execute(select(Owner).where(Owner.display_name == "Owner 16")).scalar_one()
+    alder.aliases = {"display_names": ["Owner 09", "Owner 18"], "nfl_user_ids": ["800", "900"]}
 
     outcome = reconstruct_owners(
         session,
@@ -722,30 +722,30 @@ def test_reconstruct_owners_keeps_adam_and_ill_separate(session: Session) -> Non
 
     assert outcome.distinct_owners == 3
 
-    adam = session.execute(select(Owner).where(Owner.display_name == "adam")).scalar_one()
-    ill = session.execute(select(Owner).where(Owner.display_name == "ill")).scalar_one()
-    assert adam.nfl_user_id is None
-    assert ill.nfl_user_id is None
-    assert adam.aliases == {"display_names": ["Adam"], "nfl_user_ids": ["800", "801"]}
-    assert ill.aliases == {"display_names": ["Ill"], "nfl_user_ids": ["900", "901"]}
+    alder = session.execute(select(Owner).where(Owner.display_name == "Owner 16")).scalar_one()
+    birch = session.execute(select(Owner).where(Owner.display_name == "Owner 18")).scalar_one()
+    assert alder.nfl_user_id is None
+    assert birch.nfl_user_id is None
+    assert alder.aliases == {"display_names": ["Owner 01"], "nfl_user_ids": ["800", "801"]}
+    assert birch.aliases == {"display_names": ["Owner 09"], "nfl_user_ids": ["900", "901"]}
     for year in (2023, 2024):
-        adam_team = session.execute(
+        alder_team = session.execute(
             select(Team).where(Team.season_id == season_ids[year], Team.team_abbrev == "1")
         ).scalar_one()
-        ill_team = session.execute(
+        birch_team = session.execute(
             select(Team).where(Team.season_id == season_ids[year], Team.team_abbrev == "2")
         ).scalar_one()
-        assert adam_team.owner_id == adam.owner_id
-        assert ill_team.owner_id == ill.owner_id
+        assert alder_team.owner_id == alder.owner_id
+        assert birch_team.owner_id == birch.owner_id
 
 
 @pytest.mark.integration
-def test_current_owner_upsert_keeps_adam_and_ill_separate(session: Session) -> None:
+def test_current_owner_upsert_keeps_alder_and_birch_separate(session: Session) -> None:
     session.add(League(league_id="36271", name="The Danger Zone", platform="nfl_com"))
     season = Season(league_id="36271", year=2024, status="completed")
     session.add(season)
     session.flush()
-    _seed_adam_ill_overrides(session)
+    _seed_alder_birch_overrides(session)
 
     owner_counts, team_counts = _upsert_owners_and_teams(
         session,
@@ -754,14 +754,14 @@ def test_current_owner_upsert_keeps_adam_and_ill_separate(session: Session) -> N
         parsed=[
             ParsedOwner(
                 team_id=1,
-                team_name="Team Adam",
-                display_name="Adam",
+                team_name="Team Alder",
+                display_name="Owner 01",
                 nfl_user_id="800",
             ),
             ParsedOwner(
                 team_id=2,
-                team_name="Team Ill",
-                display_name="Ill",
+                team_name="Team Birch",
+                display_name="Owner 09",
                 nfl_user_id="900",
             ),
             ParsedOwner(
@@ -776,10 +776,10 @@ def test_current_owner_upsert_keeps_adam_and_ill_separate(session: Session) -> N
 
     assert owner_counts.rows_added == 3
     assert team_counts.rows_added == 3
-    adam = session.execute(select(Owner).where(Owner.display_name == "adam")).scalar_one()
-    ill = session.execute(select(Owner).where(Owner.display_name == "ill")).scalar_one()
-    assert adam.aliases == ["Adam"]
-    assert ill.aliases == ["Ill"]
+    alder = session.execute(select(Owner).where(Owner.display_name == "Owner 16")).scalar_one()
+    birch = session.execute(select(Owner).where(Owner.display_name == "Owner 18")).scalar_one()
+    assert alder.aliases == ["Owner 01"]
+    assert birch.aliases == ["Owner 09"]
 
 
 @pytest.mark.integration
@@ -790,7 +790,7 @@ def test_current_owner_upsert_allows_same_owner_multiple_teams_in_season(
     season = Season(league_id="36271", year=2024, status="completed")
     session.add(season)
     session.flush()
-    _seed_adam_ill_overrides(session)
+    _seed_alder_birch_overrides(session)
 
     owner_counts, team_counts = _upsert_owners_and_teams(
         session,
@@ -799,14 +799,14 @@ def test_current_owner_upsert_allows_same_owner_multiple_teams_in_season(
         parsed=[
             ParsedOwner(
                 team_id=1,
-                team_name="Team Adam",
-                display_name="Adam",
+                team_name="Team Alder",
+                display_name="Owner 01",
                 nfl_user_id="800",
             ),
             ParsedOwner(
                 team_id=2,
-                team_name="Team Adam 2",
-                display_name="adam",
+                team_name="Team Alder 2",
+                display_name="Owner 16",
                 nfl_user_id="801",
             ),
         ],
@@ -814,9 +814,9 @@ def test_current_owner_upsert_allows_same_owner_multiple_teams_in_season(
 
     assert owner_counts.rows_added == 1
     assert team_counts.rows_added == 2
-    adam = session.execute(select(Owner).where(Owner.display_name == "adam")).scalar_one()
+    alder = session.execute(select(Owner).where(Owner.display_name == "Owner 16")).scalar_one()
     owner_ids = session.execute(select(Team.owner_id).where(Team.season_id == season.season_id))
-    assert owner_ids.scalars().all() == [adam.owner_id, adam.owner_id]
+    assert owner_ids.scalars().all() == [alder.owner_id, alder.owner_id]
 
 
 @pytest.mark.integration
@@ -844,7 +844,7 @@ def test_current_owner_upsert_uses_nfl_team_id_across_renames(session: Session) 
         parsed=[
             ParsedOwner(
                 team_id=7,
-                team_name="Rev Russell's Sunday Service",
+                team_name="Team 116",
                 display_name="dan",
                 nfl_user_id="700",
             ),
@@ -858,4 +858,4 @@ def test_current_owner_upsert_uses_nfl_team_id_across_renames(session: Session) 
     teams = session.execute(select(Team).where(Team.season_id == season.season_id)).scalars().all()
     assert len(teams) == 1
     assert teams[0].team_id == existing_id
-    assert teams[0].team_name == "Rev Russell's Sunday Service"
+    assert teams[0].team_name == "Team 116"

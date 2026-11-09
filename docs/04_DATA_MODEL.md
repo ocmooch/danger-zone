@@ -110,7 +110,7 @@ A persistent person — one human, even if they had different team names across 
 | `created_at`, `updated_at` | TIMESTAMP | |
 
 ### `owner_identity_overrides`
-Manual pins that force multiple NFL.com owner identities to resolve to one canonical manager before owner rows are upserted. Used for known same-person aliases such as the two Adam user IDs and the two Ill user IDs; reconstruction still keeps different managers distinct unless an override exists.
+Manual pins that force multiple NFL.com owner identities to resolve to one canonical manager before owner rows are upserted. Used for known same-person aliases such as the two Owner 01 user IDs and the two Owner 09 user IDs; reconstruction still keeps different managers distinct unless an override exists.
 
 | Column | Type | Notes |
 |--------|------|-------|

@@ -237,7 +237,7 @@ at the recommended default and are reversible.
 | Legacy rows mutated by a Sleeper migration or loader bug | Medium | **Severe, irreversible** | Seal v1 + DB triggers on sealed seasons + fingerprint preflight on every run + migration dry-run on a vault copy |
 | Single-disk loss (WSL VHDX corruption, laptop failure) | Low–medium | **Severe** | 3-2-1 vault copies, restore drill |
 | Season-2026 collision with the NFL.com stub (`UNIQUE(league_id, year)`) | Certain if ignored | High | D-2 quarantine amendment before S5 |
-| Owner mis-mapping (two "Dan"-style ambiguities already exist) | Medium | High (careers wrong) | Manual crosswalk, load-time hard fail, dashboard owner-continuity check |
+| Owner mis-mapping (two same-name ambiguities already exist) | Medium | High (careers wrong) | Manual crosswalk, load-time hard fail, dashboard owner-continuity check |
 | Scoring mapping drift (fractional yards, cumulative vs tiered bonuses, DST points-allowed definition) | Medium | Medium | `verify --sweep` vs Sleeper `players_points`; reconcile report; D-10 sign-off |
 | Sleeper API shape change / undocumented fields | Medium | Medium | Raw archive + typed coercion layer + fixture tests; replay from archive |
 | `team_name` uniqueness per season (blank Sleeper team names) | Medium | Low | Deterministic fallback to `"{display_name}'s team"`, plus `platform_team_key` unique index |

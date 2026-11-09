@@ -1053,7 +1053,7 @@ _TXN_TYPE_MAP = {
     "starter swap": "lineup_change",
     # NFL.com history pages tag commissioner / league-management actions with
     # the cryptic type text "LM" (row class ``transaction-commish-NNN``), e.g.
-    # "harry updated playoff teams". This is the live form of the commish diary
+    # "Owner 17 updated playoff teams". This is the live form of the commish diary
     # rows; the human-readable change is preserved in ``extra_data``.
     "lm": "setting_change",
     "commish": "setting_change",

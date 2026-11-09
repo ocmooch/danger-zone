@@ -10,7 +10,7 @@ The 2022 fantasy championship is stored with the **wrong champion** because the 
 Bills@Bengals game (Jan 2, 2023) was suspended after Damar Hamlin's cardiac arrest and officially
 ruled a **no-contest — never resumed, never rescheduled** (NFL.com / ESPN / FOX Sports). The
 affected BUF/CIN starters have **no nflverse Week-17 stat line**; nfl.com fantasy stamped them
-`0.0`, which leaves the title game reading CMC 89.0 def. Smokin Doubs 74.9 and records CMC as champion.
+`0.0`, which leaves the title game reading CMC 89.0 def. Team 135 74.9 and records CMC as champion.
 
 The league resolved the no-contest by, for each affected player, taking **the stats they accrued in
 the suspended Week-17 game before play stopped, PLUS their NFL Week-19 (Wild Card, Jan 14–15 2023)
@@ -42,7 +42,7 @@ override precedent (`franchises.py` root-fix + re-score).
 ## Verified facts (reproduce read-only against `data/fantasy.db`)
 
 Season 2022 = `season_id 14`. Title game = matchup `2635/2636`, week 17:
-`CMC Rules Everything Around Me (team 160) 89.0` vs `Smokin Doubs (team 165) 74.9`;
+`Team 023 (team 160) 89.0` vs `Team 135 (team 165) 74.9`;
 `seasons.champion_team_id=160`, `runner_up_team_id=165`; `teams.final_rank/playoff_finish` CMC=1, Doubs=2.
 
 **Derive the affected set from public data — do not use the ledger as the list.** The authoritative
@@ -84,7 +84,7 @@ this *plus* their Wk17 partial:
 
 Approx title-game effect (Wk19 add-on + Wk17 partial; partials pending exact pbp):
 Doubs 74.9 + Burrow(~5.5+21.26) + Bass(3.0+10.0) + Gabe Davis(?+24.3) ≈ **~139**;
-CMC 89.0 + Tee Higgins(2.3+9.7) ≈ **~101** → **Smokin Doubs champion by ~38** (margin only grows vs
+CMC 89.0 + Tee Higgins(2.3+9.7) ≈ **~101** → **Team 135 champion by ~38** (margin only grows vs
 the Wk19-only lower bound of 130.46–98.7). Outcome is not sensitive to the small partials.
 
 ### All affected week-17 matchups (substitute in every one, regardless of importance)
@@ -97,12 +97,12 @@ final-round placement game has ≥1 affected player. **Bold** = the meaningful g
 
 | Placement | matchup | teams (current scores) | affected players | outcome |
 |-----------|---------|------------------------|------------------|---------|
-| **Championship** | 2635/2636 | CMC 89.0 / **Smokin Doubs 74.9** | CMC: Higgins `S` · Doubs: Bass/Burrow/Gabe Davis `S` | **FLIPS → Doubs** |
-| **3rd Place** | 2643/2644 | Ice Station Zebra 101.7 / Smokin' AJ 70.86 | Zebra: Chase `S` · AJ: Allen `S`, Boyd `S`, Knox `b` | no flip (both rise) |
-| 5th Place | 2645/2646 | House of the Droggenburg 114.32 / Smokin Dabolls 159.38 | Droggenburg: Mixon `S`, Perine `b` · Dabolls: Cook `b`, Hurst `b` | no flip |
+| **Championship** | 2635/2636 | CMC 89.0 / **Team 135 74.9** | CMC: Higgins `S` · Doubs: Bass/Burrow/Gabe Davis `S` | **FLIPS → Doubs** |
+| **3rd Place** | 2643/2644 | Team 083 101.7 / Team 136 70.86 | Zebra: Chase `S` · AJ: Allen `S`, Boyd `S`, Knox `b` | no flip (both rise) |
+| 5th Place | 2645/2646 | Team 072 114.32 / Team 134 159.38 | Droggenburg: Mixon `S`, Perine `b` · Dabolls: Cook `b`, Hurst `b` | no flip |
 | **7th Place** (consolation winner) | 2637 | Younghoe Kooloo 119.56 / King Henry 105.42 | Younghoe: Singletary `b` | no flip (bench only) |
 | 9th Place | 2639 | So What-No Fuckin Ziti 81.2 / Grim SiLLeeper 79.2 | Ziti: Diggs `S` | no flip (leader rises) |
-| **11th Place** | 2641 | Robra Kai 118.88 / Feast of FIES 147.68 | Robra Kai: Buffalo Bills DEF `S` | no flip |
+| **11th Place** | 2641 | Team 120 118.88 / Team 054 147.68 | Team 120: Buffalo Bills DEF `S` | no flip |
 
 **Per current data only the championship outcome flips** — every other affected starter sits on the
 side already winning, and the rest are bench-only. So `final_rank`/`playoff_finish` should change

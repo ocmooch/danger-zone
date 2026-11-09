@@ -16,8 +16,8 @@ paper key is kept).
 
 ## Open confirmations (non-secret)
 
-- [x] D-3: `powerfuldanjohnson` → DJ — confirmed 2026-11-06
-- [x] D-3: `FurFie` → Chris — confirmed 2026-11-06
+- [x] D-3: `sleeper_user_09` → Owner 04 — confirmed 2026-11-06
+- [x] D-3: `sleeper_user_01` → Owner 03 — confirmed 2026-11-06
 - [x] Primary key + passphrase saved in Apple Passwords (armored, in Notes) — confirmed 2026-11-07
 - [x] Paper recovery key stored physically separate — confirmed 2026-11-07
 - [ ] D-10 scoring: stacked bonuses + FG 3 vs 5 at 50+ — **waits for 2026 data load**, not a setup step
