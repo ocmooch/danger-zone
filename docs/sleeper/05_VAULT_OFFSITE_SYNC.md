@@ -233,10 +233,21 @@ Each folder also holds `README.txt` (what this is, how to restore) and `<file>.s
 `gdrive-vault:ff-legacy-vault`, `iCloudDrive\ff-legacy-vault` and the GitHub releases. It never sees
 the `ff-legacy-evergreen` folders. Keep it that way: never point a destination or retention rule at them.
 
-**Check them** (read-only):
+**Loud alert (automatic, weekly).** Every weekly `dz-vault-sync` run ends with
+`vault_sync.sh check-evergreen`, which runs even if the snapshot or sync failed. It is read-only and
+checks each location for: folder present; exactly the three expected files (missing *or* extra files
+flag); archive size + sha256; and, on the two Windows folders, that the read-only attribute and the
+deny-ACL are still in place. Drive's content lock can't be read with rclone 1.60, so the hash check
+covers Drive. Any problem →
 
-    sha256sum /mnt/c/Users/MainUser/ff-legacy-evergreen/*.age /mnt/c/Users/MainUser/iCloudDrive/ff-legacy-evergreen/*.age
-    rclone hashsum sha256 --download gdrive-vault:ff-legacy-evergreen --include '*.age'
+1. a **modal Windows popup** ("FF VAULT ALERT", stays on top until dismissed),
+2. `C:\Users\MainUser\Desktop\VAULT-EVERGREEN-ALERT.txt` listing every problem + what to do,
+3. ERROR lines in `data/logs/vault_sync-<date>.log`, `"evergreen": {"ok": false, …}` in
+   `sync-status.json`, and a non-zero Task Scheduler "Last Run Result".
+
+The Desktop file is removed automatically once a later check passes. Run it any time (e.g. after AI-
+assisted work near the vault): `~/danger-zone/scripts/vault/vault_sync.sh check-evergreen`. A unit
+test fails if a sync destination is ever pointed at an evergreen folder.
 
 **Deliberately removing a lock** (only if the user decides to retire a copy): Windows:
 `icacls "<path>" /remove:d *S-1-1-0` then `attrib -R "<path>"` (the owner can always edit the ACL).

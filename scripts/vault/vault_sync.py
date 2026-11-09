@@ -5,6 +5,7 @@
     vault_sync.sh pack-seal <dir>     # encrypt a sealed directory into the outbox
     vault_sync.sh snapshot            # snapshot the live DB into the outbox
     vault_sync.sh sync                # ship the outbox to every destination
+    vault_sync.sh check-evergreen     # verify the permanent fallback copies (alerts loudly)
     vault_sync.sh status              # print sync-status.json
 
 Encryption uses only the PUBLIC keys in recipients.txt, so this job holds no
@@ -12,11 +13,16 @@ secret. Each destination is independent; the exit code is non-zero if any
 destination failed. Retention (per destination, after a verified upload):
 keep seal-v1 forever + the 4 newest other archives. Design:
 docs/sleeper/05_VAULT_OFFSITE_SYNC.md.
+
+The weekly job also checks the evergreen fallback copies (05 §10). They live in
+separate folders this job never writes to; any missing, changed, extra or
+unlocked file raises a Windows popup + a Desktop alert file + a non-zero exit.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import fcntl
 import hashlib
 import json
@@ -52,6 +58,16 @@ ARCHIVE_RE = re.compile(
 )
 PINNED_KIND = "seal-v1"
 KEEP_NEWEST = 4
+
+# Evergreen fallback copy (05 §10): read-only to this script, never synced or pruned.
+EVERGREEN_FILE = "dz-vault_seal-v1_20261107_5ade3104.tar.gz.age"
+EVERGREEN_SHA256 = "5ade31049ee588f701651753f8d71758bb054ad1f4a61c8bbab32bdea489d737"
+EVERGREEN_SIZE = 22_481_806
+EVERGREEN_SIDECARS = ("README.txt", f"{EVERGREEN_FILE}.sha256")
+EVERGREEN_LOCAL = Path("/mnt/c/Users/MainUser/ff-legacy-evergreen")
+EVERGREEN_ICLOUD = Path("/mnt/c/Users/MainUser/iCloudDrive/ff-legacy-evergreen")
+EVERGREEN_DRIVE = "gdrive-vault:ff-legacy-evergreen"
+ALERT_FILE = Path("/mnt/c/Users/MainUser/Desktop/VAULT-EVERGREEN-ALERT.txt")
 
 log = logging.getLogger("vault_sync")
 
@@ -267,6 +283,132 @@ class GitHubReleases(Destination):
 DESTINATIONS = (GoogleDrive, ICloudFolder, GitHubReleases)
 
 
+# ── evergreen fallback check (read-only) ─────────────────────────────────────
+
+
+def check_listing(names: dict[str, int]) -> list[str]:
+    """Problems with a folder listing ``{name: size}`` (pure)."""
+    expected = {EVERGREEN_FILE, *EVERGREEN_SIDECARS}
+    problems = [f"MISSING {n}" for n in sorted(expected - names.keys())]
+    problems += [f"UNEXPECTED file {n}" for n in sorted(names.keys() - expected)]
+    size = names.get(EVERGREEN_FILE)
+    if size is not None and size != EVERGREEN_SIZE:
+        problems.append(f"SIZE CHANGED {EVERGREEN_FILE}: {size} != {EVERGREEN_SIZE}")
+    return problems
+
+
+def _windows_locked(path: Path) -> bool:
+    """True if ``path`` still carries an NTFS deny-ACE (the lock we placed)."""
+    win = run("wslpath", "-w", str(path)).stdout.strip()
+    return "(DENY)" in run("icacls.exe", win).stdout
+
+
+def check_folder(folder: Path, *, check_locks: bool = True) -> list[str]:
+    if not folder.is_dir():
+        return [f"FOLDER MISSING {folder}"]
+    problems = check_listing({p.name: p.stat().st_size for p in folder.iterdir()})
+    archive = folder / EVERGREEN_FILE
+    if archive.is_file():
+        if file_hash(archive, "sha256") != EVERGREEN_SHA256:
+            problems.append(f"CONTENT CHANGED {EVERGREEN_FILE} (sha256 mismatch)")
+        if archive.stat().st_mode & 0o222:
+            problems.append(f"READ-ONLY attribute removed from {EVERGREEN_FILE}")
+    if check_locks:
+        for target in (folder, archive):
+            if target.exists() and not _windows_locked(target):
+                problems.append(f"LOCK REMOVED (no deny ACL) on {target.name}")
+    return problems
+
+
+def check_drive() -> list[str]:
+    listing = json.loads(run("rclone", "lsjson", EVERGREEN_DRIVE).stdout)
+    problems = check_listing({e["Name"]: e["Size"] for e in listing if not e["IsDir"]})
+    if any(e["Name"] == EVERGREEN_FILE for e in listing):
+        out = run(
+            "rclone",
+            "hashsum",
+            "sha256",
+            "--download",
+            EVERGREEN_DRIVE,
+            "--include",
+            EVERGREEN_FILE,
+        ).stdout.split()
+        if not out or out[0] != EVERGREEN_SHA256:
+            problems.append(f"CONTENT CHANGED {EVERGREEN_FILE} (sha256 mismatch)")
+    return problems
+
+
+def raise_alert(problems: dict[str, list[str]]) -> None:
+    """Make the failure impossible to miss: Desktop file + modal Windows popup."""
+    now = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
+    lines = [
+        "FF LEGACY VAULT - EVERGREEN FALLBACK COPY PROBLEM",
+        f"Detected {now} by danger-zone scripts/vault/vault_sync.py check-evergreen",
+        "",
+    ]
+    for where, items in problems.items():
+        lines += [f"{where}:"] + [f"  - {p}" for p in items]
+    lines += [
+        "",
+        "These copies must never change. If this was not deliberate, restore the",
+        "file from one of the other evergreen copies (see their README.txt) and",
+        "re-apply the lock - docs/sleeper/05_VAULT_OFFSITE_SYNC.md section 10.",
+        "Re-check:  ~/danger-zone/scripts/vault/vault_sync.sh check-evergreen",
+        "This file is removed automatically once the check passes again.",
+    ]
+    try:
+        ALERT_FILE.write_text("\r\n".join(lines) + "\r\n")
+        win = run("wslpath", "-w", str(ALERT_FILE)).stdout.strip()
+        popup = (
+            f"$m = Get-Content -Raw -LiteralPath '{win}'; "
+            "(New-Object -ComObject WScript.Shell).Popup($m, 0, "
+            "'FF VAULT ALERT: evergreen copy problem', 0x1030) | Out-Null"
+        )
+        enc = base64.b64encode(popup.encode("utf-16-le")).decode()
+        # Start-Process detaches the popup so it outlives this job and WSL.
+        run(
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
+            "Start-Process powershell.exe -WindowStyle Hidden "
+            f"-ArgumentList '-NoProfile -EncodedCommand {enc}'",
+        )
+    except Exception as exc:  # the log + exit code still carry the alert
+        log.error("could not raise the Windows alert: %s", exc)
+
+
+def check_evergreen() -> int:
+    checks = {
+        "local": lambda: check_folder(EVERGREEN_LOCAL),
+        "icloud": lambda: check_folder(EVERGREEN_ICLOUD),
+        "gdrive": check_drive,
+    }
+    problems: dict[str, list[str]] = {}
+    for where, fn in checks.items():
+        try:
+            found = fn()
+        except Exception as exc:
+            found = [f"COULD NOT CHECK: {str(exc)[:300]}"]
+        if found:
+            problems[where] = found
+            for p in found:
+                log.error("evergreen %-6s %s", where, p)
+        else:
+            log.info("evergreen %-6s ok", where)
+    status = load_status()
+    status["evergreen"] = {
+        "last_check": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ok": not problems,
+        "problems": problems,
+    }
+    save_status(status)
+    if problems:
+        raise_alert(problems)
+        return 1
+    ALERT_FILE.unlink(missing_ok=True)
+    return 0
+
+
 # ── commands ─────────────────────────────────────────────────────────────────
 
 
@@ -369,6 +511,7 @@ def main() -> int:
     p_seal.add_argument("seal_dir", type=Path)
     sub.add_parser("snapshot")
     sub.add_parser("sync")
+    sub.add_parser("check-evergreen")
     sub.add_parser("status")
     args = parser.parse_args()
 
@@ -394,12 +537,21 @@ def main() -> int:
             if args.cmd == "snapshot":
                 snapshot()
                 return 0
-            if args.cmd is None:  # weekly job
-                snapshot()
-            return sync()
+            if args.cmd == "check-evergreen":
+                return check_evergreen()
+            if args.cmd == "sync":
+                return sync()
         except Exception as exc:
             log.error("FAILED: %s", exc)
             return 1
+        # weekly job: the evergreen check runs even if the snapshot or sync failed
+        rc = 1
+        try:
+            snapshot()
+            rc = sync()
+        except Exception as exc:
+            log.error("FAILED: %s", exc)
+        return max(rc, check_evergreen())
 
 
 if __name__ == "__main__":

@@ -119,3 +119,43 @@ def test_retention_never_deletes_when_under_limit() -> None:
         "dz-vault_snap_20261108_bbbbbbbb.tar.gz.age",
     ]
     assert sync.plan_retention(names) == (sorted(names), [])
+
+
+# ── evergreen fallback copy (05 §10) ─────────────────────────────────────────
+
+EVERGREEN_OK = {
+    sync.EVERGREEN_FILE: sync.EVERGREEN_SIZE,
+    **dict.fromkeys(sync.EVERGREEN_SIDECARS, 1),
+}
+
+
+def test_evergreen_listing_ok() -> None:
+    assert sync.check_listing(EVERGREEN_OK) == []
+
+
+def test_evergreen_listing_flags_missing_extra_and_resized() -> None:
+    names = {**EVERGREEN_OK, "dz-vault_snap_20261109_cccccccc.tar.gz.age": 5}
+    del names["README.txt"]
+    names[sync.EVERGREEN_FILE] = 1
+    problems = sync.check_listing(names)
+    assert any(p.startswith("MISSING README.txt") for p in problems)
+    assert any(p.startswith("UNEXPECTED") for p in problems)
+    assert any(p.startswith("SIZE CHANGED") for p in problems)
+
+
+def test_evergreen_folder_detects_changed_and_unlocked(tmp_path: Path) -> None:
+    for name in sync.EVERGREEN_SIDECARS:
+        (tmp_path / name).write_text("x")
+    archive = tmp_path / sync.EVERGREEN_FILE
+    archive.write_bytes(b"\0" * sync.EVERGREEN_SIZE)  # right size, wrong content, writable
+    problems = sync.check_folder(tmp_path, check_locks=False)
+    assert any(p.startswith("CONTENT CHANGED") for p in problems)
+    assert any(p.startswith("READ-ONLY attribute removed") for p in problems)
+    assert sync.check_folder(tmp_path / "gone", check_locks=False)[0].startswith("FOLDER MISSING")
+
+
+def test_evergreen_folders_are_never_sync_destinations() -> None:
+    assert sync.EVERGREEN_DRIVE != sync.DRIVE_REMOTE
+    assert sync.EVERGREEN_ICLOUD != sync.ICLOUD_DIR
+    assert sync.EVERGREEN_LOCAL.resolve() != sync.VAULT.resolve()
+    assert "evergreen" not in str(sync.OUTBOX)
