@@ -127,7 +127,10 @@ live DB → `legacy verify` identical. Record "fingerprints unchanged" in the PR
 **Done when:** migration merged; live DB at new head; fingerprints unchanged; dashboard test suite
 still green against the migrated DB (no consumer breakage from additive columns).
 
-## S4 — Identity
+## S4 — Identity — DONE (built + applied to live 2026-11-09; PR → `dev`)
+
+As-built record: `docs/plans/S4-identity.md`. No seal-v2 was needed: sealed data is unchanged, and
+seal-v1 already holds the 2026 stub (decision S4-D1). The quarantine has its own audit row (#1).
 
 **Goal:** every Sleeper user, roster and player resolves to a canonical row.
 

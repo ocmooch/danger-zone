@@ -139,17 +139,65 @@ map`, the quarantine command, `resolve-players`. `04_DATA_MODEL.md`: the quarant
 
 ## Done when
 
-- [ ] YAML approved (no `medium` left) and `owners map` validates 12/12; identities applied on live.
-- [ ] The stub is quarantined on live, verified byte for byte, with one `legacy_amendments` row;
+- [x] YAML approved (no `medium` left) and `owners map` validates 12/12; identities applied on live.
+- [x] The stub is quarantined on live, verified byte for byte, with one `legacy_amendments` row;
       season 2026 is `platform='sleeper'`; fingerprints unchanged; rostered spans recomputed.
-- [ ] `resolve-players` shows 0 unresolved users and an explained stub list (currently 4).
-- [ ] Full gate green; dashboard parity check explained; RUNBOOK + `02` updated; PR → `dev`.
+- [x] `resolve-players` shows 0 unresolved users and an explained stub list: 289/289 resolved, 0 stubs
+      (2 pinned with `map-player`).
+- [x] Full gate green; dashboard parity check explained; RUNBOOK + `02` §S4 updated; PR → `dev`.
+
+## As built (2026-11-09)
+
+Code: `normalizer/{owner_identity,sleeper_players,slots}.py`, `legacy/quarantine.py`,
+`crawlers/sleeper_league/archive_view.py`, `owners_cli.py`; CLI `owners map`,
+`legacy quarantine-2026-stub`, `sleeper-league resolve-players`, `sleeper-league map-player`.
+
+### Deviations from the design above
+
+1. **DEF name fallback.** Four legacy DEF rows (Jets, Cowboys, Panthers, Raiders) carry only a
+   nickname, with no `nfl_team` and no `sleeper_id`. A third DEF step therefore matches the
+   directory name or nickname. S5 stamps `sleeper_id` on them when it loads.
+2. **`sleeper-league map-player` (new).** Both "stub-needed" players already existed under a
+   different name or position: Sleeper "Zonovan Knight" = "Bam Knight" (RB ARI), and Sleeper DB
+   "Travis Hunter" = CB Travis Hunter. They are pinned through `player_id_overrides` (kind
+   `sleeper_id`) instead of stubbing duplicates. **0 stubs needed.**
+3. **The quarantine takes its own pre-move backup** (`data/backups/amendments/`), as `amend` does.
+4. **PyYAML** is used from `src/` but is only a transitive dependency. Declaring it would change
+   `uv.lock` (out of scope), so it is added to the mypy ignore list, like `scripts/load_*.py`.
+   Follow-up: declare it when dependencies are next in scope.
+
+### Rollout — copy (2026-11-09)
+
+`owners map --apply` → 12 identities; `quarantine-2026-stub` → amendment #1, 12 teams + 193 roster
+rows (205 quarantine rows), season 2026 → `sleeper`, spans refreshed (no player left at
+`last_rostered_season = 2026`); 2 `map-player` pins; verify PASSED before/after (seal-v1, 41
+triggers); `resolve-players` → 289/289 resolved (261 matched, 24 DEF by `sleeper_id`, 4 DEF by
+name), 0 stub-needed.
+
+**Dashboard parity** (BFF on the copy vs live, 53 GET routes): 47 identical, no 5xx. Six differ, all
+because the placeholder is gone, which is intended:
+- `/v1/players`, `/v1/players/{id}`, `…/ownership`, `…/insights`: `last_rostered_season` 2026 →
+  2025, and one ownership event fewer (the stub's week-1 rosters).
+- `/v1/meta/coverage`: one roster feed entry fewer; Travis Hunter's 2026 season-position
+  divergence row is gone.
+- `/v1/league/stories` "Team-name hall of fame": 5 → 4 repeated names. Two names counted as
+  "repeated" only because the NFL.com placeholder copied the 2025 team names into 2026, so this is
+  a correction.
+
+### Rollout — live (2026-11-09, approved)
+
+Identical to the copy: verify PASSED → `owners map --apply` (12 inserted) → quarantine (amendment
+#1, `seal-v1` → `seal-v1`; pre-move backup in `data/backups/amendments/`) → 2 pins → verify
+PASSED; 205 quarantine rows; 41/41 triggers; 289/289 resolved; running BFF still 200.
 
 ## Known issues (out of scope)
 
 `prune-players` FK failure (5 players); `ruff format` debt (`crawlers/adp/sleeper.py` + 3
 scripts/alembic files); vault-staleness warning (S9); console debug lines at `LOG_LEVEL=WARNING`;
-dz-dashboard `CLAUDE.md` points at `tests/dashboard` (tests are in `tests/`).
+dz-dashboard `CLAUDE.md` points at `tests/dashboard` (tests are in `tests/`); PyYAML undeclared
+(deviation 4); some league team names / Sleeper usernames predate S4 in public files
+(`tests/fixtures/nfl_com_html/`, `docs/PROJECT_STATE_AND_DASHBOARD_PLAN.md`,
+`docs/handoffs/hamlin-2022-no-contest-resolution.md`, `docs/sleeper/SETUP_PROGRESS.md`).
 
 ## Decisions (defaults approved by the user 2026-11-09)
 

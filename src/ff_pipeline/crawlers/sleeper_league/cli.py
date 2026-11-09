@@ -251,9 +251,9 @@ def map_player_cmd(
                 typer.secho(str(exc), fg="red", err=True)
                 raise typer.Exit(code=1) from exc
             player = ss.get(Player, player_id)
+            name = player.name_full if player else "?"  # read before commit expires it
             ss.commit()
     finally:
         engine.dispose()
-    name = player.name_full if player else "?"
     verb = "pinned" if added else "already pinned"
     typer.echo(f"Sleeper {sleeper_id} {verb} to player {player_id} ({name}).")

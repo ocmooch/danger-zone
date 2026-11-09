@@ -151,3 +151,32 @@ def test_override_pins_an_unmatched_player(session: Session) -> None:
         add_sleeper_override(session, "8122", 1)
     with pytest.raises(ValueError, match="does not exist"):
         add_sleeper_override(session, "777", 99999)
+
+
+def test_map_player_cli_reports_the_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from ff_pipeline.cli import app
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.migrations import upgrade_to_head
+    from ff_pipeline.settings import get_settings
+
+    db = tmp_path / "cli.db"
+    engine = create_app_engine(f"sqlite:///{db}")
+    upgrade_to_head(engine=engine)
+    with Session(engine) as ss:
+        ss.add(Player(player_id=20, name_full="Bam Knight", position="RB"))
+        ss.commit()
+    engine.dispose()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    monkeypatch.setenv("NFL_LEAGUE_ID", "1")
+    monkeypatch.setenv("LEAGUE_START_YEAR", "2010")
+    get_settings.cache_clear()
+    try:
+        out = CliRunner().invoke(
+            app, ["sleeper-league", "map-player", "8122", "20", "--note", "nick"]
+        )
+    finally:
+        get_settings.cache_clear()
+    assert out.exit_code == 0, out.output
+    assert "Sleeper 8122 pinned to player 20 (Bam Knight)" in out.output
