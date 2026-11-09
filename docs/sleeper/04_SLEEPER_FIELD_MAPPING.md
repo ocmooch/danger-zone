@@ -1,18 +1,21 @@
 # 04 — Sleeper → Canonical Field Mapping
 
-**Status:** draft — **must be confirmed against live payloads in S2** · **Repo:** `danger-zone`
+**Status:** ⚑ items probed against live payloads in S2 (2026-11-09; §10) · **Repo:** `danger-zone`
 **Used by:** `normalizer/sleeper_league.py`, `normalizer/slots.py`, `scoring/sleeper_rules.py`
 
 Sleeper's public API is read-only, unauthenticated and only partly documented. Shapes below come
-from the documented API plus well-known undocumented fields. Every row marked **⚑ verify** must be
-checked against the real league's payloads during S2, and this file updated, before S5 builds on it.
+from the documented API plus well-known undocumented fields. Rows that were marked **⚑ verify** were
+checked against the real league's payloads in S2; each is now ✅ (resolved) or ⏸ (deferred, with when).
 
 **Verified against the live league on 2026-11-05** (`/league`, `/users`, `/rosters` only):
 `previous_league_id = "0"` (no earlier Sleeper season); `start_week = 1`, `playoff_week_start = 15`
 (→ 14 regular-season weeks), `playoff_teams = 6`; `waiver_type = 2` with `waiver_budget = 100`
 (FAAB); `divisions = null`; `type = 0` (redraft); `roster_positions` = `QB, RB, RB, WR, WR, TE,
-FLEX, K, DEF, BN×6` (no IR or taxi); no co-owners; one user has no `metadata.team_name` (fallback
-needed); the league owner (`is_owner = true`) is a long-time manager. Every other ⚑ is still open.
+FLEX, K, DEF, BN×6` plus `reserve_slots = 2` (IR; no taxi); no co-owners; one user has no `metadata.team_name` (fallback
+needed); the league owner (`is_owner = true`) is a long-time manager.
+
+**S2 probe (2026-11-09, weeks 1–9, archive replay):** every ⚑ below is now marked ✅ resolved
+or ⏸ deferred (with its milestone). Evidence and the re-runnable script: §10.
 
 ---
 
@@ -29,10 +32,11 @@ Base `https://api.sleeper.app/v1` unless noted. All responses are archived raw (
 | `GET /league/{league_id}/matchups/{week}` | weeks 1..current | matchups, starters, per-player points, custom points |
 | `GET /league/{league_id}/transactions/{round}` | rounds 1..current (round ≈ week) | adds/drops/waivers/trades/commissioner moves, failed claims |
 | `GET /league/{league_id}/traded_picks` | every run | future pick ownership |
-| `GET /league/{league_id}/winners_bracket`, `/losers_bracket` | from playoff start | official brackets |
-| `GET /league/{league_id}/drafts`, `GET /draft/{draft_id}`, `/draft/{draft_id}/picks` | pre-season; once after draft | draft type/order, picks, keeper/auction info |
-| `GET /user/{user_id}/leagues/nfl/{season}` | rollover only | discover the renewed league |
+| `GET /league/{league_id}/winners_bracket`, `/losers_bracket` | every run (pre-generated before the playoffs; S2) | official brackets |
+| `GET /league/{league_id}/drafts`, `GET /draft/{draft_id}`, `/draft/{draft_id}/picks` | every run (cheap; S2) | draft type/order, picks, keeper/auction info |
+| `GET /user/{user_id}/leagues/nfl/{season}` | rollover only | discover the renewed league (not built in S2: at rollover, set `SLEEPER_LEAGUE_ID` to the new league; lineage finds the rest) |
 | `GET /players/nfl` | ≤ daily | player directory, status snapshot (existing client) |
+| `GET https://api.sleeper.com/stats/nfl/{season}/{week}?season_type=regular` | weeks 1..current (S2) | Sleeper's own per-player stats: the scoring input (§10) and D-10 evidence |
 | `https://sleepercdn.com/avatars/{avatar_id}` (+ `/thumbs/`) | on change | avatar bytes → `assets` |
 
 Not available publicly (therefore capability gaps, not bugs): league chat, polls, news text,
@@ -47,12 +51,12 @@ lineup-change history, league-settings change log.
 | `previous_league_id` | lineage only | `lineage.py` |
 | `name` | `leagues.name` only if user approves | the franchise name stays "The Danger Zone" unless changed (D-4) |
 | `status` | `seasons.status` | `pre_draft`/`drafting` → `pre_draft`; `in_season` → `in_progress`; `complete` → `completed` |
-| `settings.playoff_week_start` | `seasons.regular_season_weeks = playoff_week_start - start_week` | ⚑ verify `start_week` |
-| `settings.playoff_teams`, `playoff_round_type`, `playoff_type` | `seasons.playoff_weeks` (derived) + `settings_snapshot` | rounds = ceil(log2(playoff_teams)), adjusted for byes, ⚑ verify |
-| `settings.waiver_type`, `waiver_budget`, `trade_deadline`, `divisions`, `reserve_slots`, `taxi_slots`, `type` (redraft/keeper/dynasty), `best_ball` | `settings_snapshot` | `waiver_type = 2` ⇒ FAAB ⚑ verify |
+| `settings.playoff_week_start` | `seasons.regular_season_weeks = playoff_week_start - start_week` | ✅ S2: `start_week = 1`, `playoff_week_start = 15` → 14 |
+| `settings.playoff_teams`, `playoff_round_type`, `playoff_type` | `seasons.playoff_weeks` (derived) + `settings_snapshot` | ✅ S2: derive from the bracket, not a formula — `playoff_teams = 6` gives 3 rounds (`r` 1–3, top two seeds bye in r1), one week per round (`playoff_round_type = 0`) → weeks 15–17. `playoff_type = 1` kept raw in `settings_snapshot` |
+| `settings.waiver_type`, `waiver_budget`, `trade_deadline`, `divisions`, `reserve_slots`, `taxi_slots`, `type` (redraft/keeper/dynasty), `best_ball` | `settings_snapshot` | ✅ S2: `waiver_type = 2` is FAAB (`waiver_budget = 100`, 268 bids, all `int`). Also seen: `max_keepers = 1` but no keeper picks; `settings.draft_rounds = 3` is not the draft length (use `draft.settings.rounds = 15`) |
 | `roster_positions[]` | `settings_snapshot`; drives slot mapping §4 | |
 | `scoring_settings{}` | `scoring_rules` via §5; raw in `settings_snapshot` | |
-| `metadata.division_<n>` / `division_<n>_avatar` | `teams.division` name lookup | ⚑ verify keys |
+| `metadata.division_<n>` / `division_<n>_avatar` | `teams.division` name lookup | ⏸ no divisions in 2026 (`settings.divisions` absent, no `division*` metadata keys); key format unverifiable until a season has divisions |
 | `draft_id` | `seasons.platform_draft_id` | |
 | `avatar` | `assets` (`kind='league_avatar'`) | new asset kind, additive |
 
@@ -64,8 +68,8 @@ lineup-change history, league-settings change log.
 | `users[].display_name` | `owner_platform_identities.external_display_name` | **not** written over `owners.display_name` |
 | `users[].metadata.team_name` | `teams.team_name` | fallback `"<display_name>'s Team"` |
 | `users[].avatar` / `metadata.avatar` | `owner_avatar_asset_id` / `team_avatar_asset_id` | downloaded upstream; dashboard never calls Sleeper CDN |
-| `users[].is_owner` | `commissioners` (new term row if changed) | ⚑ verify semantics (league owner = commissioner) |
-| `rosters[].roster_id` | `teams.platform_team_key = 'sleeper:roster:<id>'` | stable within a league; ⚑ verify stability across renewals |
+| `users[].is_owner` | `commissioners` (new term row if changed) | ✅ S2: exactly one user `true`, the rest `null`; it is the only commissioner signal the API exposes |
+| `rosters[].roster_id` | `teams.platform_team_key = 'sleeper:roster:<id>'` | stable within a league; ⏸ stability across renewals is unverifiable until the first renewal (2027 re-probe) |
 | `rosters[].owner_id` | `teams.owner_id` via crosswalk | |
 | `rosters[].co_owners[]` | `teams.extra_data.co_owner_user_ids` | |
 | `settings.wins/losses/ties` | `teams.regular_season_wins/losses/ties` | cross-checked against matchups |
@@ -73,7 +77,7 @@ lineup-change history, league-settings change log.
 | `settings.fpts_against` + `fpts_against_decimal/100` | `teams.regular_season_points_against` | |
 | `settings.ppts` + `ppts_decimal/100` | `teams.extra_data.ppts` | official potential points |
 | `settings.waiver_position`, `waiver_budget_used`, `total_moves`, `division` | `teams.extra_data.*`, `teams.division` | |
-| `metadata.streak`, `metadata.record` | `teams.extra_data.streak`, `record_string` | ⚑ verify |
+| `metadata.streak`, `metadata.record` | `teams.extra_data.streak`, `record_string` | ✅ S2: `streak` = `<n><W\|L>` (e.g. `2W`); `record` = one `W`/`L` per scored week (length 8 after week 8; ties unseen) |
 | `players[]`, `starters[]`, `reserve[]`, `taxi[]` | current roster only (week snapshots come from matchups) | |
 | `keepers[]` | `team_rosters.acquisition_type = 'kept'` at week 0 | |
 
@@ -90,8 +94,8 @@ Each matchup payload row is one team-week:
 | `matchup_id` | pair two rows → `opponent_team_id`; `platform_matchup_key` | `null` ⇒ no game (bye/eliminated) → `opponent_team_id NULL` |
 | `points` | `matchups.team_score` (and `opponent_score` on the pair) | |
 | `custom_points` | if non-null: `team_score = custom_points`; `extra_data.points_official`, `custom_points` | commissioner override, flagged |
-| `starters[]` + `roster_positions` | `team_rosters.roster_slot` via §4.1, `is_starter = true` | order of `starters` aligns with non-bench positions; `"0"` = empty slot |
-| `players[]` minus starters | `roster_slot = 'BN'` (or `RES` / `TAXI` from roster reserve/taxi lists) | |
+| `starters[]` + `roster_positions` | `team_rosters.roster_slot` via §4.1, `is_starter = true` | order of `starters` aligns with non-bench positions; `"0"` = empty slot (S2: 9 starters every team-week, no `"0"` seen yet) |
+| `players[]` minus starters | `roster_slot = 'BN'` (or `RES` / `TAXI` from roster reserve/taxi lists) | S2: `players[]` **includes IR players** (sizes 15–21), but `rosters[].reserve` is current state only. ⏸ S5 must decide how past weeks' IR players are labeled (archive revisions of `rosters` give week-end snapshots from S2 on) |
 | `players_points{id: pts}` | `team_rosters.extra_data.platform_points` | official per-player points |
 | `starters_points[]` | cross-check only | |
 
@@ -114,6 +118,9 @@ completed weeks. Same per-(team, week) replace + cross-team upsert invariant as 
 
 The raw label always goes into `extra_data.platform_slot`. Legacy rows are unaffected.
 
+✅ S2: the 2026 league uses only `QB RB×2 WR×2 TE FLEX K DEF BN×6` + 2 reserve (IR) slots; no
+super-flex, IDP or taxi labels appear.
+
 ## 5. Scoring settings → `scoring_rules`
 
 Shape: `(category, stat_key, points_per_unit, unit_size, threshold_min, threshold_max, flat_points)`.
@@ -127,17 +134,17 @@ score identically.
 | `pass_td` | passing / `passing_tds` | `ppu = v` |
 | `pass_int` | passing / `passing_interceptions` | `ppu = v` |
 | `pass_2pt` | passing / `passing_2pt_conversions` | |
-| `bonus_pass_yd_300`, `bonus_pass_yd_400` | passing / `passing_yards` threshold rows | `threshold_min = 300/400, flat = v` — **⚑ verify cumulative vs tiered**: Sleeper bonuses stack; NFL.com 2025 rows (`1.0` @300, `3.0` @400) must be checked for whether 400+ yields 3 or 4 |
-| `pass_td_40p`, `pass_td_50p` | passing / `passing_yards_bonus_long_td_40/50` | ⚑ verify stacking |
+| `bonus_pass_yd_300`, `bonus_pass_yd_400` | passing / `passing_yards` threshold rows | `threshold_min = 300/400, flat = v` — ✅ S2: **tiered, not stacked**: every 400+ game (n=4) carries only `bonus_pass_yd_400` → +3, never +4. Rush/rec 100/200 assumed the same (no 200+ game yet; re-check) |
+| `pass_td_40p`, `pass_td_50p` | passing / `passing_yards_bonus_long_td_40/50` | ✅ S2: **stacked**: every 50+ TD also counts as 40+ (pass/rush/rec, n=54) → +4 |
 | `rush_yd`, `rush_td`, `rush_2pt`, `bonus_rush_yd_100/200`, `rush_td_40p/50p` | rushing / … | as passing |
 | `rec`, `rec_yd`, `rec_td`, `rec_2pt`, `bonus_rec_yd_100/200`, `rec_td_40p/50p` | receiving / … | `rec` → `receptions` |
 | `fum_lost` | misc / `fumbles_lost` | |
-| `st_td`, `kr_td`, `pr_td` | misc / `special_teams_tds` | ⚑ verify which keys the league uses |
+| `st_td`, `kr_td`, `pr_td` | misc / `special_teams_tds` | ✅ S2: league scores `st_td 6` (player) and `def_st_td 6` / `def_td 6` (DEF); `kr_td` / `pr_td` are 0 |
 | `xpm` | kicking / `extra_point_made` | |
-| `fgm_0_19` … `fgm_50p` | kicking / `field_goal_made_<range>` | ⚑ verify `fgm_50_59` / `fgm_60p` split vs `50_plus` |
+| `fgm_0_19` … `fgm_50p` | kicking / `field_goal_made_<range>` | ✅ S2: league uses generic `fgm 3` + `fgm_50_59 2` + `fgm_60p 2`; per-range keys and `fgm_50p` score 0. Every 50+ FG also counts in `fgm` (n=84) → 5 |
 | `fgmiss*`, `xpmiss` | kicking / new stat keys | only if non-zero |
 | `def_td`, `int`, `fum_rec`, `sack`, `safe`, `blk_kick`, `def_st_td` | defense / … | |
-| `pts_allow_0`, `pts_allow_1_6`, `pts_allow_7_13`, `pts_allow_14_20`, `pts_allow_21_27`, `pts_allow_28_34`, `pts_allow_35p` | defense / `points_allowed` bracket rows | `threshold_min` = lower bound, `flat = v` — **⚑ verify Sleeper's points-allowed definition (defense-only vs total)**, a known divergence class in DST reconciliation |
+| `pts_allow_0`, `pts_allow_1_6`, `pts_allow_7_13`, `pts_allow_14_20`, `pts_allow_21_27`, `pts_allow_28_34`, `pts_allow_35p` | defense / `points_allowed` bracket rows | `threshold_min` = lower bound, `flat = v`; points-allowed definition (a known divergence class in DST reconciliation) ✅ S2: **defense-only**: `pts_allow` = opponent final score − 6 × opponent `def_td` − 2 × opponent `safe` (252/269 equal the final score; the other 17 are exactly that; 0 unexplained). The PAT after such a TD stays in |
 | `yds_allow_0_100` … `yds_allow_550p` | defense / `total_yards_allowed` bracket rows | Sleeper has more brackets than NFL.com — map each |
 | any other key with `v != 0` | — | **abort**: list for the user |
 
@@ -156,13 +163,13 @@ for passing, rushing and receiving; fumble lost −2; XP 1; DEF TD 6, INT 2, fum
 safety 2, special-teams TD 6; points-allowed brackets 10/7/4/1/0/−1/−4 (same breakpoints);
 yards-allowed values (Sleeper splits 300–399 and 500+ into finer brackets with the same points).
 
-**Equivalent if Sleeper stacks keys as expected (⚑ confirm from S5 `players_points`):**
+**How Sleeper combines the keys (✅ S2 evidence 2026-11-09, §10; D-10 itself is decided in S6):**
 
 | Sleeper | Effect | 2025 NFL.com |
 |---------|--------|--------------|
-| `fgm 3` + `fgm_50_59 2` + `fgm_60p 2` | 3 for any FG, +2 at 50+ → 5 | 0–49 = 3, 50+ = 5 |
-| `bonus_pass_yd_300 1` + `bonus_pass_yd_400 3` (likewise 100/200 rush/rec) | Sleeper bonuses stack: a 400-yard game = 1 + 3 = **4** | stored as tiers (+1 at 300, +3 at 400); the existing engine and `verify` history decide whether NFL.com paid 3 or 4 |
-| `pass_td_40p 1` + `pass_td_50p 3` (and rush/rec) | a 55-yard TD = 1 + 3 = **4** if stacked | same question as above |
+| `fgm 3` + `fgm_50_59 2` + `fgm_60p 2` | 3 for any FG, +2 at 50+ → **5** (confirmed) | 0–49 = 3, 50+ = 5 |
+| `bonus_pass_yd_300 1` + `bonus_pass_yd_400 3` (likewise 100/200 rush/rec) | **tiered**: a 400-yard game = **3** (only the 400 key fires) | stored as tiers (+1 at 300, +3 at 400); S6 checks whether NFL.com paid 3 or 4 |
+| `pass_td_40p 1` + `pass_td_50p 3` (and rush/rec) | **stacked**: a 55-yard TD = 1 + 3 = **4** | S6 checks NFL.com history |
 
 **New on Sleeper (no 2025 equivalent):**
 
@@ -218,9 +225,9 @@ Bracket match objects: `r` (round), `m` (match id), `t1`, `t2` (roster ids), `w`
 |------------|------|
 | `playoff_brackets` row | one per (bracket, r, m) |
 | `matchups.is_playoff` | team-week appears in winners bracket for that round |
-| `matchups.is_consolation` | appears in losers bracket, or in a winners-bracket placement match with `p > 1` ⚑ verify league convention |
+| `matchups.is_consolation` | appears in losers bracket, or in a winners-bracket placement match with `p > 1` ⏸ re-probe after week 15 (no game decided yet). S2: both brackets are pre-generated with the same shape, placement games `p = 1` (r3), `p = 3` (r3), `p = 5` (r2) |
 | `champion_team_id` / `runner_up_team_id` | winners bracket match with `p = 1`: `w` / `l` |
-| `last_place_team_id` (the Sacko) | losers bracket deciding last place ⚑ verify `p` semantics in losers bracket (toilet-bowl direction) |
+| `last_place_team_id` (the Sacko) | losers bracket deciding last place ⏸ re-probe after week 15: whether losers-bracket `w` means "advances" (toilet bowl) and which `p` is last place cannot be read until games are decided |
 | `teams.playoff_finish` / `final_rank` | from `p` of each team's last match; teams without a placement keep NULL |
 
 ## 8. Players directory → `players`, `player_status_snapshots`
@@ -243,3 +250,28 @@ conflict policy in `03_DATA_SOURCES.md`); Sleeper values are snapshots, not over
 Sleeper uses `LAR`, `JAX`, `WAS`, `LV`, `LAC`; DEF player ids are team codes. Fold every code
 through `nfl_teams.canonical_franchise` before matching — the same fix that resolved the DST
 relocation join (`SD/OAK/STL` vs `LAC/LV/LA`).
+
+## 10. S2 probe evidence (2026-11-09)
+
+Re-run any time (offline, archive only; `--schedules` loads nflverse scores):
+`uv run python scripts/sleeper/probe_field_mapping.py --season 2026 --schedules`. Its output has
+keys, values and counts only, so it is safe for this public doc.
+
+- **Scoring is fully reproducible from the payloads.** For all 1,749 rostered player-weeks
+  (weeks 1–9), `players_points` = Σ `stats_week` stat × `scoring_settings` value, with 0 mismatches.
+  S6 can therefore treat Sleeper's own stat keys as the scoring input.
+- **Bonus combination (D-10 evidence, decided in S6):** yardage bonuses are tiered, long-TD bonuses
+  stack, a 50+ FG = 5, points allowed excludes return TDs and safeties scored against the offense
+  (§5 rows).
+- **Stats payloads churn.** `stats_week` embeds live player metadata (`injury_status`,
+  `news_updated`) next to the stats, and Sleeper's caches flip those values between requests. A
+  re-capture can therefore add a new `stats_week` revision with no stat change (~100 KB gzip each).
+  League endpoints dedupe exactly.
+- **Not captured as fixtures as-is:** the league payload carries chat fields
+  (`last_message_text_map`, `last_author_*`); the fixture builder drops them (D-11).
+- **Sleeper's own NFL.com import:** `metadata.imported_history_provider = "nfl"`, but
+  `previous_league_id = "0"`, so lineage stops at 2026. The sealed 2010–2025 DB stays the only
+  source for legacy seasons; Sleeper's imported copy is ignored.
+- **Not yet observable** (re-probe dates): bracket `w`/`l`/`p` outcomes (after week 15);
+  `roster_id` stability across renewals (first renewal, 2027); trades with picks/FAAB, co-owners,
+  `custom_points`, empty `"0"` starter slots, 200+ yard rush/rec bonuses (whenever they first occur).

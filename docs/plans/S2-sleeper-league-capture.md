@@ -220,15 +220,69 @@ commit, the user also reviews the fixture diff.
 
 ## Done when
 
-- [ ] `ff-pipeline sleeper-league capture --season 2026` archives every §3 endpoint on the live DB.
-- [ ] Re-running adds no duplicate files (and no rows for unchanged payloads).
-- [ ] Every ⚑ in `04` is resolved or explicitly deferred (with its S# and reason); D-10 evidence
+- [x] `ff-pipeline sleeper-league capture --season 2026` archives every §3 endpoint on the live DB.
+- [x] Re-running adds no duplicate files (and no rows for unchanged payloads).
+- [x] Every ⚑ in `04` is resolved or explicitly deferred (with its S# and reason); D-10 evidence
       is recorded, not decided.
 - [ ] The pseudonymized fixtures are committed, the privacy test passes, and the user has
       reviewed the fixture diff.
-- [ ] `legacy verify` passes before and after the migration (copy, then live).
-- [ ] Full gate green on the files S2 touches (see "Known issues" for pre-existing format debt).
-- [ ] `02` §S2 marked done; RUNBOOK gains a "Sleeper league capture" entry; PR → `dev`.
+- [x] `legacy verify` passes before and after the migration (copy, then live).
+- [x] Full gate green on the files S2 touches (see "Known issues" for pre-existing format debt).
+- [x] RUNBOOK gains a "Sleeper league capture" entry. [ ] `02` §S2 marked done; PR → `dev`.
+
+## As built (2026-11-09)
+
+Code: `archive/raw_store.py`; `crawlers/sleeper_league/{endpoints,client,lineage,capture,cli}.py`;
+`SourcePayload` + migration `a7c9e1b3d5f2_s2_source_payloads`; settings (`SLEEPER_LEAGUE_ID`,
+`SLEEPER_RAW_DIR`, `SLEEPER_PLAYERS_REFRESH_HOURS`, optional `NFL_COOKIE` +
+`require_nfl_cookie()`); `run` default = `nflverse, sleeper, team_defense`. Scripts:
+`scripts/sleeper/probe_field_mapping.py`, `scripts/sleeper/build_fixtures.py`.
+
+### Deviations from the design above
+
+1. **`archive` is one flat command** (`sleeper-league archive --endpoint … --week …`), not
+   `archive ls`.
+2. **Fixture file names derive from the URL** (`PayloadRequest.fixture_name`, e.g.
+   `v1_league_<id>_matchups_3.json`), so one fixture dir can hold several leagues (lineage).
+3. **4xx responses are archived with their status, not raised.** 5xx / network errors / 429
+   retry (4 attempts, exponential 2–16 s; 429 waits `Retry-After`, max 120 s). A request that
+   still fails is reported and the run continues; exit code 1 at the end.
+4. **Drafts are fetched every run** (3 cheap requests; identical bytes dedupe).
+5. **No synthetic playoff week** (D-S2-7 said synthetic). Bracket and playoff-week semantics are
+   exactly what is unverified until games are decided, so a made-up week 15 would bake guesses
+   into tests. The real week is captured after week 15 instead (D-S2-8 re-probe).
+6. **`tests/integration/test_legacy_guard.py`** downgrade test now targets S1's parent revision
+   (`d4e6f8a0b2c4`) instead of `-1`, which would have downgraded S2 once S2 became head.
+7. **`stats_week` churn (found by the live capture).** Sleeper embeds live player metadata
+   (`injury_status`, `news_updated`) in the stats payload and its caches flip those values, so a
+   re-capture can add stats revisions with no stat change. Kept as is (raw bytes are the record;
+   ~100 KB gzip each); documented in `04` §10 and the RUNBOOK.
+
+### Live rollout — 2026-11-09 (approved by the user)
+
+- Copy (`sqlite3 .backup` of the live DB): `legacy verify` PASSED → `migrate up` (e2a4c6e8f0b1 →
+  a7c9e1b3d5f2) → PASSED; capture: 38 requests, 38 new revisions, 0 errors (weeks 1–9, 4.2 MB);
+  re-run: 37 requests, 0 new revisions, 0 new files; `legacy verify` PASSED.
+- Live: `SLEEPER_LEAGUE_ID` added to `.env`; verify PASSED → migrate → PASSED; capture 38/38 new;
+  re-run 34 unchanged + 3 new `stats_week` revisions (deviation 7); verify PASSED; 41/41 guard
+  triggers; sealed 2010–2025 unchanged.
+
+### Probe results (`04` §10)
+
+All ⚑ resolved or deferred. Headline: `players_points` = Σ stats × `scoring_settings` for all
+1,749 rostered player-weeks; yardage bonuses tiered, long-TD bonuses stacked, 50+ FG = 5,
+`pts_allow` excludes return TDs / safeties scored against the offense (0 unexplained of 269).
+
+### Follow-ups (not S2)
+
+- Re-probe brackets after week 15 (D-S2-8) and capture a real playoff week fixture.
+- S5: label past weeks' IR players (`matchups.players[]` includes them; `rosters.reserve` is
+  current state only).
+- 2027 rollover: `roster_id` stability; forward discovery (`/user/{id}/leagues`) not built —
+  set `SLEEPER_LEAGUE_ID` to the new league.
+- D-S2-9: the `dz-sleeper-capture` scheduled task, set up with the user after merge.
+- Per-request `GET` debug lines print even with `LOG_LEVEL=WARNING` (console logging config,
+  pre-existing; also affects `crawlers.sleeper`).
 
 ## Known issues (out of scope unless the user says otherwise)
 

@@ -314,6 +314,30 @@ keep refreshing on those years.
   into a sealed year is refused. Corrections are scripted fixes or overlays run through
   `legacy amend`, never a re-crawl.
 
+## Sleeper league capture (2026+)
+
+Raw Sleeper league payloads are archived before anything parses them (S2,
+`docs/plans/S2-sleeper-league-capture.md`). Bytes: `SLEEPER_RAW_DIR`
+(`data/raw/sleeper/<sha[:2]>/<sha>.json.gz`, gitignored). Index: the `source_payloads` table.
+
+```
+uv run ff-pipeline sleeper-league capture --season 2026   # all endpoints, weeks 1..current
+uv run ff-pipeline sleeper-league capture --dry-run       # fetch + report, write nothing
+uv run ff-pipeline sleeper-league lineage                 # season -> league id chain
+uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list revisions
+```
+
+- Needs `SLEEPER_LEAGUE_ID` (the newest season's league). At a season rollover, set it to the
+  new league id; earlier seasons are found through `previous_league_id`.
+- Re-running is safe: identical responses only bump `last_fetched_at` / `fetch_count`;
+  changed responses (stat corrections, late moves) become new revisions. `stats_week`
+  revisions also appear when only Sleeper's embedded player news changed (expected, ~100 KB each).
+- Exit code 1 = at least one request failed after retries (listed); everything else was archived.
+  Re-run later. A 429 waits for `Retry-After` (max 120 s).
+- It is a writing command, so the legacy preflight runs first.
+- Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
+  `scripts/sleeper/build_fixtures.py` (pseudonymized test fixtures; review the diff before commit).
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):
