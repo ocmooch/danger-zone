@@ -109,7 +109,9 @@ archive replay returns newest payload; lineage walk on a 3-season fixture chain.
 adds no duplicate files, every ⚑ in `04` is resolved or explicitly deferred, fixtures committed.
 From here on a scheduled capture can run weekly even before S5.
 
-## S3 — Platform-era schema
+## S3 — Platform-era schema — DONE (merged to `dev` via PR #71, 2026-11-09)
+
+As-built record and rollout: `docs/plans/S3-platform-era-schema.md`. Live DB at `b8d0f2a4c6e3`.
 
 **Goal:** the additive schema from `01` §5, verified harmless to the legacy era.
 

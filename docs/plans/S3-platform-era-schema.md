@@ -131,13 +131,13 @@ dashboard pointed at an **un-migrated** DB fails with "no such column". So the l
 
 ## Done when
 
-- [x] Live DB at the new head (`b8d0f2a4c6e3`, 2026-11-09). [ ] Migration + ORM merged to `dev`.
+- [x] Live DB at the new head (`b8d0f2a4c6e3`, 2026-11-09); migration + ORM merged to `dev` (PR #71).
 - [x] `legacy verify` identical before/after on the seal-v1 copy and on the live DB; "fingerprints
       unchanged" recorded in the PR body.
 - [x] Round-trip test proves the triggers survive the downgrade.
 - [x] Full danger-zone gate green; dz-dashboard backend suite + live-GET smoke green against the
       migrated DB.
-- [x] `04_DATA_MODEL.md` updated (incl. `source_payloads`). [ ] `02` §S3 marked done (after merge).
+- [x] `04_DATA_MODEL.md` updated (incl. `source_payloads`); `02` §S3 marked done.
 
 ## As built (2026-11-09)
 
