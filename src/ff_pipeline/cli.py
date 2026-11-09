@@ -2013,6 +2013,10 @@ from ff_pipeline.crawlers.sleeper_league.cli import sleeper_league_app  # noqa: 
 
 app.add_typer(sleeper_league_app, name="sleeper-league")
 
+from ff_pipeline.owners_cli import owners_app  # noqa: E402
+
+app.add_typer(owners_app, name="owners")
+
 
 if __name__ == "__main__":
     app()

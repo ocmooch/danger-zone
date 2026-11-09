@@ -351,6 +351,29 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
 - Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
   `scripts/sleeper/build_fixtures.py` (pseudonymized test fixtures; review the diff before commit).
 
+## Sleeper identity (S4)
+
+Owners, the 2026 placeholder and players, all from the archive (`docs/plans/S4-identity.md`).
+
+```
+uv run ff-pipeline owners map                  # validate data/owner_platform_identities.yaml (read-only)
+uv run ff-pipeline owners map --apply          # load owner_platform_identities (idempotent)
+uv run ff-pipeline sleeper-league resolve-players          # dry run: resolved / stub-needed
+uv run ff-pipeline sleeper-league map-player <sleeper_id> <player_id> --note "why"
+uv run ff-pipeline legacy quarantine-2026-stub # one-time (done 2026-11-09); re-run = no-op
+```
+
+- **New Sleeper user** (e.g. a new manager at a renewal): `owners map` fails and prints the YAML
+  stanza to add. Use an existing `owner_id`, or `new_owner: true` + `owner_display_name` for a
+  genuinely new person. Only `confidence: high` / `confirmed` is accepted. The YAML holds real
+  names, stays local, and is gitignored.
+- **stub-needed player:** first check whether the player already exists under another name or
+  position (nickname, CB vs DB). If yes, pin it with `map-player`. Otherwise the S5 loader creates
+  a stub (league-referenced players only).
+- **The quarantine** wrote its own `legacy_amendments` row (`legacy amend` audits only sealed
+  rows). The stub's rows are in `legacy_nfl_com_2026_preseason` and in the seal-v1 vault archive.
+  A pre-move backup sits in `data/backups/amendments/`.
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):

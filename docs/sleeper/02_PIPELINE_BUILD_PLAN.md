@@ -109,7 +109,9 @@ archive replay returns newest payload; lineage walk on a 3-season fixture chain.
 adds no duplicate files, every ⚑ in `04` is resolved or explicitly deferred, fixtures committed.
 From here on a scheduled capture can run weekly even before S5.
 
-## S3 — Platform-era schema
+## S3 — Platform-era schema — DONE (merged to `dev` via PR #71, 2026-11-09)
+
+As-built record and rollout: `docs/plans/S3-platform-era-schema.md`. Live DB at `b8d0f2a4c6e3`.
 
 **Goal:** the additive schema from `01` §5, verified harmless to the legacy era.
 
@@ -125,7 +127,10 @@ live DB → `legacy verify` identical. Record "fingerprints unchanged" in the PR
 **Done when:** migration merged; live DB at new head; fingerprints unchanged; dashboard test suite
 still green against the migrated DB (no consumer breakage from additive columns).
 
-## S4 — Identity
+## S4 — Identity — DONE (built + applied to live 2026-11-09; PR → `dev`)
+
+As-built record: `docs/plans/S4-identity.md`. No seal-v2 was needed: sealed data is unchanged, and
+seal-v1 already holds the 2026 stub (decision S4-D1). The quarantine has its own audit row (#1).
 
 **Goal:** every Sleeper user, roster and player resolves to a canonical row.
 
