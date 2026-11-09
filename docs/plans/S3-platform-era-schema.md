@@ -131,19 +131,43 @@ dashboard pointed at an **un-migrated** DB fails with "no such column". So the l
 
 ## Done when
 
-- [ ] Migration + ORM merged to `dev`; live DB at the new head.
-- [ ] `legacy verify` identical before/after on the seal-v1 copy and on the live DB; "fingerprints
+- [x] Live DB at the new head (`b8d0f2a4c6e3`, 2026-11-09). [ ] Migration + ORM merged to `dev`.
+- [x] `legacy verify` identical before/after on the seal-v1 copy and on the live DB; "fingerprints
       unchanged" recorded in the PR body.
-- [ ] Round-trip test proves the triggers survive the downgrade.
-- [ ] Full danger-zone gate green; dz-dashboard backend suite + live-GET smoke green against the
+- [x] Round-trip test proves the triggers survive the downgrade.
+- [x] Full danger-zone gate green; dz-dashboard backend suite + live-GET smoke green against the
       migrated DB.
-- [ ] `04_DATA_MODEL.md` updated (incl. `source_payloads`); `02` §S3 marked done.
+- [x] `04_DATA_MODEL.md` updated (incl. `source_payloads`). [ ] `02` §S3 marked done (after merge).
+
+## As built (2026-11-09)
+
+Code: `repository/models.py` (new columns on `Season`/`Team`/`Matchup`/`Transaction`/`Player`;
+`OwnerPlatformIdentity`, `PlayoffBracket`, `TradedPick`, `PlayerStatusSnapshot`,
+`LegacyNflCom2026Preseason`; `Platform` literal), migration `b8d0f2a4c6e3_s3_platform_era_schema`,
+`tests/integration/test_migration_s3.py`, `docs/04_DATA_MODEL.md`. Built as designed; no
+deviations.
+
+### Rollout
+
+- **Copy** (`sqlite3 .backup` of live): verify PASSED → `migrate up` → PASSED; 41 → 41 triggers;
+  all 17 seasons `platform = 'nfl_com'`.
+- **Consumers:** danger-zone gate 740 passed. dz-dashboard backend suite 494 passed (it imports the
+  S3 ORM through its editable `../danger-zone` install). A second BFF on :8801 over the migrated
+  copy vs the live BFF on :8800: all 53 GET routes gave the same status (48×200, 5×400 param
+  validation) and **byte-identical bodies**.
+- **Live** (approved): verify PASSED → migrate → PASSED; 41/41 triggers; sealed 2010–2025;
+  running BFF still 200; `sleeper-league capture --dry-run` OK.
+- **Lesson:** because dz-dashboard installs `../danger-zone` editable, the dashboard imports whatever
+  branch is **checked out**, not just `dev`. Any schema branch therefore needs the live migration
+  before the BFF next restarts, not only before merge. Here the BFF had loaded the old models at
+  startup (no `--reload`), so nothing broke.
 
 ## Known issues (out of scope)
 
 - `prune-players` FOREIGN KEY failure on 5 players; `ruff format` debt in
   `crawlers/adp/sleeper.py` + 3 scripts/alembic files; vault-staleness warning (S9).
 - Per-request debug lines in console logging at `LOG_LEVEL=WARNING` (noted in S2).
+- dz-dashboard `CLAUDE.md` says `uv run pytest tests/dashboard`, but its tests live in `tests/`.
 
 ## Decisions (defaults approved by the user 2026-11-09)
 
