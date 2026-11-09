@@ -207,3 +207,37 @@ Then:
 
 Claude can do everything else (scripts, tests, the first seal, the first sync and its verification)
 once steps 1–4 are done.
+
+## 10. Evergreen fallback copy (placed 2026-11-09)
+
+One copy of the verified seal-v1 archive is kept **permanently, outside the sync job**, in each of
+three places. It is the last-resort source of data if every rotating copy is lost or compromised. It
+is never overwritten, renamed, re-encrypted, or replaced, including by later seals.
+
+| | |
+|---|---|
+| File | `dz-vault_seal-v1_20261107_5ade3104.tar.gz.age` (22,481,806 bytes) |
+| sha256 | `5ade31049ee588f701651753f8d71758bb054ad1f4a61c8bbab32bdea489d737` |
+| Contents | seal-v1: full SQLite DB (2010–2025) + CSV/JSONL exports + seeds/assets + `verify.py` |
+| Decrypt-tested | primary and recovery keys, 2026-11-07 (§9 log in `SETUP_PROGRESS.md`) |
+
+Each folder also holds `README.txt` (what this is, how to restore) and `<file>.sha256`.
+
+| Location | Path | Protection |
+|----------|------|-----------|
+| Local (Windows disk, survives a WSL reset) | `C:\Users\MainUser\ff-legacy-evergreen\` | Read-only attribute; NTFS deny-ACE for Everyone on each file (delete, write, append, write attributes) and on the folder (delete, delete-child). Delete, edit, rename and folder removal all tested → "Permission denied". |
+| iCloud Drive | `iCloudDrive\ff-legacy-evergreen\` | Read-only attribute; NTFS deny-ACE for Everyone: delete on each file, delete + delete-child on the folder. Lighter than local so the iCloud sync client can still manage the placeholder. Blocks deletion from this PC only; a deletion on another Apple device or iCloud.com would go to iCloud's 30-day Recently Deleted. |
+| Google Drive | `gdrive-vault:ff-legacy-evergreen/` | Uploaded with `rclone --immutable`; each file **locked** (Drive `contentRestrictions.readOnly`), so content can't be changed or replaced. Personal Drive can't make a file undeletable, so the safety net there is the 30-day Trash. |
+
+**Why these are safe from automation:** `vault_sync.py` only lists and prunes
+`gdrive-vault:ff-legacy-vault`, `iCloudDrive\ff-legacy-vault` and the GitHub releases. It never sees
+the `ff-legacy-evergreen` folders. Keep it that way: never point a destination or retention rule at them.
+
+**Check them** (read-only):
+
+    sha256sum /mnt/c/Users/MainUser/ff-legacy-evergreen/*.age /mnt/c/Users/MainUser/iCloudDrive/ff-legacy-evergreen/*.age
+    rclone hashsum sha256 --download gdrive-vault:ff-legacy-evergreen --include '*.age'
+
+**Deliberately removing a lock** (only if the user decides to retire a copy): Windows:
+`icacls "<path>" /remove:d *S-1-1-0` then `attrib -R "<path>"` (the owner can always edit the ACL).
+Drive: open the file → ⋮ → File information → Unlock, or PATCH `contentRestrictions: [{readOnly:false}]`.
