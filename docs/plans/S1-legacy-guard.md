@@ -146,9 +146,9 @@ Integration (`tests/integration/test_legacy_guard.py`, tiny sealed fixture DB):
 - [x] `ff-pipeline run --source nflverse` and `rescore --season 2015` still succeed.
 - [x] `UPDATE matchups SET team_score = 0 WHERE season_id = <2015>` in the `sqlite3` shell is refused.
 - [x] Command sweep table (§5) recorded in this file; nothing in "must keep working" is broken.
-- [x] Unit + integration tests above pass (636 total, Python 3.12 locally). [ ] CI green (Python 3.14 — close every sqlite connection) — on the PR.
+- [x] Unit + integration tests above pass (636 total, Python 3.12 locally). [x] CI green (Python 3.14 — close every sqlite connection) — on the PR.
 - [x] RUNBOOK "Legacy vault" section gains `legacy verify/status/amend`.
-- [ ] `SETUP_PROGRESS`-style note not needed; `02` §S1 marked done; PR → `dev`.
+- [x] `SETUP_PROGRESS`-style note not needed; `02` §S1 marked done; PR #67 → `dev`.
 
 ## As built (2026-11-07)
 

@@ -53,7 +53,7 @@ Tests: unit test for the fingerprint serializer (determinism across runs, float/
 **Done when:** the local vault plus three verified off-machine copies exist (Drive, iCloud, private
 repo release); the manifest hash is in git; `ls data/` shows no loose `.bak` files.
 
-## S1 — Legacy guard (built 2026-11-07, branch `feature/s1-legacy-guard`)
+## S1 — Legacy guard — DONE (built 2026-11-07, merged to `dev` via PR #67, 2026-11-09)
 
 Build contract and the as-built record (deviations, command sweep): `docs/plans/S1-legacy-guard.md`.
 
