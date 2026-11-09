@@ -232,7 +232,7 @@ commit, the user also reviews the fixture diff.
       emails, URLs, avatars, chat/import/nickname keys and non-pseudonym names.
 - [x] `legacy verify` passes before and after the migration (copy, then live).
 - [x] Full gate green on the files S2 touches (see "Known issues" for pre-existing format debt).
-- [x] RUNBOOK gains a "Sleeper league capture" entry. [ ] `02` §S2 marked done; PR → `dev`.
+- [x] RUNBOOK gains a "Sleeper league capture" entry; `02` §S2 marked done; PR #69 → `dev` (merged 2026-11-09).
 
 ## As built (2026-11-09)
 
@@ -279,12 +279,15 @@ All ⚑ resolved or deferred. Headline: `players_points` = Σ stats × `scoring_
 
 ### Follow-ups (not S2)
 
-- Re-probe brackets after week 15 (D-S2-8) and capture a real playoff week fixture.
+- Re-probe brackets once playoff games are decided (week 17 final, ~2027-01-05; D-S2-8): rerun
+  `probe_field_mapping.py`, update `04` §7, add a real playoff-week fixture via `build_fixtures.py`.
 - S5: label past weeks' IR players (`matchups.players[]` includes them; `rosters.reserve` is
   current state only).
 - 2027 rollover: `roster_id` stability; forward discovery (`/user/{id}/leagues`) not built —
   set `SLEEPER_LEAGUE_ID` to the new league.
-- D-S2-9: the `dz-sleeper-capture` scheduled task, set up with the user after merge.
+- ✅ D-S2-9 done 2026-11-09: Windows task `dz-sleeper-capture` (Wed 06:00, StartWhenAvailable,
+  network required, 30 min limit) runs `scripts/sleeper/weekly_capture.sh`; manual run → result 0.
+  Each run currently adds ~3–9 `stats_week` revisions (deviation 7, ~1 MB/week).
 - Per-request `GET` debug lines print even with `LOG_LEVEL=WARNING` (console logging config,
   pre-existing; also affects `crawlers.sleeper`).
 
