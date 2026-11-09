@@ -57,7 +57,9 @@ def test_required_vars_load(monkeypatch: pytest.MonkeyPatch) -> None:
 
     s = Settings()  # type: ignore[call-arg]
     assert s.nfl_league_id == "12345"
+    assert s.nfl_cookie is not None
     assert s.nfl_cookie.get_secret_value() == "fake-cookie-value"
+    assert s.require_nfl_cookie() == "fake-cookie-value"
     assert s.league_start_year == 2014
 
 
@@ -67,16 +69,44 @@ def test_missing_required_raises_settings_error() -> None:
         load_settings()
     msg = str(excinfo.value)
     assert "NFL_LEAGUE_ID" in msg
-    assert "NFL_COOKIE" in msg
+    assert "NFL_COOKIE" not in msg  # optional since S2 (NFL.com is defunct)
 
 
 @pytest.mark.usefixtures("isolated_env")
-def test_partial_required_raises_settings_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_cookie_is_allowed_but_required_by_nfl_com(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("NFL_LEAGUE_ID", "12345")
     monkeypatch.setenv("LEAGUE_START_YEAR", "2014")
-    with pytest.raises(SettingsError) as excinfo:
-        load_settings()
-    assert "NFL_COOKIE" in str(excinfo.value)
+    s = load_settings()
+    assert s.nfl_cookie is None
+    with pytest.raises(SettingsError, match="NFL_COOKIE"):
+        s.require_nfl_cookie()
+
+
+@pytest.mark.usefixtures("isolated_env")
+def test_blank_cookie_and_league_id_are_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NFL_LEAGUE_ID", "12345")
+    monkeypatch.setenv("LEAGUE_START_YEAR", "2014")
+    monkeypatch.setenv("NFL_COOKIE", "   ")
+    monkeypatch.setenv("SLEEPER_LEAGUE_ID", "")
+    s = load_settings()
+    assert s.nfl_cookie is None
+    assert s.sleeper_league_id is None
+    with pytest.raises(SettingsError, match="SLEEPER_LEAGUE_ID"):
+        s.require_sleeper_league_id()
+
+
+@pytest.mark.usefixtures("isolated_env")
+def test_sleeper_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NFL_LEAGUE_ID", "12345")
+    monkeypatch.setenv("LEAGUE_START_YEAR", "2014")
+    monkeypatch.setenv("SLEEPER_LEAGUE_ID", " 999 ")
+    s = load_settings()
+    assert s.require_sleeper_league_id() == "999"
+    assert s.sleeper_raw_dir.is_absolute()
+    assert s.sleeper_raw_dir.parts[-3:] == ("data", "raw", "sleeper")
+    assert s.sleeper_players_refresh_hours == 24
 
 
 @pytest.mark.usefixtures("isolated_env")

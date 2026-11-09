@@ -79,7 +79,7 @@ def main() -> int:
 
     total_inserted = 0
     with (
-        NflComClient(cookie=settings.nfl_cookie.get_secret_value()) as client,
+        NflComClient(cookie=settings.require_nfl_cookie()) as client,
         Session(engine) as session,
     ):
         years = session.execute(select(Season.year, Season.season_id).order_by(Season.year)).all()
