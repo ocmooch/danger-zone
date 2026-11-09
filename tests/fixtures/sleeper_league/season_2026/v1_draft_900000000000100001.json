@@ -1,0 +1,53 @@
+{
+ "creators": [
+  "900000000100000009"
+ ],
+ "draft_id": "900000000000100001",
+ "draft_order": {
+  "900000000100000001": 6,
+  "900000000100000002": 4,
+  "900000000100000003": 5,
+  "900000000100000004": 8,
+  "900000000100000005": 11,
+  "900000000100000006": 10,
+  "900000000100000007": 3,
+  "900000000100000008": 7,
+  "900000000100000009": 12,
+  "900000000100000010": 9,
+  "900000000100000011": 1,
+  "900000000100000012": 2
+ },
+ "league_id": "900000000000000001",
+ "metadata": {
+  "scoring_type": "ppr"
+ },
+ "season": "2026",
+ "season_type": "regular",
+ "settings": {
+  "alpha_sort": 0,
+  "autopause_enabled": 0,
+  "autopause_end_time": 840,
+  "autopause_start_time": 120,
+  "autostart": 0,
+  "cpu_autopick": 0,
+  "enforce_position_limits": 1,
+  "nomination_timer": 60,
+  "pick_timer": 120,
+  "player_type": 0,
+  "reversal_round": 0,
+  "rounds": 15,
+  "slots_bn": 6,
+  "slots_def": 1,
+  "slots_flex": 1,
+  "slots_k": 1,
+  "slots_qb": 1,
+  "slots_rb": 2,
+  "slots_te": 1,
+  "slots_wr": 2,
+  "teams": 12
+ },
+ "sport": "nfl",
+ "start_time": 1788561587668,
+ "status": "complete",
+ "type": "snake"
+}

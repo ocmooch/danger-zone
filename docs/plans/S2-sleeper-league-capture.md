@@ -224,8 +224,12 @@ commit, the user also reviews the fixture diff.
 - [x] Re-running adds no duplicate files (and no rows for unchanged payloads).
 - [x] Every ⚑ in `04` is resolved or explicitly deferred (with its S# and reason); D-10 evidence
       is recorded, not decided.
-- [ ] The pseudonymized fixtures are committed, the privacy test passes, and the user has
-      reviewed the fixture diff.
+- [x] The pseudonymized fixtures are committed and the privacy test passes. Review basis
+      (2026-11-09): 41 files are too many to check by hand; the user accepted them at a glance
+      as a scaffold. The guarantee is automated: the builder refuses to write if any real user
+      id, display name, team name, league/draft/transaction id leaks, and
+      `tests/unit/test_fixture_privacy.py` blocks non-fake 15+ digit ids, the real league id,
+      emails, URLs, avatars, chat/import/nickname keys and non-pseudonym names.
 - [x] `legacy verify` passes before and after the migration (copy, then live).
 - [x] Full gate green on the files S2 touches (see "Known issues" for pre-existing format debt).
 - [x] RUNBOOK gains a "Sleeper league capture" entry. [ ] `02` §S2 marked done; PR → `dev`.

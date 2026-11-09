@@ -1,0 +1,2714 @@
+[
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "10213",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_40p": 1.0,
+   "rec_td": 1.0,
+   "rec_yd": 103.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "DEN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "10232",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 55.0,
+   "rush_yd": 11.0
+  },
+  "team": "ARI",
+  "week": 7
+ },
+ {
+  "opponent": "GB",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "10859",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 18.0
+  },
+  "team": "DET",
+  "week": 7
+ },
+ {
+  "opponent": "KC",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "11435",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 15.0,
+   "rush_td": 1.0,
+   "rush_yd": 100.0
+  },
+  "team": "SEA",
+  "week": 7
+ },
+ {
+  "opponent": "PHI",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "11533",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 3.0,
+   "fgm_50_59": 1.0,
+   "fgm_50p": 1.0,
+   "gp": 1.0,
+   "xpm": 3.0
+  },
+  "team": "DAL",
+  "week": 7
+ },
+ {
+  "opponent": "NE",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "11560",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_pass_yd_300": 1.0,
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_td": 2.0,
+   "pass_yd": 308.0,
+   "rush_yd": 18.0
+  },
+  "team": "CHI",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "11564",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_pass_yd_300": 1.0,
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_int": 1.0,
+   "pass_td": 2.0,
+   "pass_td_40p": 1.0,
+   "pass_yd": 321.0,
+   "rush_td": 1.0,
+   "rush_yd": 26.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "MIA",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "11576",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 30.0,
+   "rush_yd": 104.0
+  },
+  "team": "NYJ",
+  "week": 7
+ },
+ {
+  "opponent": "CAR",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "11584",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 4.0,
+   "rush_td": 2.0,
+   "rush_yd": 106.0
+  },
+  "team": "TB",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "11586",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 8.0,
+   "rush_td": 1.0,
+   "rush_yd": 93.0
+  },
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "11604",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 73.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "NE",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11620",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 69.0
+  },
+  "team": "CHI",
+  "week": 7
+ },
+ {
+  "opponent": "SEA",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11624",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 11.0
+  },
+  "team": "KC",
+  "week": 7
+ },
+ {
+  "opponent": "MIA",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11625",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0
+  },
+  "team": "NYJ",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11628",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_td": 1.0,
+   "rec_yd": 6.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "HOU",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11632",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 7.0,
+   "rec_40p": 1.0,
+   "rec_yd": 111.0
+  },
+  "team": "NYG",
+  "week": 7
+ },
+ {
+  "opponent": "TB",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11646",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 9.0
+  },
+  "team": "CAR",
+  "week": 7
+ },
+ {
+  "opponent": "HOU",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "11655",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 2.0,
+   "rush_td": 1.0,
+   "rush_yd": 15.0
+  },
+  "team": "NYG",
+  "week": 7
+ },
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "1166",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_td": 2.0,
+   "pass_yd": 295.0,
+   "rush_yd": 6.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "11792",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 3.0,
+   "fgm_50_59": 1.0,
+   "fgm_50p": 1.0,
+   "gp": 1.0,
+   "xpm": 1.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "11834",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_td": 1.0,
+   "rec_yd": 54.0
+  },
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "MIN",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "12185",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 1.0,
+   "gp": 1.0,
+   "xpm": 1.0
+  },
+  "team": "IND",
+  "week": 7
+ },
+ {
+  "opponent": "TEN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12469",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 32.0,
+   "rush_yd": 45.0
+  },
+  "team": "CLE",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12474",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 15.0,
+   "rush_yd": 66.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "HOU",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12481",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": -3.0,
+   "rush_40p": 1.0,
+   "rush_td": 1.0,
+   "rush_yd": 124.0
+  },
+  "team": "NYG",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "12487",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "ARI",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12489",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_40p": 1.0,
+   "rec_td": 1.0,
+   "rec_td_40p": 1.0,
+   "rec_td_50p": 1.0,
+   "rec_yd": 54.0,
+   "rush_yd": 6.0
+  },
+  "team": "DEN",
+  "week": 7
+ },
+ {
+  "opponent": "NYJ",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12495",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 1.0,
+   "rush_td": 1.0,
+   "rush_yd": 103.0
+  },
+  "team": "MIA",
+  "week": 7
+ },
+ {
+  "opponent": "DET",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "12501",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 39.0
+  },
+  "team": "GB",
+  "week": 7
+ },
+ {
+  "opponent": "TEN",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "12506",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 91.0
+  },
+  "team": "CLE",
+  "week": 7
+ },
+ {
+  "opponent": "TEN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12512",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 8.0,
+   "rush_td": 2.0,
+   "rush_yd": 96.0
+  },
+  "team": "CLE",
+  "week": 7
+ },
+ {
+  "opponent": "NE",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "12517",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 7.0,
+   "rec_td": 1.0,
+   "rec_yd": 69.0
+  },
+  "team": "CHI",
+  "week": 7
+ },
+ {
+  "opponent": "NE",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "12519",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_40p": 1.0,
+   "rec_td": 1.0,
+   "rec_yd": 130.0,
+   "rush_yd": 7.0
+  },
+  "team": "CHI",
+  "week": 7
+ },
+ {
+  "opponent": "CLE",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "12522",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_int": 1.0,
+   "pass_yd": 181.0,
+   "rush_yd": 5.0
+  },
+  "team": "TEN",
+  "week": 7
+ },
+ {
+  "opponent": "TB",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "12526",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 40.0
+  },
+  "team": "CAR",
+  "week": 7
+ },
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12527",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 8.0,
+   "rec_td": 1.0,
+   "rec_yd": 61.0,
+   "rush_yd": 15.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "12529",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 14.0,
+   "rush_yd": 9.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "12536",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": -3.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "12545",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_int": 1.0,
+   "pass_td": 1.0,
+   "pass_yd": 278.0,
+   "rush_yd": 7.0
+  },
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "CIN",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "12711",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 2.0,
+   "gp": 1.0,
+   "xpm": 1.0
+  },
+  "team": "BAL",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "12718",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 15.0
+  },
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13274",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 27.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "MIA",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13276",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_40p": 2.0,
+   "rec_td": 1.0,
+   "rec_yd": 115.0
+  },
+  "team": "NYJ",
+  "week": 7
+ },
+ {
+  "opponent": "CLE",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13279",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_yd": 69.0
+  },
+  "team": "TEN",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13281",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "KC",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "13286",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "SEA",
+  "week": 7
+ },
+ {
+  "opponent": "CIN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13293",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 25.0
+  },
+  "team": "BAL",
+  "week": 7
+ },
+ {
+  "opponent": "DAL",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13294",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 7.0,
+   "rec_td": 1.0,
+   "rec_yd": 67.0
+  },
+  "team": "PHI",
+  "week": 7
+ },
+ {
+  "opponent": "TEN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13298",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 8.0,
+   "rec_yd": 129.0,
+   "rush_yd": 23.0
+  },
+  "team": "CLE",
+  "week": 7
+ },
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "13305",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rush_yd": 27.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "SEA",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "13337",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 17.0
+  },
+  "team": "KC",
+  "week": 7
+ },
+ {
+  "opponent": "ARI",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "13345",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 15.0,
+   "rush_yd": 54.0
+  },
+  "team": "DEN",
+  "week": 7
+ },
+ {
+  "opponent": "TEN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13346",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 27.0
+  },
+  "team": "CLE",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "13414",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": -4.0,
+   "rush_td": 1.0,
+   "rush_yd": 63.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "13417",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "MIN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "13424",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 2.0,
+   "rush_yd": 46.0
+  },
+  "team": "IND",
+  "week": 7
+ },
+ {
+  "opponent": "HOU",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "13833",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "xpm": 3.0
+  },
+  "team": "NYG",
+  "week": 7
+ },
+ {
+  "opponent": "SEA",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "1466",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 44.0
+  },
+  "team": "KC",
+  "week": 7
+ },
+ {
+  "opponent": "MIN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "1479",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 31.0
+  },
+  "team": "IND",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "1945",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 3.0,
+   "gp": 1.0,
+   "xpm": 1.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "2133",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "KC",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "2747",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 2.0,
+   "gp": 1.0,
+   "xpm": 2.0
+  },
+  "team": "SEA",
+  "week": 7
+ },
+ {
+  "opponent": "GB",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "3163",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_pass_yd_300": 1.0,
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_td": 2.0,
+   "pass_yd": 303.0,
+   "rush_yd": -1.0
+  },
+  "team": "DET",
+  "week": 7
+ },
+ {
+  "opponent": "CIN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "3198",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 4.0,
+   "rush_yd": 45.0
+  },
+  "team": "BAL",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "3214",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 7.0,
+   "rec_yd": 71.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "PHI",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "3294",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_td": 3.0,
+   "pass_yd": 212.0,
+   "rush_2pt": 1.0,
+   "rush_yd": 8.0
+  },
+  "team": "DAL",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "3451",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 2.0,
+   "fgm_50_59": 2.0,
+   "fgm_50p": 2.0,
+   "gp": 1.0,
+   "xpm": 1.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "4034",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 61.0,
+   "rush_td": 1.0,
+   "rush_yd": 39.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "4035",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 7.0,
+   "rec_yd": 57.0,
+   "rush_yd": 5.0
+  },
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "CAR",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "4037",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 27.0
+  },
+  "team": "TB",
+  "week": 7
+ },
+ {
+  "opponent": "SEA",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "4046",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_int": 1.0,
+   "pass_yd": 165.0,
+   "rush_yd": 14.0
+  },
+  "team": "KC",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "4177",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "4199",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rush_yd": 26.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "421",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_int": 1.0,
+   "pass_td": 3.0,
+   "pass_yd": 195.0,
+   "rush_yd": -3.0
+  },
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "4217",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "rec": 8.0,
+   "rec_yd": 88.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "DEN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "4454",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 9.0
+  },
+  "team": "ARI",
+  "week": 7
+ },
+ {
+  "opponent": "DAL",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "4866",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 9.0,
+   "rush_td": 1.0,
+   "rush_yd": 62.0
+  },
+  "team": "PHI",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "4950",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "CIN",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "5012",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 23.0
+  },
+  "team": "BAL",
+  "week": 7
+ },
+ {
+  "opponent": "DAL",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "5022",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_yd": 48.0
+  },
+  "team": "PHI",
+  "week": 7
+ },
+ {
+  "opponent": "ARI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "5045",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 45.0
+  },
+  "team": "DEN",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "5189",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "xpm": 2.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "5844",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_td": 1.0,
+   "rec_yd": 35.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "5846",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_40p": 1.0,
+   "rec_yd": 56.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "5849",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_td": 1.0,
+   "pass_yd": 150.0,
+   "rush_yd": 39.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "DET",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "5850",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_td": 1.0,
+   "rec_yd": 55.0,
+   "rush_yd": 36.0
+  },
+  "team": "GB",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "5859",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 48.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "CLE",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "5967",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 26.0,
+   "rush_td": 3.0,
+   "rush_yd": 129.0
+  },
+  "team": "TEN",
+  "week": 7
+ },
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "6083",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 3.0,
+   "gp": 1.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "CAR",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "6650",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fgm": 2.0,
+   "gp": 1.0,
+   "xpm": 5.0
+  },
+  "team": "TB",
+  "week": 7
+ },
+ {
+  "opponent": "BAL",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "6770",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_cmp_40p": 2.0,
+   "pass_td": 4.0,
+   "pass_yd": 292.0,
+   "rush_yd": 12.0
+  },
+  "team": "CIN",
+  "week": 7
+ },
+ {
+  "opponent": "PHI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "6786",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_td": 2.0,
+   "rec_yd": 74.0
+  },
+  "team": "DAL",
+  "week": 7
+ },
+ {
+  "opponent": "NE",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "6790",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 12.0,
+   "rush_td": 1.0,
+   "rush_yd": 78.0
+  },
+  "team": "CHI",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "6794",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 44.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "BAL",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "6801",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_40p": 2.0,
+   "rec_td": 1.0,
+   "rec_yd": 148.0
+  },
+  "team": "CIN",
+  "week": 7
+ },
+ {
+  "opponent": "DET",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "6804",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_int": 1.0,
+   "pass_td": 2.0,
+   "pass_yd": 274.0
+  },
+  "team": "GB",
+  "week": 7
+ },
+ {
+  "opponent": "ARI",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "6806",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rush_td": 1.0,
+   "rush_yd": 23.0
+  },
+  "team": "DEN",
+  "week": 7
+ },
+ {
+  "opponent": "MIN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "6813",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 15.0,
+   "rush_td": 1.0,
+   "rush_yd": 95.0
+  },
+  "team": "IND",
+  "week": 7
+ },
+ {
+  "opponent": "DAL",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "6904",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "PHI",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "7002",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 7.0
+  },
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "7021",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 45.0,
+   "rush_yd": 41.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "ARI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "7526",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 48.0
+  },
+  "team": "DEN",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "7543",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "GB",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "7547",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 9.0,
+   "rec_40p": 1.0,
+   "rec_yd": 153.0,
+   "rush_yd": -1.0
+  },
+  "team": "DET",
+  "week": 7
+ },
+ {
+  "opponent": "SF",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "7553",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_td": 1.0,
+   "rec_yd": 22.0
+  },
+  "team": "ATL",
+  "week": 7
+ },
+ {
+  "opponent": "BAL",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "7564",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_td": 1.0,
+   "rec_yd": 62.0
+  },
+  "team": "CIN",
+  "week": 7
+ },
+ {
+  "opponent": "CAR",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "7567",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rush_yd": 88.0
+  },
+  "team": "TB",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "7569",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 6.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "PHI",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "7588",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rush_td": 1.0,
+   "rush_yd": 155.0
+  },
+  "team": "DAL",
+  "week": 7
+ },
+ {
+  "opponent": "TB",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "7594",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 27.0,
+   "rush_yd": 33.0
+  },
+  "team": "CAR",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "7611",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_40p": 1.0,
+   "rec_td": 1.0,
+   "rec_td_40p": 1.0,
+   "rec_yd": 93.0,
+   "rush_yd": 22.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "BAL",
+  "player": {
+   "position": "K"
+  },
+  "player_id": "7839",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "xpm": 5.0
+  },
+  "team": "CIN",
+  "week": 7
+ },
+ {
+  "opponent": "PHI",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "8110",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0
+  },
+  "team": "DAL",
+  "week": 7
+ },
+ {
+  "opponent": "SF",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8112",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 7.0,
+   "rec_td": 1.0,
+   "rec_yd": 66.0
+  },
+  "team": "ATL",
+  "week": 7
+ },
+ {
+  "opponent": "DEN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8122",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 15.0,
+   "rush_yd": 48.0
+  },
+  "team": "ARI",
+  "week": 7
+ },
+ {
+  "opponent": "CLE",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8126",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 7.0
+  },
+  "team": "TEN",
+  "week": 7
+ },
+ {
+  "opponent": "DAL",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8129",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_yd": 1.0,
+   "rush_td": 1.0,
+   "rush_yd": 47.0
+  },
+  "team": "PHI",
+  "week": 7
+ },
+ {
+  "opponent": "DEN",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "8130",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 10.0,
+   "rec_td": 1.0,
+   "rec_yd": 111.0
+  },
+  "team": "ARI",
+  "week": 7
+ },
+ {
+  "opponent": "HOU",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "8131",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 12.0
+  },
+  "team": "NYG",
+  "week": 7
+ },
+ {
+  "opponent": "DEN",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8132",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 30.0,
+   "rush_yd": 19.0
+  },
+  "team": "ARI",
+  "week": 7
+ },
+ {
+  "opponent": "PHI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8137",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_td": 1.0,
+   "rec_yd": 57.0
+  },
+  "team": "DAL",
+  "week": 7
+ },
+ {
+  "opponent": "MIN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8142",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {},
+  "team": "IND",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8144",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 6.0,
+   "rec_yd": 56.0
+  },
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "MIA",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8146",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 26.0
+  },
+  "team": "NYJ",
+  "week": 7
+ },
+ {
+  "opponent": "GB",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8148",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_td": 2.0,
+   "rec_yd": 91.0
+  },
+  "team": "DET",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8150",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 22.0,
+   "rush_td": 1.0,
+   "rush_yd": 99.0
+  },
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "SEA",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8151",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 21.0,
+   "rush_yd": 36.0
+  },
+  "team": "KC",
+  "week": 7
+ },
+ {
+  "opponent": "DET",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "8167",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_yd": 57.0
+  },
+  "team": "GB",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "8183",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_int": 2.0,
+   "pass_td": 1.0,
+   "pass_yd": 288.0,
+   "rush_yd": 5.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8228",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 36.0,
+   "rush_yd": 101.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "8408",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rush_yd": 68.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "GB",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "9221",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rush_yd_100": 1.0,
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_yd": 27.0,
+   "rush_yd": 116.0
+  },
+  "team": "DET",
+  "week": 7
+ },
+ {
+  "opponent": "BAL",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "9224",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_yd": 19.0,
+   "rush_yd": 39.0
+  },
+  "team": "CIN",
+  "week": 7
+ },
+ {
+  "opponent": "TB",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "9228",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_lost": 1.0,
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_int": 2.0,
+   "pass_td": 1.0,
+   "pass_td_40p": 1.0,
+   "pass_td_50p": 1.0,
+   "pass_yd": 163.0,
+   "rush_yd": 9.0
+  },
+  "team": "CAR",
+  "week": 7
+ },
+ {
+  "opponent": "LAR",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "9482",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 32.0
+  },
+  "team": "LV",
+  "week": 7
+ },
+ {
+  "opponent": "DET",
+  "player": {
+   "position": "TE"
+  },
+  "player_id": "9484",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 4.0,
+   "rec_td": 1.0,
+   "rec_yd": 48.0
+  },
+  "team": "GB",
+  "week": 7
+ },
+ {
+  "opponent": "KC",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9488",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 9.0,
+   "rec_td": 1.0,
+   "rec_yd": 150.0,
+   "rush_yd": 13.0
+  },
+  "team": "SEA",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9493",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 8.0,
+   "rec_td": 1.0,
+   "rec_yd": 68.0,
+   "rush_yd": 10.0
+  },
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "MIN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9500",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 18.0
+  },
+  "team": "IND",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9501",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 23.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9502",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 1.0,
+   "rec_40p": 1.0,
+   "rec_yd": 43.0,
+   "rush_yd": 2.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "SF",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "9509",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 5.0,
+   "rec_yd": 59.0,
+   "rush_yd": 63.0
+  },
+  "team": "ATL",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "96",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_td": 1.0,
+   "pass_yd": 212.0,
+   "rush_yd": 6.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9756",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 2.0,
+   "rec_yd": 20.0,
+   "rush_yd": 3.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "PIT",
+  "player": {
+   "position": "RB"
+  },
+  "player_id": "9757",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "rec": 3.0,
+   "rec_yd": 22.0,
+   "rush_yd": 6.0
+  },
+  "team": "NO",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "QB"
+  },
+  "player_id": "9758",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pass_2pt": 1.0,
+   "pass_cmp_40p": 1.0,
+   "pass_td": 2.0,
+   "pass_yd": 153.0,
+   "rush_yd": 4.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "CIN",
+  "player": {
+   "position": "WR"
+  },
+  "player_id": "9997",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "bonus_rec_yd_100": 1.0,
+   "gp": 1.0,
+   "rec": 8.0,
+   "rec_40p": 1.0,
+   "rec_td": 1.0,
+   "rec_td_40p": 1.0,
+   "rec_yd": 137.0
+  },
+  "team": "BAL",
+  "week": 7
+ },
+ {
+  "opponent": "TEN",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "CLE",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_rec": 1.0,
+   "gp": 1.0,
+   "int": 1.0,
+   "pts_allow": 24.0,
+   "sack": 1.0,
+   "td": 3.0,
+   "yds_allow": 322.0,
+   "yds_allow_300_349": 1.0
+  },
+  "team": "CLE",
+  "week": 7
+ },
+ {
+  "opponent": "ARI",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "DEN",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pts_allow": 16.0,
+   "pts_allow_14_20": 1.0,
+   "sack": 3.0,
+   "td": 3.0,
+   "yds_allow": 353.0,
+   "yds_allow_350_399": 1.0
+  },
+  "team": "DEN",
+  "week": 7
+ },
+ {
+  "opponent": "NYG",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "HOU",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pts_allow": 27.0,
+   "sack": 3.0,
+   "td": 2.0,
+   "yds_allow": 420.0
+  },
+  "team": "HOU",
+  "week": 7
+ },
+ {
+  "opponent": "SEA",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "KC",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "int": 1.0,
+   "pts_allow": 20.0,
+   "pts_allow_14_20": 1.0,
+   "yds_allow": 410.0
+  },
+  "team": "KC",
+  "week": 7
+ },
+ {
+  "opponent": "LV",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "LAR",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pts_allow": 21.0,
+   "sack": 2.0,
+   "td": 5.0,
+   "yds_allow": 350.0,
+   "yds_allow_350_399": 1.0
+  },
+  "team": "LAR",
+  "week": 7
+ },
+ {
+  "opponent": "IND",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "MIN",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "int": 1.0,
+   "pts_allow": 10.0,
+   "pts_allow_7_13": 1.0,
+   "sack": 4.0,
+   "td": 1.0,
+   "yds_allow": 218.0,
+   "yds_allow_200_299": 1.0
+  },
+  "team": "MIN",
+  "week": 7
+ },
+ {
+  "opponent": "CHI",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "NE",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pts_allow": 30.0,
+   "pts_allow_28_34": 1.0,
+   "sack": 3.0,
+   "td": 3.0,
+   "yds_allow": 405.0
+  },
+  "team": "NE",
+  "week": 7
+ },
+ {
+  "opponent": "MIA",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "NYJ",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pts_allow": 28.0,
+   "pts_allow_28_34": 1.0,
+   "sack": 2.0,
+   "td": 3.0,
+   "yds_allow": 360.0,
+   "yds_allow_350_399": 1.0
+  },
+  "team": "NYJ",
+  "week": 7
+ },
+ {
+  "opponent": "NO",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "PIT",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "int": 1.0,
+   "pts_allow": 10.0,
+   "pts_allow_7_13": 1.0,
+   "sack": 2.0,
+   "td": 1.0,
+   "yds_allow": 281.0,
+   "yds_allow_200_299": 1.0
+  },
+  "team": "PIT",
+  "week": 7
+ },
+ {
+  "opponent": "KC",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "SEA",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "int": 1.0,
+   "pts_allow": 3.0,
+   "pts_allow_1_6": 1.0,
+   "sack": 1.0,
+   "td": 2.0,
+   "yds_allow": 213.0,
+   "yds_allow_200_299": 1.0
+  },
+  "team": "SEA",
+  "week": 7
+ },
+ {
+  "opponent": "ATL",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "SF",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "gp": 1.0,
+   "pts_allow": 29.0,
+   "pts_allow_28_34": 1.0,
+   "td": 3.0,
+   "yds_allow": 295.0,
+   "yds_allow_200_299": 1.0
+  },
+  "team": "SF",
+  "week": 7
+ },
+ {
+  "opponent": "CLE",
+  "player": {
+   "position": "DEF"
+  },
+  "player_id": "TEN",
+  "season": "2026",
+  "season_type": "regular",
+  "stats": {
+   "fum_rec": 1.0,
+   "gp": 1.0,
+   "int": 1.0,
+   "pts_allow": 27.0,
+   "sack": 1.0,
+   "td": 3.0,
+   "yds_allow": 491.0,
+   "yds_allow_450_499": 1.0
+  },
+  "team": "TEN",
+  "week": 7
+ }
+]

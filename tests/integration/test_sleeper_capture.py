@@ -12,6 +12,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -44,7 +45,6 @@ from tests.integration.test_legacy_guard import _build as build_sealed_db
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from sqlalchemy.engine import Engine
 
@@ -302,3 +302,52 @@ def test_s2_migration_round_trip_on_a_sealed_db(tmp_path: Path) -> None:
     assert "source_payloads" in tables()
     assert _all_fingerprints(db) == before
     assert verified()
+
+
+# ----- real-shaped, pseudonymized fixtures (built from the 2026 capture) -----
+
+REAL_FX = Path(__file__).resolve().parents[1] / "fixtures" / "sleeper_league" / "season_2026"
+FAKE_LEAGUE = "900000000000000001"
+
+
+def test_capture_replays_the_pseudonymized_2026_fixtures(tmp_path: Path) -> None:
+    db = tmp_path / "real.db"
+    engine = create_app_engine(f"sqlite:///{db}")
+    upgrade_to_head(engine=engine)
+    try:
+        with Session(engine) as ss:
+            s = capture_season(
+                ss,
+                FixtureSleeperLeagueSource(REAL_FX),
+                RawStore(tmp_path / "raw"),
+                start_league_id=FAKE_LEAGUE,
+                season=2026,
+                run_id="fx",
+                now=T0,
+            )
+            ss.commit()
+    finally:
+        engine.dispose()
+    assert (s.season, s.max_week, s.errors) == (2026, 9, [])
+    assert s.requests == 1 + 1 + 1 + 2 + 5 + 3 * 9 + 1
+
+
+def test_players_points_equal_stats_dot_scoring_in_fixtures() -> None:
+    """The S2 probe's key finding, pinned: Sleeper points = Σ stat x scoring value."""
+    league = json.loads((REAL_FX / f"v1_league_{FAKE_LEAGUE}.json").read_text())
+    scoring = league["scoring_settings"]
+    checked = 0
+    for week in range(1, 10):
+        matchups = json.loads(
+            (REAL_FX / f"v1_league_{FAKE_LEAGUE}_matchups_{week}.json").read_text()
+        )
+        stats_rows = json.loads(
+            (REAL_FX / f"stats_nfl_2026_{week}_season_type_regular.json").read_text()
+        )
+        stats = {r["player_id"]: r["stats"] for r in stats_rows}
+        for m in matchups:
+            for pid, pts in m["players_points"].items():
+                calc = sum(v * scoring.get(k, 0) for k, v in stats.get(pid, {}).items())
+                assert round(calc, 2) == pytest.approx(pts, abs=0.011), (week, pid)
+                checked += 1
+    assert checked > 1000
