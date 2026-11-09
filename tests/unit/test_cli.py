@@ -126,6 +126,7 @@ def _patch_run_machinery():
     manager = mock.Mock()
     with (
         mock.patch("ff_pipeline.cli._bootstrap_settings_and_logging"),
+        mock.patch("ff_pipeline.cli.run_preflight"),
         mock.patch("ff_pipeline.settings.get_settings"),
         mock.patch("ff_pipeline.repository.database.create_app_engine"),
         mock.patch("sqlalchemy.orm.Session"),
@@ -208,6 +209,7 @@ def _patch_avatars_machinery(backfill: mock.Mock):
     """
     with (
         mock.patch("ff_pipeline.cli._bootstrap_settings_and_logging"),
+        mock.patch("ff_pipeline.cli.run_preflight"),
         mock.patch("ff_pipeline.settings.get_settings"),
         mock.patch("ff_pipeline.repository.database.create_app_engine"),
         mock.patch("sqlalchemy.orm.Session"),

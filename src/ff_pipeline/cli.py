@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import typer
 
 from ff_pipeline import __version__
+from ff_pipeline.legacy.cli import legacy_app, run_preflight
 
 if TYPE_CHECKING:
     # Only referenced in the _run_* helper signatures, which typer never
@@ -161,6 +162,7 @@ def run_cmd(
     already ran.
     """
     _bootstrap_settings_and_logging()
+    run_preflight("run")
     _ = (verify, dry_run)
     if snapshot_kind is not None and snapshot_kind not in {"pre_kickoff", "audit"}:
         typer.secho(
@@ -499,6 +501,7 @@ def backfill_cmd(
 ) -> None:
     """Pull historical seasons (resumable, idempotent)."""
     _bootstrap_settings_and_logging()
+    run_preflight("backfill")
 
     from datetime import datetime
 
@@ -720,6 +723,7 @@ def reconstruct_cmd(
     resumed after ``cookie set``.
     """
     _bootstrap_settings_and_logging()
+    run_preflight("reconstruct")
 
     from datetime import datetime
 
@@ -1045,6 +1049,7 @@ def rescore_cmd(
 ) -> None:
     """Recompute league points from raw stats using current scoring rules."""
     _bootstrap_settings_and_logging()
+    run_preflight("rescore")
 
     from sqlalchemy.orm import Session
 
@@ -1941,6 +1946,7 @@ app.add_typer(migrate_app, name="migrate")
 def migrate_up_cmd() -> None:
     """Run pending alembic migrations to head."""
     _bootstrap_settings_and_logging()
+    run_preflight("migrate up")
 
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.repository.migrations import upgrade_to_head
@@ -1980,6 +1986,13 @@ def migrate_status_cmd() -> None:
         current_revision(engine=engine)
     finally:
         engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# legacy (S1 legacy guard)
+# ---------------------------------------------------------------------------
+
+app.add_typer(legacy_app, name="legacy")
 
 
 if __name__ == "__main__":

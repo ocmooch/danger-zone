@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -29,6 +30,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -103,6 +105,12 @@ class Season(Base):
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+    # Legacy guard (S1): a sealed season is frozen; see ff_pipeline.legacy.
+    is_sealed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    sealed_at: Mapped[str | None] = mapped_column(Text)  # UTC ISO text
+    seal_id: Mapped[str | None] = mapped_column(Text)
 
     league: Mapped[League] = relationship(back_populates="seasons")
     teams: Mapped[list[Team]] = relationship(back_populates="season", foreign_keys="Team.season_id")
@@ -916,9 +924,75 @@ class SourceHealth(Base):
     created_at: Mapped[datetime] = _created_at()
 
 
+# ---------------------------------------------------------------------------
+# Legacy guard (S1) — see ff_pipeline.legacy and docs/plans/S1-legacy-guard.md.
+# Timestamps here are UTC ISO text ("YYYY-MM-DDTHH:MM:SSZ") so the guard
+# triggers can compare them as strings.
+# ---------------------------------------------------------------------------
+
+
+class LegacyGuard(Base):
+    """Single-row lock. Guard triggers are bypassed while ``unlocked_until`` is
+    in the future; only ``legacy amend`` should open that window."""
+
+    __tablename__ = "legacy_guard"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_legacy_guard_single_row"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    unlocked_until: Mapped[str | None] = mapped_column(Text)
+    unlocked_reason: Mapped[str | None] = mapped_column(Text)
+
+
+class LegacySeal(Base):
+    """A fingerprint baseline that ``legacy verify`` compares against (append-only)."""
+
+    __tablename__ = "legacy_seals"
+
+    seal_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # adopt | amend
+    git_commit: Mapped[str | None] = mapped_column(Text)
+    alembic_revision: Mapped[str | None] = mapped_column(Text)
+    manifest_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
+class LegacySealedRow(Base):
+    """Every row the current seal protects, with a short hash of its legacy
+    columns. Global-table guards check membership; verify uses the hash to
+    name the exact rows that changed."""
+
+    __tablename__ = "legacy_sealed_rows"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    table_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    pk: Mapped[str] = mapped_column(Text, primary_key=True)
+    row_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class LegacyAmendment(Base):
+    """Audit log of every change to sealed data (append-only)."""
+
+    __tablename__ = "legacy_amendments"
+
+    amendment_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    command: Mapped[str] = mapped_column(Text, nullable=False)
+    git_commit: Mapped[str | None] = mapped_column(Text)
+    before_seal: Mapped[str] = mapped_column(Text, nullable=False)
+    after_seal: Mapped[str] = mapped_column(Text, nullable=False)
+    tables_changed: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    rows_changed: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
 __all__ = [
     "Base",
     "League",
+    "LegacyAmendment",
+    "LegacyGuard",
+    "LegacySeal",
+    "LegacySealedRow",
     "Matchup",
     "Owner",
     "OwnerIdentityOverride",
