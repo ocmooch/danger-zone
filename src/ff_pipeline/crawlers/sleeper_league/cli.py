@@ -179,3 +179,81 @@ def archive_cmd(
                 )
     finally:
         engine.dispose()
+
+
+@sleeper_league_app.command("resolve-players")
+def resolve_players_cmd(
+    league_id: str | None = typer.Option(None, "--league-id", help="Default: SLEEPER_LEAGUE_ID."),
+) -> None:
+    """Dry run: resolve every league-referenced Sleeper player id (read-only, archive only)."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.crawlers.sleeper_league.archive_view import load_archived_league
+    from ff_pipeline.crawlers.sleeper_league.client import ArchiveMissError
+    from ff_pipeline.normalizer.sleeper_players import league_referenced_ids, resolve
+    from ff_pipeline.repository.database import create_app_engine
+
+    settings = _settings()
+    lid = _league_id(settings, league_id)
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            try:
+                data = load_archived_league(ss, RawStore(settings.sleeper_raw_dir), lid)
+            except ArchiveMissError as exc:
+                typer.secho(str(exc), fg="red", err=True)
+                raise typer.Exit(code=1) from exc
+            referenced = league_referenced_ids(
+                data.rosters, data.matchups, data.transactions, data.draft_picks
+            )
+            res = resolve(ss, referenced, data.players, season=data.season)
+            ss.rollback()  # read-only: never keep anything the resolver touched
+    finally:
+        engine.dispose()
+    typer.echo(
+        f"season {data.season}: {len(referenced)} league-referenced Sleeper ids; "
+        f"resolved {len(res.resolved)} {dict(sorted(res.by_method.items()))}"
+        f" (via identity links: {res.linked}); stub-needed {len(res.stub_needed)}"
+    )
+    for c in res.stub_needed:
+        typer.echo(
+            f"  stub-needed: {c.sleeper_id}\t{c.name}\t{c.position or '?'}\t"
+            f"{c.nfl_team or 'FA'}\t{', '.join(c.reasons)}"
+        )
+
+
+@sleeper_league_app.command("map-player")
+def map_player_cmd(
+    sleeper_id: str = typer.Argument(..., help="Sleeper player id (from resolve-players)."),
+    player_id: int = typer.Argument(..., help="Existing players.player_id to pin it to."),
+    note: str = typer.Option(..., "--note", help="Why (audited in player_id_overrides.notes)."),
+) -> None:
+    """Pin a Sleeper player id to an existing player the fuzzy rules cannot match."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.legacy.cli import run_preflight
+    from ff_pipeline.normalizer.sleeper_players import (
+        OverrideConflictError,
+        add_sleeper_override,
+    )
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.models import Player
+
+    settings = _settings()
+    run_preflight("sleeper-league map-player")
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            try:
+                added = add_sleeper_override(ss, sleeper_id, player_id, notes=note)
+            except (ValueError, OverrideConflictError) as exc:
+                typer.secho(str(exc), fg="red", err=True)
+                raise typer.Exit(code=1) from exc
+            player = ss.get(Player, player_id)
+            ss.commit()
+    finally:
+        engine.dispose()
+    name = player.name_full if player else "?"
+    verb = "pinned" if added else "already pinned"
+    typer.echo(f"Sleeper {sleeper_id} {verb} to player {player_id} ({name}).")

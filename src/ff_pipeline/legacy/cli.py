@@ -251,3 +251,67 @@ def amend_cmd(
         )
     if result.returncode != 0:
         raise typer.Exit(code=result.returncode if 0 < result.returncode < 256 else 1)
+
+
+@legacy_app.command("quarantine-2026-stub")
+def quarantine_cmd(
+    sleeper_league_id: str | None = typer.Option(
+        None, "--sleeper-league-id", help="Default: SLEEPER_LEAGUE_ID (the 2026 league)."
+    ),
+    backup_dir: Path | None = typer.Option(  # noqa: B008  (typer-idiomatic)
+        None,
+        "--backup-dir",
+        help="Where the pre-move backup goes (default: data/backups/amendments, never pruned).",
+    ),
+) -> None:
+    """Move the NFL.com 2026 placeholder into its quarantine table (D-2; S4), audited."""
+    _bootstrap()
+    from datetime import UTC, datetime
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.legacy.amend import backup_database
+    from ff_pipeline.legacy.quarantine import quarantine_2026_stub
+    from ff_pipeline.legacy.seal import LegacyError
+    from ff_pipeline.legacy.verify import connect
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.maintenance import recompute_rostered_spans
+    from ff_pipeline.settings import PROJECT_ROOT, SettingsError, get_settings
+
+    settings = get_settings()
+    try:
+        league_id = sleeper_league_id or settings.require_sleeper_league_id()
+    except SettingsError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=4) from exc
+    target_dir = (backup_dir or PROJECT_ROOT / "data" / "backups" / "amendments").resolve()
+    conn = connect(_db_path())
+    try:
+        stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+        backup = target_dir / f"fantasy-pre-quarantine-2026-stub-{stamp}.db"
+        backup_database(conn, backup)
+        typer.echo(f"Pre-move backup: {backup}")
+        result = quarantine_2026_stub(conn, sleeper_league_id=league_id)
+    except LegacyError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        conn.close()
+
+    if result.already_done:
+        typer.echo("The 2026 placeholder is already quarantined; nothing to do.")
+        return
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            spans = recompute_rostered_spans(ss)
+            ss.commit()
+    finally:
+        engine.dispose()
+    typer.echo(
+        f"Amendment #{result.amendment_id}: moved {len(result.team_ids)} teams + "
+        f"{result.roster_rows} roster rows of season {result.season_id} into "
+        f"legacy_nfl_com_2026_preseason; season 2026 is now platform 'sleeper' "
+        f"({league_id}). Rostered spans refreshed ({spans} players). "
+        f"Sealed data unchanged: {result.seal_id} stays current."
+    )

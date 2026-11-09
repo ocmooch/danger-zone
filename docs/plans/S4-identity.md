@@ -4,8 +4,8 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S4. Design sources: `01_PIPELIN
 §7 (identity), `04_SLEEPER_FIELD_MAPPING.md` §3–§4.1 (users/rosters, slot taxonomy D-9), `03` §8
 (amendments), decisions D-2 / D-3 / D-9 (`00`), S1 decision 4 (stub moved in S4, audited).
 
-**Status:** PLAN, written 2026-11-09 on `feature/s4-identity`. Nothing is built yet. The
-decisions at the end need the user's approval before the BUILD session.
+**Status:** PLAN approved 2026-11-09 (decisions S4-D1..D7 as recommended; the user confirmed the two
+`medium` owner mappings). BUILD in progress on `feature/s4-identity`.
 
 ## Goal
 
@@ -151,7 +151,7 @@ map`, the quarantine command, `resolve-players`. `04_DATA_MODEL.md`: the quarant
 scripts/alembic files); vault-staleness warning (S9); console debug lines at `LOG_LEVEL=WARNING`;
 dz-dashboard `CLAUDE.md` points at `tests/dashboard` (tests are in `tests/`).
 
-## Decisions (recommended defaults — need the user's approval)
+## Decisions (defaults approved by the user 2026-11-09)
 
 | # | Decision | Recommended default | Alternative |
 |---|---|---|---|

@@ -524,7 +524,7 @@ legacy-guarded: they hold no sealed-season rows.
 | `playoff_brackets` | Official winners/losers bracket matches. `season_id`, `bracket`, `round`, `match_no`, `team1_id`, `team2_id`, `winner_team_id`, `loser_team_id`, `placement` (Sleeper `p`), `team1_from`/`team2_from` JSON, `source`. UNIQUE(`season_id`, `bracket`, `round`, `match_no`). |
 | `traded_picks` | Draft-pick ownership, keyed by owners (stable across seasons). `league_id`, `pick_season`, `round`, `original_owner_id`, `current_owner_id`, `previous_owner_id`, `observed_at`, `source_transaction_id`, `extra_data` (raw roster ids). UNIQUE(`league_id`, `pick_season`, `round`, `original_owner_id`). |
 | `player_status_snapshots` | Daily injury / practice / depth state. `player_id`, `as_of_date`, `source`, `injury_*`, `practice_participation`, `depth_chart_*`, `nfl_team`, `status`, `extra_data`. UNIQUE(`player_id`, `as_of_date`, `source`). |
-| `legacy_nfl_com_2026_preseason` | Quarantine for the NFL.com 2026 placeholder (D-2): each moved row verbatim as `row_data` JSON with `source_table` + `original_pk`, `quarantined_at`, `amendment_id` FK. Written once by S4's `legacy amend`; never deleted. |
+| `legacy_nfl_com_2026_preseason` | Quarantine for the NFL.com 2026 placeholder (D-2): each moved row verbatim as `row_data` JSON with `source_table` + `original_pk`, `quarantined_at`, `amendment_id` FK. Written once by `ff-pipeline legacy quarantine-2026-stub` (S4, 2026-11-09), which also writes the audit row in `legacy_amendments`; never deleted. |
 
 `players` also gains `extra_data` (JSON, S3): static Sleeper profile (`years_exp`, `college`,
 `height`, `weight`, `fantasy_positions`) and extra cross-ids.
