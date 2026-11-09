@@ -4,8 +4,8 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S3. Design source: `01_PIPELINE
 §5 (schema additions), §7 (identity), §8 (lifecycle); migration policy `03` §9; decisions D-2, D-4
 (`00`).
 
-**Status:** PLAN, written 2026-11-09 on `feature/s3-platform-era-schema`. Nothing is built yet.
-The decisions at the end need the user's approval before the BUILD session.
+**Status:** PLAN approved 2026-11-09 (all decisions S3-D1..D7 accepted as recommended). BUILD in progress
+on `feature/s3-platform-era-schema`.
 
 ## Goal
 
@@ -145,7 +145,7 @@ dashboard pointed at an **un-migrated** DB fails with "no such column". So the l
   `crawlers/adp/sleeper.py` + 3 scripts/alembic files; vault-staleness warning (S9).
 - Per-request debug lines in console logging at `LOG_LEVEL=WARNING` (noted in S2).
 
-## Decisions (recommended defaults — need the user's approval)
+## Decisions (defaults approved by the user 2026-11-09)
 
 | # | Decision | Recommended default | Alternative |
 |---|---|---|---|

@@ -14,7 +14,7 @@ Schema is documented in ``docs/04_DATA_MODEL.md``. Conventions:
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import (
     JSON,
@@ -63,6 +63,10 @@ def _updated_at() -> Mapped[datetime]:
 # ---------------------------------------------------------------------------
 
 
+# Fantasy platforms a season can come from (``seasons.platform``).
+Platform = Literal["nfl_com", "sleeper"]
+
+
 class League(Base):
     __tablename__ = "leagues"
 
@@ -79,7 +83,10 @@ class League(Base):
 
 class Season(Base):
     __tablename__ = "seasons"
-    __table_args__ = (UniqueConstraint("league_id", "year", name="uq_seasons_league_year"),)
+    __table_args__ = (
+        UniqueConstraint("league_id", "year", name="uq_seasons_league_year"),
+        Index("ix_seasons_platform", "platform", "year"),
+    )
 
     season_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     league_id: Mapped[str] = mapped_column(
@@ -111,6 +118,15 @@ class Season(Base):
     )
     sealed_at: Mapped[str | None] = mapped_column(Text)  # UTC ISO text
     seal_id: Mapped[str | None] = mapped_column(Text)
+    # Platform era (S3). No CHECK constraint on purpose: a new platform must
+    # never need a rebuild of this guarded table (S3-D5); values live here.
+    platform: Mapped[Platform] = mapped_column(
+        String(16), nullable=False, default="nfl_com", server_default=text("'nfl_com'")
+    )
+    platform_league_id: Mapped[str | None] = mapped_column(String)  # D-4: not leagues.league_id
+    platform_draft_id: Mapped[str | None] = mapped_column(String)
+    # League settings / roster_positions / scoring_settings at last sync.
+    settings_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     league: Mapped[League] = relationship(back_populates="seasons")
     teams: Mapped[list[Team]] = relationship(back_populates="season", foreign_keys="Team.season_id")
@@ -209,7 +225,18 @@ class Commissioner(Base):
 
 class Team(Base):
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("season_id", "team_name", name="uq_teams_season_team_name"),)
+    __table_args__ = (
+        UniqueConstraint("season_id", "team_name", name="uq_teams_season_team_name"),
+        # Partial: legacy teams have no platform key (S3).
+        Index(
+            "uq_teams_season_platform_key",
+            "season_id",
+            "platform_team_key",
+            unique=True,
+            sqlite_where=text("platform_team_key IS NOT NULL"),
+            postgresql_where=text("platform_team_key IS NOT NULL"),
+        ),
+    )
 
     team_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     season_id: Mapped[int] = mapped_column(
@@ -242,6 +269,11 @@ class Team(Base):
     owner_avatar_asset_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("assets.asset_id", name="fk_teams_owner_avatar")
     )
+    # Platform era (S3): 'sleeper:roster:<roster_id>'; NULL for NFL.com teams.
+    platform_team_key: Mapped[str | None] = mapped_column(String)
+    division: Mapped[str | None] = mapped_column(String)  # NULL for legacy (BFF derives)
+    # co_owner_user_ids, waiver_position, waiver_budget_used, total_moves, ppts, streak, ...
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -315,6 +347,178 @@ class SourcePayload(Base):
     run_id: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+
+
+# ---------------------------------------------------------------------------
+# Platform era (S3): tables Sleeper seasons need. None is legacy-guarded —
+# they hold no sealed-season rows.
+# ---------------------------------------------------------------------------
+
+
+class OwnerPlatformIdentity(Base):
+    """One human (``owners`` row), many platform accounts (D-3 crosswalk)."""
+
+    __tablename__ = "owner_platform_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "platform", "external_user_id", name="uq_owner_platform_identities_platform_user"
+        ),
+        Index("ix_owner_platform_identities_owner", "owner_id"),
+    )
+
+    identity_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("owners.owner_id", name="fk_owner_platform_identities_owner"),
+        nullable=False,
+    )
+    platform: Mapped[str] = mapped_column(String(16), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    external_display_name: Mapped[str | None] = mapped_column(String)
+    first_season: Mapped[int | None] = mapped_column(Integer)
+    last_season: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class PlayoffBracket(Base):
+    """One match of the official winners / losers bracket."""
+
+    __tablename__ = "playoff_brackets"
+    __table_args__ = (
+        UniqueConstraint(
+            "season_id", "bracket", "round", "match_no", name="uq_playoff_brackets_match"
+        ),
+    )
+
+    bracket_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("seasons.season_id", name="fk_playoff_brackets_season"),
+        nullable=False,
+    )
+    bracket: Mapped[str] = mapped_column(String(16), nullable=False)  # winners | losers
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    match_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    team1_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("teams.team_id", name="fk_playoff_brackets_team1")
+    )
+    team2_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("teams.team_id", name="fk_playoff_brackets_team2")
+    )
+    winner_team_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("teams.team_id", name="fk_playoff_brackets_winner")
+    )
+    loser_team_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("teams.team_id", name="fk_playoff_brackets_loser")
+    )
+    placement: Mapped[int | None] = mapped_column(Integer)  # Sleeper ``p``
+    team1_from: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # {"w": m} | {"l": m}
+    team2_from: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class TradedPick(Base):
+    """Draft pick ownership, keyed by owners (stable across seasons; S3-D6)."""
+
+    __tablename__ = "traded_picks"
+    __table_args__ = (
+        UniqueConstraint(
+            "league_id",
+            "pick_season",
+            "round",
+            "original_owner_id",
+            name="uq_traded_picks_pick",
+        ),
+    )
+
+    traded_pick_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[str] = mapped_column(
+        String, ForeignKey("leagues.league_id", name="fk_traded_picks_league"), nullable=False
+    )
+    pick_season: Mapped[int] = mapped_column(Integer, nullable=False)
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    original_owner_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("owners.owner_id", name="fk_traded_picks_original_owner"),
+        nullable=False,
+    )
+    current_owner_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("owners.owner_id", name="fk_traded_picks_current_owner"),
+        nullable=False,
+    )
+    previous_owner_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("owners.owner_id", name="fk_traded_picks_previous_owner")
+    )
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_transaction_id: Mapped[str | None] = mapped_column(String)  # platform id
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)  # raw roster ids
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class PlayerStatusSnapshot(Base):
+    """Daily injury / practice / depth-chart state from a platform directory."""
+
+    __tablename__ = "player_status_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id", "as_of_date", "source", name="uq_player_status_snapshots_day"
+        ),
+    )
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("players.player_id", name="fk_player_status_snapshots_player"),
+        nullable=False,
+    )
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    injury_status: Mapped[str | None] = mapped_column(String(32))
+    injury_body_part: Mapped[str | None] = mapped_column(String(64))
+    injury_start_date: Mapped[date | None] = mapped_column(Date)
+    practice_participation: Mapped[str | None] = mapped_column(String(32))
+    depth_chart_position: Mapped[str | None] = mapped_column(String(16))
+    depth_chart_order: Mapped[int | None] = mapped_column(Integer)
+    nfl_team: Mapped[str | None] = mapped_column(String(8))
+    status: Mapped[str | None] = mapped_column(String(32))
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class LegacyNflCom2026Preseason(Base):
+    """Quarantine for the NFL.com 2026 placeholder rows (D-2; S3-D3).
+
+    S4 moves the 12 ``teams`` + 193 ``team_rosters`` rows here verbatim (one
+    JSON row each, original primary key kept) through ``legacy amend``, so
+    Sleeper can own season 2026. Never deleted.
+    """
+
+    __tablename__ = "legacy_nfl_com_2026_preseason"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_table", "original_pk", name="uq_legacy_nfl_com_2026_preseason_row"
+        ),
+    )
+
+    quarantine_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_table: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_pk: Mapped[str] = mapped_column(String, nullable=False)
+    row_data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    quarantined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    amendment_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "legacy_amendments.amendment_id", name="fk_legacy_nfl_com_2026_preseason_amendment"
+        ),
+    )
+    created_at: Mapped[datetime] = _created_at()
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +602,8 @@ class Player(Base):
     sleeper_id: Mapped[str | None] = mapped_column(String)
     espn_id: Mapped[str | None] = mapped_column(String)
     yahoo_id: Mapped[str | None] = mapped_column(String)
+    # Static Sleeper profile (years_exp, college, height, ...) + extra cross-ids (S3).
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -558,6 +764,7 @@ class Matchup(Base):
     __tablename__ = "matchups"
     __table_args__ = (
         UniqueConstraint("season_id", "week", "team_id", name="uq_matchups_season_week_team"),
+        Index("ix_matchups_platform_key", "platform_matchup_key"),
     )
 
     matchup_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -582,6 +789,10 @@ class Matchup(Base):
     is_playoff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_consolation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     nfl_com_game_id: Mapped[str | None] = mapped_column(String)
+    # Platform era (S3): 'sleeper:<league_id>:<week>:<matchup_id>'; NULL for NFL.com.
+    platform_matchup_key: Mapped[str | None] = mapped_column(String)
+    # custom_points, points_official, finalized, bracket refs
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -593,6 +804,20 @@ class Transaction(Base):
     __table_args__ = (
         Index("ix_transactions_season_team", "season_id", "team_id"),
         Index("ix_transactions_season_player", "season_id", "player_id"),
+        # Idempotency key for platform transaction legs (S3-D2). COALESCE so legs
+        # with no player / team / direction (FAAB- or pick-only trade legs) still
+        # collide on re-load; NFL.com rows (NULL platform id) are excluded.
+        Index(
+            "uq_transactions_platform_leg",
+            "season_id",
+            "platform_transaction_id",
+            text("coalesce(player_id, -1)"),
+            text("coalesce(team_id, -1)"),
+            text("coalesce(direction, '')"),
+            unique=True,
+            sqlite_where=text("platform_transaction_id IS NOT NULL"),
+            postgresql_where=text("platform_transaction_id IS NOT NULL"),
+        ),
     )
 
     transaction_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -623,6 +848,10 @@ class Transaction(Base):
     # lineup-slot moves ({"from_slot", "to_slot"}) and commissioner/league
     # setting changes ({"description", ...}). NULL for add/drop/trade rows.
     extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # Platform era (S3): Sleeper transaction_id; status 'complete' | 'failed'.
+    # Both NULL for NFL.com rows (all executed).
+    platform_transaction_id: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -1027,12 +1256,15 @@ __all__ = [
     "League",
     "LegacyAmendment",
     "LegacyGuard",
+    "LegacyNflCom2026Preseason",
     "LegacySeal",
     "LegacySealedRow",
     "Matchup",
     "Owner",
     "OwnerIdentityOverride",
+    "OwnerPlatformIdentity",
     "PipelineRun",
+    "Platform",
     "Player",
     "PlayerAdp",
     "PlayerAvailability",
@@ -1040,12 +1272,15 @@ __all__ = [
     "PlayerInjuryReport",
     "PlayerStatsRaw",
     "PlayerStatsScored",
+    "PlayerStatusSnapshot",
+    "PlayoffBracket",
     "Projection",
     "ScoringRule",
     "Season",
     "SourceHealth",
     "Team",
     "TeamRoster",
+    "TradedPick",
     "Transaction",
     "TrendingPlayer",
 ]
