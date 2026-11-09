@@ -335,6 +335,19 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
 - Exit code 1 = at least one request failed after retries (listed); everything else was archived.
   Re-run later. A 429 waits for `Retry-After` (max 120 s).
 - It is a writing command, so the legacy preflight runs first.
+- **Weekly job:** Windows task `dz-sleeper-capture` (Wed 06:00, runs at next start if missed)
+  runs `scripts/sleeper/weekly_capture.sh`: capture of the newest league + `legacy verify --quick`,
+  log in `data/logs/sleeper_capture-<UTC date>.log`. Check it with
+  `schtasks.exe /Query /TN dz-sleeper-capture /V /FO LIST` ("Last Result" 0 = ok). Like the vault
+  job, it runs whatever branch `~/danger-zone` has checked out. Registered with:
+  ```powershell
+  $action  = New-ScheduledTaskAction -Execute "wsl.exe" `
+             -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone/scripts/sleeper/weekly_capture.sh"
+  $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At 6am
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
+              -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+  Register-ScheduledTask -TaskName "dz-sleeper-capture" -Action $action -Trigger $trigger -Settings $settings
+  ```
 - Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
   `scripts/sleeper/build_fixtures.py` (pseudonymized test fixtures; review the diff before commit).
 

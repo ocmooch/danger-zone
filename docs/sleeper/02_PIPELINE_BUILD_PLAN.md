@@ -81,7 +81,11 @@ migration upgrade/downgrade/upgrade keeps fingerprints; `rescore` on a sealed se
 and `rescore --season 2015` still succeed; a deliberate `UPDATE matchups … WHERE season_id=<2015>`
 in the sqlite shell is refused.
 
-## S2 — Sleeper league capture
+## S2 — Sleeper league capture — DONE (merged to `dev` via PR #69, 2026-11-09)
+
+As-built record, probe results and follow-ups: `docs/plans/S2-sleeper-league-capture.md`.
+Weekly capture runs as Windows task `dz-sleeper-capture` (Wed 06:00). Open follow-up: re-probe
+brackets once playoff games are decided (after week 17, ~2027-01-05).
 
 **Goal:** archive every Sleeper league payload, and confirm the field mapping against reality.
 
