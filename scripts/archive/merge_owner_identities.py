@@ -1,8 +1,8 @@
 """Merge duplicate owner rows into one canonical manager identity.
 
 Usage:
-    uv run python scripts/merge_owner_identities.py --absorbed Adam --canonical adam
-    uv run python scripts/merge_owner_identities.py --absorbed Adam --canonical adam --apply
+    uv run python scripts/merge_owner_identities.py --absorbed Owner01 --canonical owner16
+    uv run python scripts/merge_owner_identities.py --absorbed Owner01 --canonical owner16 --apply
 
 The script is intentionally conservative. It seeds durable owner identity
 overrides in both dry-run and apply planning, reports same-season conflicts,

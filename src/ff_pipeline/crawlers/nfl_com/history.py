@@ -658,7 +658,7 @@ def reconstruct_owners(
        held that franchise that year, applied as a permutation-safe update so the
        ``UNIQUE(season_id, owner_id)`` invariant is never transiently violated.
 
-    Two same-named people (e.g. the league's two "Dan"s) stay distinct because
+    Two same-named people (e.g. the league's two same-named owners) stay distinct because
     the key is ``userId``, not the name. Caller commits.
     """
     from ff_pipeline.crawlers.nfl_com.parsers import parse_owners

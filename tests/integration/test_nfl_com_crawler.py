@@ -168,18 +168,18 @@ def test_runner_populates_league_season_owners_teams(session: Session) -> None:
     owners = session.execute(select(Owner)).scalars().all()
     teams = session.execute(select(Team)).scalars().all()
     assert {o.display_name for o in owners} == {
-        "harry",
-        "scott",
-        "mike",
-        "sully",
-        "Dan",
-        "Dave",
-        "Gregg",
-        "Chris",
-        "Jeff",
-        "Rob",
-        "Jimbo",
-        "Kofi",
+        "Owner 17",
+        "Owner 20",
+        "Owner 19",
+        "Owner 21",
+        "Owner 05",
+        "Owner 06",
+        "Owner 08",
+        "Owner 03",
+        "Owner 10",
+        "Owner 14",
+        "Owner 11",
+        "Owner 13",
     }
     assert len(teams) == 12
 

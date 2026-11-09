@@ -4,14 +4,14 @@ Both problems trace to an early year-less backfill that stamped each franchise's
 *current* (2025) owner identity, name, and franchise id onto every past season.
 That left two durable artifacts in ``fantasy.db``:
 
-1. **Owner identity.** The league has two "Dan"s with *distinct* NFL.com logins:
-   DJ (``nfl_user_id=179898``, franchise 5, "The Princess McBride", 2010-present)
-   and Cheese (``nfl_user_id=7655244``, franchise 7, renamed yearly, 2014-2024).
-   Owner 17 (Cheese) was mis-stamped with DJ's ``179898``; with two owner rows
-   sharing one user id, franchise re-pointing put DJ's 2025 team under Cheese.
-   This corrects owner 17's user id, renames owner 5 -> ``DJ`` / owner 17 ->
-   ``Cheese``, seeds durable identity overrides, and re-owns DJ's 2025 team (5)
-   and mike's mis-attributed 2015 "Batesohardithurts" team (83, owner 18 -> 3).
+1. **Owner identity.** The league has two "Owner 05"s with *distinct* NFL.com logins:
+   Owner04 (``nfl_user_id=910007``, franchise 5, "Team 170", 2010-present)
+   and Owner 02 (``nfl_user_id=910019``, franchise 7, renamed yearly, 2014-2024).
+   Owner 17 (Owner 02) was mis-stamped with Owner04's ``910007``; with two owner rows
+   sharing one user id, franchise re-pointing put Owner04's 2025 team under Owner 02.
+   This corrects owner 17's user id, renames owner 5 -> ``Owner04`` / owner 17 ->
+   ``Owner 02``, seeds durable identity overrides, and re-owns Owner04's 2025 team (5)
+   and moved_owner's mis-attributed 2015 "Team 014" team (83, owner 18 -> 3).
 
 2. **Phantom team rows.** 26 ``final_rank IS NULL`` duplicates (``team_id``
    193-222) each carry a franchise's current name back-projected onto a played
@@ -21,7 +21,7 @@ That left two durable artifacts in ``fantasy.db``:
    duplicate week-1 matchup) and then deletes all 26.
 
 Per-season NFL.com ``/history/{year}/owners`` is the source of truth used to
-establish the facts above; mike (167650) did not play 2016-2017 (Adam, then ill
+establish the facts above; moved_owner (910005) did not play 2016-2017 (Owner01, then Owner18
 held his franchise), so his empty phantoms for those years are simply removed.
 
 Dry-run by default. ``--apply`` backs up the SQLite file, then commits.
@@ -51,17 +51,17 @@ from ff_pipeline.repository.owner_identities import seed_owner_identity_override
 from ff_pipeline.settings import get_settings
 
 # --- Owner identity facts (from NFL.com /history/{year}/owners) ----------------
-DJ_USER_ID = "179898"
-CHEESE_USER_ID = "7655244"
-DJ_OWNER_ID = 5
+Owner04_USER_ID = "910007"
+CHEESE_USER_ID = "910019"
+Owner04_OWNER_ID = 5
 CHEESE_OWNER_ID = 17
 
 # (year, team display name, wrong owner id, correct owner id) re-ownerships.
 TEAM_REOWNERSHIPS = (
-    # mike's 2015 "Batesohardithurts" was stamped onto franchise 12 (Kevin).
-    (2015, "Batesohardithurts", 18, 3),
-    # DJ's 2025 "The Princess McBride" grabbed by Cheese via the shared user id.
-    (2025, "The Princess McBride", CHEESE_OWNER_ID, DJ_OWNER_ID),
+    # moved_owner's 2015 "Team 014" was stamped onto franchise 12 (Owner 12).
+    (2015, "Team 014", 18, 3),
+    # Owner04's 2025 "Team 170" grabbed by Owner 02 via the shared user id.
+    (2025, "Team 170", CHEESE_OWNER_ID, Owner04_OWNER_ID),
 )
 
 
@@ -101,7 +101,7 @@ def main() -> None:
 
             _backup_sqlite(settings.database_url)
             session.commit()
-            print(f"\nApplied: split DJ/Cheese, {len(plans)} phantom rows merged/removed.")
+            print(f"\nApplied: split Owner04/Owner 02, {len(plans)} phantom rows merged/removed.")
     finally:
         engine.dispose()
 
@@ -115,18 +115,18 @@ def _parse_args() -> argparse.Namespace:
 
 # --- Part 1 --------------------------------------------------------------------
 def _repair_owner_identity(session: Session, *, league_id: str) -> None:
-    dj = session.get(Owner, DJ_OWNER_ID)
+    dj = session.get(Owner, Owner04_OWNER_ID)
     cheese = session.get(Owner, CHEESE_OWNER_ID)
     if dj is None or cheese is None:
-        raise SystemExit("expected owners 5 (DJ) and 17 (Cheese) not found")
+        raise SystemExit("expected owners 5 (Owner04) and 17 (Owner 02) not found")
 
-    _set(dj, "display_name", "DJ")
-    _set(dj, "nfl_user_id", DJ_USER_ID)
+    _set(dj, "display_name", "Owner 04")
+    _set(dj, "nfl_user_id", Owner04_USER_ID)
     _set(dj, "is_active", True)
     _set(dj, "left_year", None)
 
-    # Cheese's real login was masked by DJ's; correct it and the name/tenure.
-    _set(cheese, "display_name", "Cheese")
+    # Owner 02's real login was masked by Owner04's; correct it and the name/tenure.
+    _set(cheese, "display_name", "Owner 02")
     _set(cheese, "nfl_user_id", CHEESE_USER_ID)
     _set(cheese, "is_active", False)
     _set(cheese, "joined_year", 2014)
@@ -137,17 +137,17 @@ def _repair_owner_identity(session: Session, *, league_id: str) -> None:
         session,
         league_id=league_id,
         external_id_kind="nfl_user_id",
-        external_id_value=DJ_USER_ID,
-        canonical_display_name="DJ",
-        notes="DJ and Cheese are two people; this is the long-tenured franchise-5 manager",
+        external_id_value=Owner04_USER_ID,
+        canonical_display_name="Owner 04",
+        notes="Owner04 and Owner 02 are two people; this is the long-tenured franchise-5 manager",
     )
     seed_owner_identity_override(
         session,
         league_id=league_id,
         external_id_kind="nfl_user_id",
         external_id_value=CHEESE_USER_ID,
-        canonical_display_name="Cheese",
-        notes="Cheese is the franchise-7 manager (2014-2024), distinct login from DJ",
+        canonical_display_name="Owner 02",
+        notes="Owner 02 is the franchise-7 manager (2014-2024), distinct login from Owner04",
     )
 
     for year, name, wrong_owner, right_owner in TEAM_REOWNERSHIPS:
@@ -351,21 +351,21 @@ def _validate(session: Session) -> bool:
     names = {
         o.owner_id: o.display_name
         for o in session.execute(
-            select(Owner).where(Owner.owner_id.in_([DJ_OWNER_ID, CHEESE_OWNER_ID]))
+            select(Owner).where(Owner.owner_id.in_([Owner04_OWNER_ID, CHEESE_OWNER_ID]))
         ).scalars()
     }
     dj_2025 = _team_by_year_name(
-        session, league_id=get_settings().nfl_league_id, year=2025, name="The Princess McBride"
+        session, league_id=get_settings().nfl_league_id, year=2025, name="Team 170"
     )
     identity_ok = (
         dans == 0
-        and names.get(DJ_OWNER_ID) == "DJ"
-        and names.get(CHEESE_OWNER_ID) == "Cheese"
+        and names.get(Owner04_OWNER_ID) == "Owner 04"
+        and names.get(CHEESE_OWNER_ID) == "Owner 02"
         and dj_2025 is not None
-        and dj_2025.owner_id == DJ_OWNER_ID
+        and dj_2025.owner_id == Owner04_OWNER_ID
     )
     ok &= _check(
-        "DJ/Cheese distinct, no 'Dan', owner 5 owns 2025 Princess McBride",
+        "Owner04/Owner 02 distinct, no 'Owner 05', owner 5 owns 2025 Princess McBride",
         identity_ok,
         f"dans={dans} names={names} 2025_owner={getattr(dj_2025, 'owner_id', None)}",
     )

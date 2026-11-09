@@ -18,8 +18,8 @@ from ff_pipeline.crawlers.nfl_com.league import _extra_sig
 def test_setting_rows_differ_by_description() -> None:
     # Two commish actions in the same minute (same null columns, same
     # timestamp) are distinguished only by their description.
-    a = _extra_sig({"raw_type": "lm", "description": "harry updated playoff teams"})
-    b = _extra_sig({"raw_type": "lm", "description": "harry DOOKS Player Adds Count"})
+    a = _extra_sig({"raw_type": "lm", "description": "Owner 17 updated playoff teams"})
+    b = _extra_sig({"raw_type": "lm", "description": "Owner 17 Team 041 Player Adds Count"})
     assert a != b
     assert a is not None and a[0] == "setting"
 
@@ -27,7 +27,7 @@ def test_setting_rows_differ_by_description() -> None:
 def test_identical_setting_rows_share_signature() -> None:
     # Genuine duplicates (e.g. a sweep page-boundary overlap) must still
     # collapse, so the signature is stable for identical content.
-    payload = {"raw_type": "lm", "description": "harry updated playoff teams"}
+    payload = {"raw_type": "lm", "description": "Owner 17 updated playoff teams"}
     assert _extra_sig(dict(payload)) == _extra_sig(dict(payload))
 
 
