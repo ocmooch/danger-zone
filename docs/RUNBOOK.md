@@ -336,13 +336,13 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
   Re-run later. A 429 waits for `Retry-After` (max 120 s).
 - It is a writing command, so the legacy preflight runs first.
 - **Weekly job:** Windows task `dz-sleeper-capture` (Wed 06:00, runs at next start if missed)
-  runs `scripts/sleeper/weekly_capture.sh`: capture of the newest league + `legacy verify --quick`,
-  log in `data/logs/sleeper_capture-<UTC date>.log`. Check it with
-  `schtasks.exe /Query /TN dz-sleeper-capture /V /FO LIST` ("Last Result" 0 = ok). Like the vault
-  job, it runs whatever branch `~/danger-zone` has checked out. Registered with:
+  runs `scripts/sleeper/weekly_capture.sh` from the main copy (`~/danger-zone-main`, see "The main
+  copy" below), log in `data/logs/sleeper_capture-<UTC date>.log`. Check it with
+  `schtasks.exe /Query /TN dz-sleeper-capture /V /FO LIST` ("Last Result" 0 = ok; 3 = refused, not
+  on `main`). Registered with:
   ```powershell
   $action  = New-ScheduledTaskAction -Execute "wsl.exe" `
-             -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone/scripts/sleeper/weekly_capture.sh"
+             -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone-main/scripts/sleeper/weekly_capture.sh"
   $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At 6am
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
               -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
@@ -437,9 +437,32 @@ uv run ff-pipeline sleeper-league reconcile --season 2026 --out docs/sleeper/rep
 3. full `legacy verify`.
 
 The log is `data/logs/sleeper_capture-<UTC date>.log`. Each step prints `ok` or `FAILED`; the job
-stops at the first failure. Fix the cause, then run the same thing by hand
-(`uv run ff-pipeline sleeper-league update`). Nothing is lost by waiting a week: every capture
-re-fetches the whole season.
+stops at the first failure. Fix the cause, then run the same thing by hand from the main copy
+(`cd ~/danger-zone-main && uv run ff-pipeline sleeper-league update`). Nothing is lost by waiting
+a week: every capture re-fetches the whole season.
+
+**The main copy (`~/danger-zone-main`):** captures run only on released code, never on `dev` or a
+feature branch, whose unfinished work could change what a capture records. The main copy is a
+git worktree of this repo pinned to `main`. It shares the live data by symlinks: `.env` and
+`data/{fantasy.db, fantasy_validation.db, owner_platform_identities.yaml, assets, raw, reports,
+logs, backups, nflverse_cache}` point into `~/danger-zone`. The tracked files in `data/` come from
+`main`. A sparse checkout hides the three `.gitkeep` files under the linked directories, so
+`git status` stays clean. Never commit or develop in it.
+
+- **After each `dev → main` release:** `cd ~/danger-zone-main && git pull --ff-only`, then
+  back up and `uv run ff-pipeline migrate up` if the release adds a migration. Until then the job
+  keeps running the previous release. Tag from here or with `git tag -a vX.Y.Z origin/main`
+  (`main` can't be checked out in `~/danger-zone` while this worktree holds it).
+- **Rebuild it** (e.g. after a WSL reinstall):
+  ```bash
+  cd ~/danger-zone && git worktree add --no-checkout ~/danger-zone-main main && cd ~/danger-zone-main
+  git config --worktree sparse.expectFilesOutsideOfPatterns true
+  git sparse-checkout set --no-cone '/*' '!/data/' '/data/*' '!/data/logs/' '!/data/backups/' '!/data/nflverse_cache/'
+  git checkout main && ln -s ~/danger-zone/.env .env
+  for p in fantasy.db fantasy_validation.db owner_platform_identities.yaml assets raw reports logs backups nflverse_cache; do
+    ln -s ~/danger-zone/data/$p data/$p; done
+  uv run ff-pipeline legacy verify     # must read the live DB and pass
+  ```
 
 **`sleeper-league update`** (the season update, also the go-live command):
 - runs load → `adopt-gsis --apply` → `injury-reports` → nflverse → team_defense →

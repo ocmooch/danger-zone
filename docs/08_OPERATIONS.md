@@ -130,8 +130,10 @@ ff-pipeline export --table NAME --format csv   # Dump a table for ad-hoc analysi
 
 ## Scheduling
 
-**Sleeper era (2026→, S9):** two Windows Task Scheduler jobs, both running whatever branch
-`~/danger-zone` has checked out (keep it on `dev`):
+**Sleeper era (2026→, S9):** two Windows Task Scheduler jobs. `dz-sleeper-capture` runs from
+`~/danger-zone-main`, a worktree pinned to `main` that shares the live `data/` and `.env`, and
+refuses any other branch (RUNBOOK "The main copy"). `dz-vault-sync` still runs whatever branch
+`~/danger-zone` has checked out (keep it on `dev`).
 
 | Task | When | What |
 |---|---|---|

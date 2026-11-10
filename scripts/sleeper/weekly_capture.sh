@@ -10,6 +10,10 @@
 #      SLEEPER_AUTO_LOAD=true (S9-D2); a no-op before that
 #   3. full `legacy verify`
 #
+# Runs only on `main` (the stable, released code): Task Scheduler points at the dedicated
+# ~/danger-zone-main worktree, which shares ~/danger-zone's data/ and .env through links
+# (docs/RUNBOOK.md "The main copy"). On any other branch it logs a refusal and exits 3.
+#
 # Stops at the first failing step (no silent retries; next Wednesday re-runs everything
 # idempotently). Log: data/logs/sleeper_capture-<UTC date>.log. Exit code != 0 shows as
 # "Last Result" in Task Scheduler.
@@ -20,7 +24,12 @@ cd "$REPO" || exit 1
 mkdir -p data/logs
 LOG="data/logs/sleeper_capture-$(date -u +%Y%m%d).log"
 {
-  echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) weekly Sleeper job (branch $(git branch --show-current))"
+  branch="$(git branch --show-current)"
+  echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) weekly Sleeper job (branch $branch, $(git rev-parse --short HEAD))"
+  if [ "$branch" != "main" ]; then
+    echo "== refusing: captures run only on main, not '${branch:-detached HEAD}' (see docs/RUNBOOK.md \"The main copy\")"
+    exit 3
+  fi
   LOG_LEVEL=WARNING uv run ff-pipeline sleeper-league capture 2>&1 | grep -v ' GET '
   rc=${PIPESTATUS[0]}
   echo "== capture exit $rc"
