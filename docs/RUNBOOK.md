@@ -391,6 +391,31 @@ uv run ff-pipeline sleeper-league load             # archive → seasons/teams/m
 - **Live use is gated (S5-D1):** load the live DB only once the dashboard is ready to show 2026
   (dz-dashboard D0–D3). Until then, use a copy.
 
+## Sleeper scoring (S6)
+
+Run after a season load, in this order (each is offline except the nflverse fetches):
+
+```
+uv run ff-pipeline sleeper-league adopt-gsis --season 2026          # list; then --apply
+uv run ff-pipeline run --source nflverse --season 2026              # stats + 40+/ST play counts
+uv run ff-pipeline sleeper-league rules --diff 2025                 # review; then --write
+uv run ff-pipeline run --source team_defense --season 2026          # DST rows (Sleeper PA rule)
+uv run ff-pipeline sleeper-league stats                             # Sleeper's own stats, non-primary
+uv run ff-pipeline rescore --season 2026
+uv run ff-pipeline sleeper-league reconcile --season 2026 --out docs/sleeper/reports/2026-reconcile.md
+```
+
+- `adopt-gsis`: Sleeper has no gsis id for most rookies, so a rostered rookie and the row nflverse
+  creates for him are two rows. It lists the exact name+position pairs and moves the real id and
+  stats onto the rostered row; anything ambiguous is listed and skipped (fix with `map-player`).
+  Re-run it after each nflverse ingest while rookies keep debuting.
+- `rules`: any non-zero Sleeper setting the mapping doesn't know aborts. A change to the league's
+  settings is a new D-10 sign-off, not a silent rewrite.
+- `reconcile` classes: `stat_source` = Sleeper's own stats reproduce its points, nflverse differs
+  (expected, small); `rule` = they don't (stop: a mapping bug); `unexplained` = no Sleeper stats
+  stored (run `sleeper-league stats`). The in-progress week is reported apart.
+- **Live use** joins the S5 go-live: load → the sequence above (S6-D1).
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):

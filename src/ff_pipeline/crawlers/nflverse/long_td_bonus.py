@@ -61,8 +61,21 @@ def derive_long_td_bonus_counts(
             if yards is not None:
                 if passer is not None:
                     _increment(counts, passer, season, week, yards, _PASSING_40, _PASSING_50)
+                # The receiving bonus goes to whoever scored: on a catch-and-
+                # lateral TD that is the lateral receiver, on his own yards.
+                lateral = _non_empty_str(row.get("lateral_receiver_player_id"))
+                scorer = _non_empty_str(row.get("td_player_id"))
+                if lateral is not None and scorer == lateral:
+                    receiver = lateral
+                    rec_yards = _as_float(row.get("lateral_receiving_yards"))
+                else:
+                    rec_yards = _as_float(row.get("receiving_yards"))
+                if rec_yards is None:
+                    rec_yards = yards
                 if receiver is not None:
-                    _increment(counts, receiver, season, week, yards, _RECEIVING_40, _RECEIVING_50)
+                    _increment(
+                        counts, receiver, season, week, rec_yards, _RECEIVING_40, _RECEIVING_50
+                    )
 
         if _is_truthy_number(row.get("rush_touchdown")):
             yards = _as_float(row.get("rushing_yards"))

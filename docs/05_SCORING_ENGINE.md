@@ -22,6 +22,7 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `passing_yards_bonus_400` (flat bonus at 400+ yards)
 - `passing_yards_bonus_long_td_40` (per TD of 40+ yards)
 - `passing_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier)
+- `passing_completions_40_plus` (per completion of 40+ passing yards; S6, play-by-play)
 
 ### Rushing
 - `rushing_yards` (per yard)
@@ -31,6 +32,7 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `rushing_yards_bonus_200` (flat at 200+)
 - `rushing_yards_bonus_long_td_40` (per TD of 40+ yards)
 - `rushing_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier)
+- `rushing_attempts_40_plus` (per rush of 40+ yards; S6, play-by-play)
 
 ### Receiving
 - `receptions` (per reception — this is the PPR knob; could be 0, 0.5, or 1.0)
@@ -40,11 +42,15 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `receiving_yards_bonus_100` (flat at 100+)
 - `receiving_yards_bonus_200` (flat at 200+)
 - `receiving_yards_bonus_long_td_40` (per TD of 40+ yards)
-- `receiving_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier)
+- `receiving_yards_bonus_long_td_50` (per TD of 50+ yards — stacks with the 40+ tier; on a
+  catch-and-lateral TD the bonus goes to the lateral receiver, on his own yards)
+- `receptions_40_plus` (per reception of 40+ receiving yards; S6, play-by-play)
 
 ### Miscellaneous offensive
 - `fumbles_lost` (usually negative)
 - `fumble_return_tds` (per fumble recovered for TD)
+- `special_teams_fumble_recoveries` (per fumble the player recovers for the kicking team on a
+  kickoff/punt; S6, play-by-play)
 
 ### Kicking
 - `field_goal_made_0_19` (per FG in that distance bracket)
@@ -63,11 +69,18 @@ The scoring engine knows about exactly these stat keys, organized by category:
 - `safeties` (per safety)
 - `defensive_tds` (per defensive TD)
 - `special_teams_tds` (per ST TD — kickoff/punt returns, blocked kicks)
-- `blocked_kicks` (per blocked FG/punt/PAT)
+- `blocked_kicks` (per blocked FG/punt/PAT; play-by-play since S6)
+- `defensive_2pt_returns` (per defensive two-point return; S6, play-by-play)
+- `defense_special_teams_fumble_recoveries` (kicking-team recoveries of a returner's fumble;
+  S6, play-by-play. Already inside `fumbles_recovered`, which is nflverse's
+  `fumble_recovery_opp`; a rule on this key scores only the *difference* to the
+  fumble-recovery rate — see `scoring/sleeper_rules.py`)
 - `points_allowed` (single stat keyed by every bracket rule's `threshold_min` /
   `threshold_max`; brackets `0`, `1-6`, `7-13`, `14-20`, `21-27`, `28-34`, `35+`
   are typical; the engine matches the bracket whose `[min, max]` contains the
-  reported value)
+  reported value). Definition per platform: NFL.com seasons exclude a defensive/return TD
+  *and its conversion*; Sleeper seasons (S6) exclude only the TD's 6 points — the PAT,
+  2-pt or defensive 2-pt that follows is charged.
 - `total_yards_allowed` (single stat with bracket-gated rules, same range-gating
   pattern as `points_allowed`; brackets typically `0-99`, `100-199`, `200-299`,
   `300-399`, `400-449`, `450-499`, `500+`)
