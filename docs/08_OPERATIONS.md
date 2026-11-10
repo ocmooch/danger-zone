@@ -133,7 +133,10 @@ ff-pipeline export --table NAME --format csv   # Dump a table for ad-hoc analysi
 **Sleeper era (2026→, S9):** two Windows Task Scheduler jobs, both on Wednesday and both run from
 `~/danger-zone-main`. That folder is a worktree pinned to `main` that shares the live `data/` and
 `.env`. Both scripts refuse any branch but `main` (RUNBOOK "The main copy"). They stay separate
-tasks so a Sleeper outage or a failed capture can never stop the backup.
+tasks so a Sleeper outage or a failed capture can never stop the backup. The backup waits for
+a running capture, though, so a missed 06:00 and 07:00 that fire together at login still back up
+the new week. A missed run starts once at the next login. The jobs need this PC on and logged
+in; an always-on server with cron is the deferred long-term home (`10_OPEN_QUESTIONS.md`).
 
 | Task | When | What |
 |---|---|---|

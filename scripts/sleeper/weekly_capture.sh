@@ -14,6 +14,10 @@
 # ~/danger-zone-main worktree, which shares ~/danger-zone's data/ and .env through links
 # (docs/RUNBOOK.md "The main copy"). On any other branch it logs a refusal and exits 3.
 #
+# Holds data/logs/weekly_capture.lock while it runs, so the weekly vault sync can wait for it
+# (both fire together at login when the PC was off at 06:00 and 07:00). A second capture
+# started while one is running exits 4.
+#
 # Stops at the first failing step (no silent retries; next Wednesday re-runs everything
 # idempotently). Log: data/logs/sleeper_capture-<UTC date>.log. Exit code != 0 shows as
 # "Last Result" in Task Scheduler.
@@ -29,6 +33,11 @@ LOG="data/logs/sleeper_capture-$(date -u +%Y%m%d).log"
   if [ "$branch" != "main" ]; then
     echo "== refusing: captures run only on main, not '${branch:-detached HEAD}' (see docs/RUNBOOK.md \"The main copy\")"
     exit 3
+  fi
+  exec 9>data/logs/weekly_capture.lock
+  if ! flock -n 9; then
+    echo "== another weekly capture is already running; exiting"
+    exit 4
   fi
   LOG_LEVEL=WARNING uv run ff-pipeline sleeper-league capture 2>&1 | grep -v ' GET '
   rc=${PIPESTATUS[0]}
