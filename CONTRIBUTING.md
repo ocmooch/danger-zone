@@ -17,6 +17,28 @@ main              — production; stable; protected
 - Delete merged short-lived branches (local + remote) as soon as the PR confirms a clean merge. Never delete `main` or `dev`.
 - Never commit directly to `main` or `dev`.
 
+## Releases
+
+A release promotes `dev` to `main`. The weekly capture and vault sync run from the main copy
+(`~/danger-zone-main`, RUNBOOK "The main copy"), so a release reaches them only once that copy is
+updated.
+
+1. Gate green on `dev` (full gate, see "Tests").
+2. Bump the version on a `chore/release-X.Y.Z` branch. Change `pyproject.toml` and the
+   `ff-pipeline` version line in `uv.lock`, and nothing else. `uv lock --check` must pass. PR it
+   to `dev`.
+3. PR `dev` → `main` titled `Release vX.Y.Z: promote dev to main`, and merge it once CI passes.
+4. Tag the merge commit: `git fetch && git tag -a vX.Y.Z -m "Release vX.Y.Z" origin/main &&
+   git push origin vX.Y.Z`. `main` can't be checked out in `~/danger-zone` while the main copy
+   holds it.
+5. Update the main copy: `cd ~/danger-zone-main && git pull --ff-only`, then
+   `git status --short` must be empty.
+6. If the release adds a migration, back up the live DB (`data/backups/fantasy-pre-<what>-<ts>.db`)
+   and run `uv run ff-pipeline migrate up` from the main copy.
+7. Smoke-test from the main copy: `uv run python -c "import ff_pipeline; print(ff_pipeline.__version__)"`
+   shows the new version, and `uv run ff-pipeline legacy verify` passes.
+8. Delete the release branch, and leave `~/danger-zone` on `dev`.
+
 ## Commits
 
 Every commit must communicate **what** changed and **why**. AI-assisted commits also carry trailers.
