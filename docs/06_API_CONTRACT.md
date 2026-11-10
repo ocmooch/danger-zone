@@ -30,7 +30,8 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
 | `GET /leagues` | List all leagues in the database (will be 1 for Phase 1) |
 | `GET /leagues/{league_id}` | League metadata: name, current season, owner count |
 | `GET /leagues/{league_id}/owners` | All owners, with active/inactive flag and joined year |
-| `GET /leagues/{league_id}/seasons` | List of seasons with status and final winner |
+| `GET /leagues/{league_id}/seasons` | List of seasons with status and final winner (each a full `SeasonOut`, see Seasons) |
+| `GET /leagues/{league_id}/traded-picks?pick_season={y}` | Current owner of every traded future draft pick (Sleeper era; S8) |
 
 ### Scoring rules
 
@@ -46,6 +47,26 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
 | `GET /seasons/{season_id}` | Season summary: champion, runner-up, final standings |
 | `GET /seasons/{season_id}/standings?through_week={n}` | Standings as of week n (current if omitted) |
 | `GET /seasons/{season_id}/teams` | All teams that season with owner and final rank |
+| `GET /seasons/{season_id}/brackets` | Official playoff brackets: bracket, round, match, teams, winner / loser, placement (Sleeper seasons; `[]` for NFL.com, whose brackets are derived) |
+
+**Platform, freshness and capabilities (S8).** Every `SeasonOut` carries:
+
+- `platform` (`nfl_com` | `sleeper`) and `platform_label` ("NFL.com" | "Sleeper");
+- `is_final`, `last_finalized_week`, `provisional_weeks`: while a season is active
+  (`is_final=false`) every season-level output is its **current state and may still change**; at
+  season end it is static. NFL.com seasons are always final;
+- `capabilities`: `{key: {state, note}}` for each feature (`standings`, `official_player_points`,
+  `faab_failed_bids`, `official_brackets`, `traded_future_picks`, `co_owners`, …; the full list is
+  `repository.platform_reads.CAPABILITY_KEYS`). States: `available`, `partial`, `derived` (not
+  stored; computed by a consumer), `not_yet` (active season, not produced yet),
+  `not_on_platform`, `not_used` (the league didn't use it that season — **render nothing**; it has
+  no note). Activity features (trades with picks / FAAB, traded picks, failed bids) are
+  `available` even with no events yet; league-structure features (co-owners, commissioner score
+  overrides, divisions) only when present.
+
+**Standings while a season is active:** W-L-T and PF/PA count finalized games only; each row also
+has `provisional` and the in-progress week as `live_week` / `live_points_for` (a game in progress
+is never a tie). Sleeper postseason byes / placed teams (no opponent) are not games.
 
 ### Teams
 
@@ -73,6 +94,7 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
 | `GET /players/{player_id}/stats?season={y}&week={w}` | Stats (raw + league-adjusted) for the player |
 | `GET /players/{player_id}/ownership` | History of which teams have owned this player (and when) |
 | `GET /players/{player_id}/projections?season={y}&week={w}` | Latest projections |
+| `GET /players/{player_id}/status?as_of={date}` | Injury / practice / depth status (Sleeper snapshots): the newest on or before `as_of` (default today), at most 7 days old, else `null` (S8) |
 | `GET /players/{player_id}/availability?season={y}` | Per-week availability state (OWNED / FREE_AGENT / ON_WAIVERS) across a season |
 | `GET /players/availability?season={y}&week={w}&status={s}` | League-wide snapshot: e.g., all free agents at game time of week w |
 | `GET /players/availability/timeline?player_id={pid}` | Full history of status changes for a player |
@@ -93,7 +115,15 @@ Phases 2 (dashboard) and 3 (decision support) consume Phase 1 through this HTTP 
 | `GET /transactions?team_id={tid}` | All transactions involving a team |
 | `GET /transactions?player_id={pid}` | All transactions involving a player |
 
-Transaction rows carry an `extra_data` object for events that don't fit the player-move columns: `lineup_change` rows carry `{"from_slot","to_slot"}`, `setting_change` rows carry the change detail. It is `null` for add/drop/trade rows.
+Transaction rows carry an `extra_data` object for events that don't fit the player-move columns: `lineup_change` rows carry `{"from_slot","to_slot"}`, `setting_change` rows carry the change detail. It is `null` for NFL.com add/drop/trade rows.
+
+**Sleeper era (S8):** every row is returned, including ones a consumer may want to treat
+separately — check `status` and `player_id`:
+- `status = 'failed'`: a waiver claim that lost (`extra_data.faab_bid`, `failure_reason`); not a
+  move that happened. NFL.com rows have `status = null`.
+- `transaction_type = 'trade'` with `player_id = null`: the draft picks / FAAB a team received or
+  sent in that trade (`extra_data = {picks_in, picks_out, faab_in, faab_out}`).
+- `waiver_add` rows carry `extra_data.faab_bid`; commissioner moves carry `by_commissioner`.
 
 ### Assets (avatars)
 

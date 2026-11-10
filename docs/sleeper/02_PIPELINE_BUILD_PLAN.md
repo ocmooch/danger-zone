@@ -207,7 +207,7 @@ trades; status snapshot idempotency per day; avatar dedupe by sha256.
 **Done when:** each facet populated for 2026 to date (brackets once playoffs begin — fixture-tested
 before then); capability presence checks return `available` where data exists.
 
-## S8 — Read surface
+## S8 — Read surface — **DONE** (2026-11-09; plan `docs/plans/S8-read-surface.md`)
 
 **Goal:** the dashboard can consume everything through supported helpers.
 

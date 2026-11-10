@@ -7,11 +7,13 @@ from fastapi import APIRouter
 from ff_pipeline.api._meta import build_meta
 from ff_pipeline.api.deps import SessionDep  # noqa: TC001 — used at runtime by FastAPI
 from ff_pipeline.api.errors import not_found
+from ff_pipeline.api.routes.seasons import season_out
 from ff_pipeline.api.schemas import (
     Envelope,
     LeagueSummary,
     OwnerOut,
     SeasonOut,
+    TradedPickOut,
 )
 from ff_pipeline.repository.queries import (
     count_owners_for_league,
@@ -20,6 +22,7 @@ from ff_pipeline.repository.queries import (
     list_leagues,
     list_owners_for_league,
     list_seasons_for_league,
+    traded_picks_for_league,
 )
 
 router = APIRouter(prefix="/leagues", tags=["leagues"])
@@ -85,6 +88,19 @@ def list_seasons_endpoint(
         raise not_found(f"No league with id {league_id!r}")
     seasons = list_seasons_for_league(session, league_id)
     return Envelope(
-        data=[SeasonOut.model_validate(s) for s in seasons],
+        data=[season_out(session, s) for s in seasons],
         meta=build_meta(session),
     )
+
+
+@router.get("/{league_id}/traded-picks", response_model=Envelope[list[TradedPickOut]])
+def get_traded_picks_endpoint(
+    league_id: str,
+    session: SessionDep,
+    pick_season: int | None = None,
+) -> Envelope[list[TradedPickOut]]:
+    """Current owners of traded future draft picks (Sleeper era)."""
+    if get_league(session, league_id) is None:
+        raise not_found(f"No league with id {league_id!r}")
+    picks = traded_picks_for_league(session, league_id, pick_season=pick_season)
+    return Envelope(data=[TradedPickOut.model_validate(p) for p in picks], meta=build_meta(session))

@@ -112,10 +112,10 @@ the merge it sees the helpers (additive; existing outputs unchanged).
 
 ## Done when
 
-- [ ] Helpers merged with tests; legacy outputs of the moved expression and of standings proven
+- [x] Helpers merged with tests; legacy outputs of the moved expression and of standings proven
   identical (fixture + live read-only).
-- [ ] Phase 1 API + `06_API_CONTRACT.md` updated; full gate green in both repos.
-- [ ] `02` §S8 marked done; dashboard D1/D2 can start.
+- [x] Phase 1 API + `06_API_CONTRACT.md` updated; full gate green in both repos.
+- [x] `02` §S8 marked done; dashboard D1/D2 can start.
 
 ## Decisions (recommended defaults — need the user's approval)
 
@@ -159,3 +159,20 @@ the merge it sees the helpers (additive; existing outputs unchanged).
   capabilities / freshness and `TransactionOut.status`, small read endpoints so the richer data is
   reachable over HTTP too: `GET /seasons/{id}/brackets`, `GET /leagues/{id}/traded-picks`,
   `GET /players/{id}/status?as_of=`.
+
+## Build notes (2026-11-09)
+
+- **Live proof (read-only):** over all 49,401 legacy roster rows the new
+  `authoritative_week_points_expr` equals the dashboard's current expression (0 differ); all 16
+  legacy seasons give identical standings (W-L-T, PF, PA), none provisional, all `is_final`.
+- Helpers live in `repository/platform_reads.py`, re-exported by `repository/queries.py` (the
+  dashboard's import surface).
+- **D4 needed no reader change:** `list_transactions` / `transactions_for_team` never filtered on
+  status, so they already return failed claims and the pick/FAAB legs; S8 documents it and
+  exposes `status` in the API.
+- **Freshness rule:** NFL.com seasons are always final (the platform is defunct); a Sleeper season
+  is final once `status = completed` and no week is provisional.
+- Standings rows gained `provisional`, `live_week`, `live_points_for`; legacy values unchanged.
+- Dashboard follow-ups (D-milestones, not S8): use `authoritative_week_points_expr` in place of its
+  own helper and the direct `nfl_com_points` reads (`players.py`, `matchups.py`, `records.py`);
+  read `status` on 2026 transactions (team page); render capabilities (`not_used` = nothing).

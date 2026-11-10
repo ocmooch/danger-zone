@@ -9,6 +9,7 @@ declare them in that order.
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -22,6 +23,7 @@ from ff_pipeline.api.schemas import (
     OwnershipEvent,
     PlayerOut,
     PlayerStatsBreakdown,
+    PlayerStatusOut,
     ProjectionOut,
     RawStatsEntry,
 )
@@ -34,6 +36,7 @@ from ff_pipeline.repository.queries import (
     player_projections,
     player_raw_stats,
     player_scored_stats,
+    player_status_asof,
     search_players,
 )
 
@@ -223,5 +226,23 @@ def get_player_availability_endpoint(
     rows = player_availability_for_season(session, player_id, season)
     return Envelope(
         data=[AvailabilityRow.model_validate(r) for r in rows],
+        meta=build_meta(session),
+    )
+
+
+@router.get("/{player_id}/status", response_model=Envelope[PlayerStatusOut | None])
+def get_player_status_endpoint(
+    player_id: int,
+    session: SessionDep,
+    as_of: date | None = None,
+) -> Envelope[PlayerStatusOut | None]:
+    """Injury / practice / depth status on ``as_of`` (default today): the newest
+    snapshot on or before it, at most 7 days old; ``null`` when there is none."""
+    if get_player(session, player_id) is None:
+        raise not_found(f"No player with id {player_id}")
+    day = as_of or datetime.now(UTC).date()
+    snap = player_status_asof(session, [player_id], day).get(player_id)
+    return Envelope(
+        data=PlayerStatusOut.model_validate(snap) if snap is not None else None,
         meta=build_meta(session),
     )

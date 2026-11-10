@@ -39,6 +39,50 @@ from ff_pipeline.repository.models import (
     TeamRoster,
     Transaction,
 )
+
+# S8 source-neutral reads, re-exported: this module is the dashboard's import surface.
+from ff_pipeline.repository.platform_reads import (
+    Capability as Capability,
+)
+from ff_pipeline.repository.platform_reads import (
+    PlatformInfo as PlatformInfo,
+)
+from ff_pipeline.repository.platform_reads import (
+    SeasonFreshness as SeasonFreshness,
+)
+from ff_pipeline.repository.platform_reads import (
+    authoritative_week_points_expr as authoritative_week_points_expr,
+)
+from ff_pipeline.repository.platform_reads import (
+    brackets_for_season as brackets_for_season,
+)
+from ff_pipeline.repository.platform_reads import (
+    failed_waiver_claims as failed_waiver_claims,
+)
+from ff_pipeline.repository.platform_reads import (
+    is_provisional_matchup as is_provisional_matchup,
+)
+from ff_pipeline.repository.platform_reads import (
+    official_slot_points_expr as official_slot_points_expr,
+)
+from ff_pipeline.repository.platform_reads import (
+    player_status_asof as player_status_asof,
+)
+from ff_pipeline.repository.platform_reads import (
+    season_capabilities as season_capabilities,
+)
+from ff_pipeline.repository.platform_reads import (
+    season_freshness as season_freshness,
+)
+from ff_pipeline.repository.platform_reads import (
+    season_platform as season_platform,
+)
+from ff_pipeline.repository.platform_reads import (
+    trade_assets as trade_assets,
+)
+from ff_pipeline.repository.platform_reads import (
+    traded_picks_for_league as traded_picks_for_league,
+)
 from ff_pipeline.repository.player_identity_integrity import source_identity_mismatches
 from ff_pipeline.repository.player_position_integrity import season_position_divergences
 
@@ -224,19 +268,37 @@ def transactions_for_team(session: Session, team_id: int) -> list[Transaction]:
 def standings_for_season(
     session: Session, season_id: int, through_week: int | None = None
 ) -> list[dict[str, Any]]:
-    """Aggregate matchups into a {team_id: {wins, losses, ties, pf, pa}} table."""
+    """Aggregate matchups into a {team_id: {wins, losses, ties, pf, pa}} table.
+
+    W-L-T and PF/PA count finalized games only. While a season is active
+    (S8-D3), a week the platform hasn't finalized is the current state: its
+    points are ``live_points_for`` (``live_week``), never a result, and every
+    row is ``provisional``. Rows without an opponent (Sleeper postseason byes
+    and placed teams) are not games. Legacy rows have neither case, so their
+    W-L-T / PF / PA are unchanged.
+    """
     conditions = [Matchup.season_id == season_id]
     if through_week is not None:
         conditions.append(Matchup.week <= through_week)
     stmt = select(Matchup).where(*conditions)
     matchups = list(session.execute(stmt).scalars().all())
+    fresh = season_freshness(session, season_id)
+    provisional = not fresh.is_final if fresh is not None else False
 
     teams_in_season = {team.team_id: team for team in list_teams_for_season(session, season_id)}
 
     by_team: dict[int, dict[str, float]] = defaultdict(
         lambda: {"wins": 0, "losses": 0, "ties": 0, "points_for": 0.0, "points_against": 0.0}
     )
+    live: dict[int, tuple[int, float]] = {}
     for m in matchups:
+        if m.opponent_team_id is None:
+            continue  # an idle Sleeper postseason team-week: not a game (legacy has none)
+        if is_provisional_matchup(m):
+            if m.team_score is not None:
+                live[m.team_id] = (m.week, float(m.team_score))
+            _ = by_team[m.team_id]  # keep the team in the table
+            continue
         row = by_team[m.team_id]
         if m.is_win is True:
             row["wins"] += 1
@@ -252,6 +314,7 @@ def standings_for_season(
     out: list[dict[str, Any]] = []
     for team_id, row in by_team.items():
         team = teams_in_season.get(team_id)
+        lw = live.get(team_id)
         out.append(
             {
                 "team_id": team_id,
@@ -261,6 +324,9 @@ def standings_for_season(
                 "ties": int(row["ties"]),
                 "points_for": round(row["points_for"], 2),
                 "points_against": round(row["points_against"], 2),
+                "provisional": provisional,
+                "live_week": lw[0] if lw else None,
+                "live_points_for": round(lw[1], 2) if lw else None,
             }
         )
     out.sort(key=lambda r: (-r["wins"], r["losses"], -r["points_for"]))
