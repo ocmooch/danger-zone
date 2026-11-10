@@ -351,4 +351,3 @@ def test_players_points_equal_stats_dot_scoring_in_fixtures() -> None:
                 assert round(calc, 2) == pytest.approx(pts, abs=0.011), (week, pid)
                 checked += 1
     assert checked > 1000
-
