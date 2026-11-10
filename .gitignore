@@ -77,3 +77,6 @@ Thumbs.db
 # Raw HTML captures (these can get large; opt-in)
 data/raw_pages/
 data/parse_failures/
+
+# Local data exports (e.g. CSV dumps)
+/exports/
