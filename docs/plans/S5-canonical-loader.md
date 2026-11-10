@@ -140,10 +140,42 @@ own. The loader only writes DTOs.
 
 ## Done when
 
-- [ ] `sleeper-league load --season 2026` loads weeks 1..current (on the copy; on live per S5-D1).
-- [ ] Team W-L-T / PF / PA equal Sleeper's roster settings for all 12 teams (finalized weeks).
+- [x] `sleeper-league load` loads weeks 1..current on a copy of the live DB (live per S5-D1: later).
+- [x] Team W-L-T / PF / PA equal Sleeper's roster settings for all 12 teams (finalized weeks).
 - [ ] Three box scores spot-checked against the Sleeper app by the user.
-- [ ] Load is idempotent; `legacy verify` passes; full gate green; `02` §S5 updated; PR → `dev`.
+- [x] Load is idempotent; `legacy verify` passes; full gate green. [ ] `02` §S5 updated; PR → `dev`.
+
+## As built (2026-11-09)
+
+Code: `canonical/{dto,loader}.py`, `normalizer/sleeper_league.py`,
+`crawlers/sleeper_league/runner.py`, `archive_view.load_league` (any source), CLI
+`sleeper-league load [--dry-run]`. `run --source sleeper-league` was **not** added: with the live
+load deferred (S5-D1), capture and load stay separate commands until the dashboard is ready.
+
+### Deviations from the design above
+
+1. **Sync instead of delete-and-insert.** Every entity is matched on its natural key and updated
+   in place, inserted or removed (stale weekly roster rows and transaction legs only; teams and
+   matchup weeks are never deleted). A reload is a true no-op and surrogate ids stay stable.
+2. **Draft position fallback.** If `draft.slot_to_roster_id` is absent (as in the pseudonymized
+   fixture), positions come from the round-1 picks' `draft_slot`.
+3. **Commissioner overrides touch two rows.** `custom_points` changes the team's `team_score` and
+   its opponent's `opponent_score`.
+4. **Records come from the loader**, not `derive_team_records()`, which would count provisional
+   weeks (`is_win` NULL with scores) as ties.
+
+### Verification on a copy of the live DB (2026-11-09)
+
+- First load: teams +12, matchups +108, team_rosters +1,929 (180 week-0 draft rows + weeks 1–9),
+  transactions +818 (180 draft, 139 free-agent adds, 106 waiver adds, 162 failed claims, 231
+  drops). 4 nickname-only DEF rows got `sleeper_id`; 0 stubs.
+- **Records vs Sleeper: all 12 teams equal** (W-L-T, PF, PA over weeks 1–8).
+- Second load: every entity unchanged (`+0 ~0 -0`). `legacy verify` PASSED; 41/41 triggers.
+- IR: week 9 has its 14 IR players as `RES` (an archived rosters revision exists); weeks 1–8
+  non-starters are `BN` + `slot_certainty='bench_or_reserve'`.
+- Owners recompute: no change (the same 12 managers are active).
+- Box-score spot-check: three games (weeks 1, 5, 8); starters' points sum exactly to each team
+  score. **The user compares them with the Sleeper app.**
 
 ## Known issues (out of scope)
 
