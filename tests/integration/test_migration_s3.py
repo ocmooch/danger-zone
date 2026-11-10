@@ -109,13 +109,16 @@ def test_upgrade_is_additive_on_a_sealed_db(tmp_path: Path) -> None:
 def test_round_trip_keeps_triggers_fingerprints_and_the_guard(tmp_path: Path) -> None:
     db = build_sealed_db(tmp_path)
     triggers, prints = _triggers(db), _all_fingerprints(db)
-    assert len({t for t in triggers if not t.startswith("legacy_guard_v2_")}) == 41  # + guard v2 (S9)
+    # Guard v2 (S9) triggers sit on S3 columns, so downgrading past S3 drops them by design.
+    v1_triggers = {t for t in triggers if not t.startswith("legacy_guard_v2_")}
+    assert len(v1_triggers) == 41
+    assert len(triggers - v1_triggers) == 7
 
     _downgrade(db, S2_HEAD)
     assert not (NEW_TABLES & _tables(db))
     for table, cols in NEW_COLUMNS.items():
         assert not (cols & _columns(db, table)), table
-    assert _triggers(db) == triggers  # no batch rebuild dropped a guard trigger
+    assert _triggers(db) == v1_triggers  # no batch rebuild dropped a v1 guard trigger
     assert _all_fingerprints(db) == prints
     assert _verified(db)
 
