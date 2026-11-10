@@ -48,6 +48,8 @@ class ArchivedLeague:
     players: dict[str, dict[str, Any]] = field(default_factory=dict)
     draft: dict[str, Any] = field(default_factory=dict)
     winners_bracket: list[dict[str, Any]] = field(default_factory=list)
+    losers_bracket: list[dict[str, Any]] = field(default_factory=list)
+    traded_picks: list[dict[str, Any]] = field(default_factory=list)
     matchups_by_week: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
 
 
@@ -103,6 +105,8 @@ def load_league(src: SleeperLeagueSource, league_id: str) -> ArchivedLeague:
         players=players if isinstance(players, dict) else {},
         draft=draft,
         winners_bracket=lst(by[(Endpoint.WINNERS_BRACKET, None)]),
+        losers_bracket=lst(by[(Endpoint.LOSERS_BRACKET, None)]),
+        traded_picks=lst(by[(Endpoint.TRADED_PICKS, None)]),
         matchups_by_week=by_week,
     )
 

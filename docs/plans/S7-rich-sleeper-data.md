@@ -5,8 +5,9 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S7. Design sources: `04_SLEEPER
 S3 schema (`playoff_brackets`, `traded_picks`, `player_status_snapshots`, `assets`, the new
 `teams` / `seasons` columns).
 
-**Status:** PLAN, written 2026-11-09 on `feature/s7-rich-sleeper-data`. Nothing is built yet.
-**The decisions at the end need the user's approval before the BUILD session.**
+**Status:** PLAN approved 2026-11-09: S7-D1..D8 as recommended, **except S7-D7 = game-day
+capture** (a Sunday-morning players-directory capture, so statuses are as of kickoff). BUILD on
+`feature/s7-rich-sleeper-data`.
 
 ## Goal
 
@@ -133,11 +134,11 @@ on real decided games, before the places are trusted on live.
 
 ## Done when
 
-- [ ] Each facet populated for 2026 to date on the copy: brackets rows (undecided), team extras,
+- [x] Each facet populated for 2026 to date on the copy: brackets rows (undecided), team extras,
   settings snapshot, status snapshots, avatars; picks/FAAB and places fixture-tested (no trades
   or decided games exist yet).
-- [ ] Reload is a no-op; `legacy verify` passes; full gate green.
-- [ ] RUNBOOK + `02` §S7 + `04` §6/§7 updated; PR → `dev`.
+- [x] Reload is a no-op; `legacy verify` passes; full gate green.
+- [x] RUNBOOK + `02` §S7 + `04` §6/§7 updated; PR → `dev`.
 
 Capability presence checks (`available` where data exists) move to S8, which builds the
 capability matrix.
@@ -154,3 +155,26 @@ capability matrix.
 | S7-D6 | `traded_picks` | Current-ownership snapshot, synced each load (picks back with their original owner are deleted); history comes from the trade legs. | Append-only rows per observation (a history table; more rows, harder to query "who owns it now"). |
 | S7-D7 | Status snapshot cadence and scope | Use the existing capture (weekly, Wednesday morning) and store league-referenced players only (a few hundred rows per capture). | (a) Add a Sunday-morning directory capture for pre-kickoff statuses (second scheduled task); (b) store all 3,266 Sleeper-linked players. |
 | S7-D8 | Avatars | Downloaded during `sleeper-league capture` (the only network step), deduped by sha256, linked to teams at load; never committed. | A separate `sleeper-league avatars` command run by hand. |
+
+## Build notes (2026-11-09)
+
+On a copy of the S6 copy: capture stored 20 avatars (1 league, 9 owner, 10 team; two owners share
+one image URL); the load wrote 14 bracket rows (undecided), extras on 12 teams, a 4.6 KB settings
+snapshot, 289 status rows; the reload changed nothing; `legacy verify` passed before and after.
+
+- **Game-day capture (S7-D7 as chosen):** `sleeper-league capture --directory-only` +
+  `scripts/sleeper/gameday_capture.sh`; Windows task `dz-sleeper-gameday` registered for Sunday
+  12:15 PM ET (first run 2026-11-15). Thursday / Monday / late-window inactives are not covered;
+  a missed run fires at the next start, so its statuses may be post-kickoff (its date shows it).
+- **Status rows only for days not yet snapshotted**, so a load doesn't re-read every ~5 MB
+  directory revision; a player who joins the league later has no rows for earlier days.
+- **Trade pick/FAAB legs** are written only for teams that moved picks or FAAB (a team that only
+  swapped players has none).
+- **Avatar dedupe limit:** identical bytes under two different URLs keep one asset row under the
+  first URL, so only the first team is linked (the capture reports the count). Sleeper avatar ids
+  are content hashes, so the same image normally has the same URL.
+- `crawlers/nfl_com/media.download_and_store` gained a `fetch_errors` parameter (default
+  unchanged) so the Sleeper downloader reuses it.
+- **Places before the final:** a place is written as soon as its game is final, so the Sacko
+  (decided in week 16) is known before the champion.
+- Capability presence checks move to S8 (the capability matrix).

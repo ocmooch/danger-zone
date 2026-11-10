@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -24,6 +24,30 @@ def _settings() -> Settings:
 
     _bootstrap_settings_and_logging()
     return get_settings()
+
+
+def _capture_avatars(ss: Any, settings: Settings, league_id: str) -> Any:
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.crawlers.sleeper_league.archive_view import load_league
+    from ff_pipeline.crawlers.sleeper_league.avatars import HttpBytesFetcher, download_avatars
+    from ff_pipeline.crawlers.sleeper_league.client import ArchiveSleeperLeagueSource
+    from ff_pipeline.crawlers.sleeper_league.runner import FRANCHISE_LEAGUE_ID
+    from ff_pipeline.normalizer.sleeper_league import avatar_urls
+
+    data = load_league(
+        ArchiveSleeperLeagueSource(ss, RawStore(settings.sleeper_raw_dir)), league_id
+    )
+    fetcher = HttpBytesFetcher()
+    try:
+        return download_avatars(
+            ss,
+            fetcher,
+            avatar_urls(data),
+            league_id=FRANCHISE_LEAGUE_ID,
+            assets_root=settings.assets_dir,
+        )
+    finally:
+        fetcher.close()
 
 
 def _league_id(settings: Settings, override: str | None) -> str:
@@ -51,6 +75,11 @@ def capture_cmd(
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Fetch and report, but write nothing (no files, no rows)."
+    ),
+    directory_only: bool = typer.Option(
+        False,
+        "--directory-only",
+        help="Game-day run: archive only /state/nfl and the players directory (S7-D7).",
     ),
 ) -> None:
     """Archive every Sleeper league endpoint for one season (raw bytes + index rows)."""
@@ -87,14 +116,34 @@ def capture_cmd(
                     players_refresh_hours=settings.sleeper_players_refresh_hours,
                     force_players=force_players,
                     dry_run=dry_run,
+                    directory_only=directory_only,
                 )
             except (CaptureError, LineageError) as exc:
                 typer.secho(f"sleeper-league capture failed: {exc}", fg="red", err=True)
                 raise typer.Exit(code=1) from exc
             if not dry_run:
                 ss.commit()
+            avatars = None
+            if not dry_run and not directory_only and summary.league_id:
+                avatars = _capture_avatars(ss, settings, summary.league_id)
+                ss.commit()
     finally:
         engine.dispose()
+    if directory_only:
+        typer.echo(
+            f"{'[dry run] ' if dry_run else ''}sleeper-league: players directory captured "
+            f"(requests {summary.requests}, new revisions {summary.new_revisions})"
+        )
+        if summary.errors:
+            for line in summary.errors:
+                typer.secho(f"  error: {line}", fg="red", err=True)
+            raise typer.Exit(code=1)
+        return
+    if avatars is not None:
+        typer.echo(
+            f"avatars: {avatars.stored} new, {avatars.already} known, {avatars.failed} failed"
+            + (f", {avatars.aliased} same image under another URL" if avatars.aliased else "")
+        )
 
     prefix = "[dry run] " if dry_run else ""
     typer.echo(
@@ -282,6 +331,10 @@ def load_cmd(
     )
     from ff_pipeline.legacy.cli import run_preflight
     from ff_pipeline.normalizer.sleeper_league import NormalizeError
+    from ff_pipeline.normalizer.sleeper_status import (
+        archived_directory_revisions,
+        snapshotted_days,
+    )
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.repository.legacy_guard import SealedSeasonError
 
@@ -297,7 +350,10 @@ def load_cmd(
             try:
                 season = load_league(source, lid).season
                 reserve = reserve_by_week_from_archive(ss, store, lid, season)
-                out = load_league_season(ss, source, lid, reserve_by_week=reserve)
+                revisions = archived_directory_revisions(ss, store, skip_days=snapshotted_days(ss))
+                out = load_league_season(
+                    ss, source, lid, reserve_by_week=reserve, directory_revisions=revisions
+                )
             except (
                 ArchiveMissError,
                 NormalizeError,
@@ -322,6 +378,7 @@ def load_cmd(
         f"  players       DEF sleeper_id stamped {len(out.prep.stamped)}, "
         f"stubs {len(out.prep.stubbed)}; rostered spans refreshed {r.spans_refreshed}"
     )
+    typer.echo(f"  status        {out.status_snapshots} player-day snapshots written")
     typer.echo(
         "  records vs Sleeper: "
         + ("ok (all teams)" if not r.record_mismatches else f"{len(r.record_mismatches)} differ")

@@ -198,7 +198,7 @@ Each player-team leg becomes one canonical row, as on NFL.com.
 | `waiver`, `complete` | `waiver_add` (in) + `drop` (out) per dropped player; `extra_data.faab_bid = settings.waiver_bid` |
 | `waiver`, `failed` | `waiver_add` with `status='failed'`, `extra_data.faab_bid`, `extra_data.failure_reason = metadata.notes` *(new capability)* |
 | `free_agent` | `free_agent_add` / `drop` |
-| `trade` | `trade` legs, `direction` in/out, `counterpart_team_id`; `extra_data.picks[]` from `draft_picks`, `extra_data.faab_transfers[]` from `waiver_budget` |
+| `trade` | `trade` legs, `direction` in/out, `counterpart_team_id`, per player. ✅ S7-D5: plus one player-less `trade` leg (`player_id NULL`, `direction='in'`) per team that moved picks or FAAB, `extra_data = {picks_in, picks_out, faab_in, faab_out}` from `draft_picks` / `waiver_budget` |
 | `commissioner` | `commissioner_move` *(new type)* legs; `notes` = "commissioner" |
 | draft picks (`/draft/{id}/picks`) | `draft` rows, `effective_week = 0`; `notes = "Round R, Pick P (overall O)"` (legacy format); `extra_data`: `draft_round`, `draft_pick_in_round`, `draft_overall`, `is_keeper`, `auction_amount` |
 
@@ -224,11 +224,11 @@ Bracket match objects: `r` (round), `m` (match id), `t1`, `t2` (roster ids), `w`
 | Derivation | Rule |
 |------------|------|
 | `playoff_brackets` row | one per (bracket, r, m) |
-| `matchups.is_playoff` | team-week appears in winners bracket for that round |
-| `matchups.is_consolation` | appears in losers bracket, or in a winners-bracket placement match with `p > 1` ⏸ re-probe after week 15 (no game decided yet). S2: both brackets are pre-generated with the same shape, placement games `p = 1` (r3), `p = 3` (r3), `p = 5` (r2) |
+| `matchups.is_playoff` | ✅ S7-D2 (legacy convention): the team-week is a game in **either** bracket that round |
+| `matchups.is_consolation` | ✅ S7-D2: a losers-bracket game only (winners-bracket 3rd/5th-place games are not, as in 2010-2025). Team-weeks with no game: `extra_data.postseason_role = 'bye'` (plays later) or `'placed'` (done; the `p=5` games are round 2), `is_playoff = false` (S7-D4). ⏸ re-probe after week 15 that Sleeper pairs postseason matchups as the bracket says |
 | `champion_team_id` / `runner_up_team_id` | winners bracket match with `p = 1`: `w` / `l` |
-| `last_place_team_id` (the Sacko) | losers bracket deciding last place ⏸ re-probe after week 15: whether losers-bracket `w` means "advances" (toilet bowl) and which `p` is last place cannot be read until games are decided |
-| `teams.playoff_finish` / `final_rank` | from `p` of each team's last match; teams without a placement keep NULL |
+| `last_place_team_id` (the Sacko) | the highest place number (12th): the loser of the losers-bracket `p=5` game, as `t*_from = {w: m}` says winners advance. ✅ S7-D3: every decided game's `w` is checked against the week's scores; a winner who scored less withholds all places (would mean loser-advances). ⏸ re-probe after weeks 15 and 17 |
+| `teams.playoff_finish` / `final_rank` | ✅ S7: place = bracket offset (0 / 6) + `p` for the winner, + 1 for the loser; both columns get it, as in legacy. `made_playoffs` = seeded into the winners bracket, once the regular season is final |
 
 ## 8. Players directory → `players`, `player_status_snapshots`
 
@@ -241,6 +241,10 @@ Bracket match objects: `r` (round), `m` (match id), `t1`, `t2` (roster ids), `w`
 | `practice_participation`, `practice_description` | `player_status_snapshots` |
 | `depth_chart_position`, `depth_chart_order`, `team`, `status` | `player_status_snapshots` |
 | `news_updated` | `player_status_snapshots.extra` (timestamp only; no news text) |
+
+✅ S7: snapshots are written for league-referenced players only, one row per capture day (the
+Wednesday full capture and the Sunday game-day directory capture, S7-D7); text fields (injury
+notes, news) are not stored.
 
 nflverse remains the authority for `players.nfl_team`, `is_active`, `last_season` (existing
 conflict policy in `03_DATA_SOURCES.md`); Sleeper values are snapshots, not overwrites.

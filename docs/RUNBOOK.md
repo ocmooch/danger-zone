@@ -348,6 +348,14 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
               -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
   Register-ScheduledTask -TaskName "dz-sleeper-capture" -Action $action -Trigger $trigger -Settings $settings
   ```
+- **Game-day job (S7-D7):** Windows task `dz-sleeper-gameday` (Sun 12:15 PM ET, after the 1 PM
+  games' inactives; runs at next start if missed) runs `scripts/sleeper/gameday_capture.sh` =
+  `sleeper-league capture --directory-only` (only `/state/nfl` + the players directory), log in
+  `data/logs/sleeper_gameday-<UTC date>.log`. The next `sleeper-league load` turns each captured
+  directory into `player_status_snapshots` rows dated by capture day. Registered like the weekly
+  task with `-DaysOfWeek Sunday -At 12:15pm`, `-ExecutionTimeLimit (New-TimeSpan -Minutes 15)`.
+- A full capture also downloads the league / owner / team avatars into `ASSETS_DIR` (new URLs
+  only, deduped by sha256); the load links them to `teams`.
 - Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
   `scripts/sleeper/build_fixtures.py` (pseudonymized test fixtures; review the diff before commit).
 
@@ -388,6 +396,10 @@ uv run ff-pipeline sleeper-league load             # archive → seasons/teams/m
   (re-capture, then reload) or a mapping bug (stop and investigate).
 - "owner change NOT written": a sealed (legacy) owner would change `is_active`/`joined_year`/
   `left_year`, which needs `legacy amend`.
+- Since S7 the load also writes `playoff_brackets`, postseason flags and places, season results
+  (champion / runner-up / Sacko), `traded_picks`, team extras, `seasons.settings_snapshot` and
+  status snapshots. A warning "bracket winner scored less than loser" means Sleeper's bracket
+  may run loser-advances: places are withheld; re-probe the bracket (`04` §7) before trusting it.
 - **Live use is gated (S5-D1):** load the live DB only once the dashboard is ready to show 2026
   (dz-dashboard D0–D3). Until then, use a copy.
 
