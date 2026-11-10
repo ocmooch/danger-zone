@@ -12,4 +12,4 @@ Quarterly and before each release. Two kinds:
 | Date | Kind | Source | Result |
 |---|---|---|---|
 | 2026-11-10 | local drill | seal-v1-2026-11-07 | integrity ok; migrate up ok; PASSED (full): live DB matches seal-v1; smoke ok: 16 seasons, 1 box score |
-| _pending_ | key drill (you) | newest `dz-vault_*` archive | run `restore_check.sh primary <archive>` and add the line |
+| 2026-11-10 | key drill (primary) | dz-vault_snap_20261108_4843c30a | RESTORE CHECK (primary key): PASSED. Passed after the stored passphrase was corrected; keep the password-manager entry exact (no autocorrect) |
