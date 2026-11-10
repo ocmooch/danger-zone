@@ -84,8 +84,15 @@ One row per (league, year). 13 years on NFL.com → 13 rows.
 | `runner_up_team_id` | INTEGER FK → teams | NULL if not completed |
 | `last_place_team_id` | INTEGER FK → teams | NULL if not completed |
 | `created_at`, `updated_at` | TIMESTAMP | |
+| `is_sealed` | BOOLEAN NOT NULL DEFAULT 0 | Legacy guard (S1): 1 = frozen; see *Legacy guard tables* |
+| `sealed_at` | TEXT | UTC ISO time the season was sealed |
+| `seal_id` | TEXT | Seal that sealed it (e.g. `seal-v1`) |
+| `platform` | TEXT NOT NULL DEFAULT `'nfl_com'` | S3: `nfl_com` \| `sleeper` (validated in code, no CHECK — a new platform never rebuilds this guarded table) |
+| `platform_league_id` | TEXT | S3: the platform's league id for that year (Sleeper renews it every season); NULL for NFL.com (`leagues.league_id` stays the franchise key, D-4) |
+| `platform_draft_id` | TEXT | S3: Sleeper `draft_id` |
+| `settings_snapshot` | JSON | S3: league `settings`, `roster_positions`, `scoring_settings`, `metadata` at last sync |
 
-UNIQUE(`league_id`, `year`)
+UNIQUE(`league_id`, `year`); index (`platform`, `year`)
 
 ### `owners`
 A persistent person — one human, even if they had different team names across seasons.
@@ -103,7 +110,7 @@ A persistent person — one human, even if they had different team names across 
 | `created_at`, `updated_at` | TIMESTAMP | |
 
 ### `owner_identity_overrides`
-Manual pins that force multiple NFL.com owner identities to resolve to one canonical manager before owner rows are upserted. Used for known same-person aliases such as the two Adam user IDs and the two Ill user IDs; reconstruction still keeps different managers distinct unless an override exists.
+Manual pins that force multiple NFL.com owner identities to resolve to one canonical manager before owner rows are upserted. Used for known same-person aliases such as the two Owner 01 user IDs and the two Owner 09 user IDs; reconstruction still keeps different managers distinct unless an override exists.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -138,9 +145,13 @@ One row per (season, team). A single owner shows up in N rows, one per season th
 | `playoff_finish` | INTEGER | 1=champ, 2=runner-up, 3=3rd place, etc. |
 | `team_avatar_asset_id` | INTEGER FK → assets | Team logo as it appeared THAT season; NULL until the avatar backfill runs |
 | `owner_avatar_asset_id` | INTEGER FK → assets | Owner avatar that season; NULL (NFL.com renders only a team logo per row today) |
+| `platform_team_key` | TEXT | S3: `sleeper:roster:<roster_id>`; NULL for NFL.com teams |
+| `division` | TEXT | S3: platform division; NULL for legacy (the BFF derives legacy divisions) |
+| `extra_data` | JSON | S3: `co_owner_user_ids`, `waiver_position`, `waiver_budget_used`, `total_moves`, `ppts`, `streak`, `record_string` |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
-UNIQUE(`season_id`, `team_name`). `owner_id` is intentionally not unique within
+UNIQUE(`season_id`, `team_name`); partial UNIQUE(`season_id`, `platform_team_key`) WHERE
+`platform_team_key IS NOT NULL`. `owner_id` is intentionally not unique within
 a season because historical/manual identity cleanup can prove that one person
 managed multiple NFL.com teams in the same year.
 
@@ -339,6 +350,8 @@ One row per (season, week, team). Two rows make a single head-to-head game.
 | `is_playoff` | BOOLEAN | |
 | `is_consolation` | BOOLEAN | For losers-bracket games; history reconstruction derives this from the NFL.com playoff bracket's championship-team set |
 | `nfl_com_game_id` | TEXT | The `gameId` in NFL.com URLs — for re-fetching |
+| `platform_matchup_key` | TEXT | S3: `sleeper:<league_id>:<week>:<matchup_id>`; NULL for NFL.com (indexed) |
+| `extra_data` | JSON | S3: `custom_points`, `points_official`, `finalized`, bracket refs |
 | `created_at`, `updated_at` | TIMESTAMP | |
 
 UNIQUE(`season_id`, `week`, `team_id`)
@@ -360,7 +373,13 @@ The full chronological league diary: trades, waivers, free-agent adds, drops, IR
 | `waiver_priority_used` | INTEGER | For waivers, the priority slot consumed |
 | `notes` | TEXT | Free-text scraped from NFL.com (e.g., the "By" owner) |
 | `extra_data` | TEXT (JSON) | Payload for rows that don't fit the player-move columns: `lineup_change` carries `{"from_slot","to_slot"}`; `setting_change` carries the change detail. NULL for add/drop/trade |
+| `platform_transaction_id` | TEXT | S3: Sleeper `transaction_id`; NULL for NFL.com rows |
+| `status` | TEXT | S3: `complete` \| `failed` (failed waiver claims); NULL for NFL.com rows (all executed) |
 | `created_at`, `updated_at` | TIMESTAMP | |
+
+S3 idempotency key for platform legs: partial UNIQUE(`season_id`, `platform_transaction_id`,
+`coalesce(player_id, -1)`, `coalesce(team_id, -1)`, `coalesce(direction, '')`) WHERE
+`platform_transaction_id IS NOT NULL` (the `coalesce` makes FAAB- or pick-only legs dedupe too).
 
 INDEX(`season_id`, `team_id`), INDEX(`season_id`, `player_id`)
 
@@ -492,6 +511,49 @@ One row per (run, source) — lightweight per-source health record.
 | `error_message` | TEXT | NULL on success |
 | `duration_ms` | INTEGER | |
 | `created_at` | TIMESTAMP | |
+
+### Platform-era tables (S2, S3)
+
+Added for Sleeper seasons (`docs/sleeper/01_PIPELINE_ARCHITECTURE.md` §4–§5). None is
+legacy-guarded: they hold no sealed-season rows.
+
+| Table | Purpose / key columns |
+|-------|-----------------------|
+| `source_payloads` (S2) | Index of the raw payload archive (bytes gzip'd on disk under `SLEEPER_RAW_DIR`, content-addressed by `sha256`). `source`, `endpoint`, `platform_league_id`, `season_year`, `week`, `request_url`, `sha256`, `byte_size`, `http_status`, `first_fetched_at`, `last_fetched_at`, `fetch_count`, `run_id`. UNIQUE(`sha256`, `request_url`): identical re-fetches bump `last_fetched_at`/`fetch_count`; changed bytes are a new revision. |
+| `owner_platform_identities` | One human, many platform accounts (D-3 crosswalk). `owner_id` FK, `platform`, `external_user_id`, `external_display_name`, `first_season`, `last_season`, `notes`. UNIQUE(`platform`, `external_user_id`). |
+| `playoff_brackets` | Official winners/losers bracket matches. `season_id`, `bracket`, `round`, `match_no`, `team1_id`, `team2_id`, `winner_team_id`, `loser_team_id`, `placement` (Sleeper `p`), `team1_from`/`team2_from` JSON, `source`. UNIQUE(`season_id`, `bracket`, `round`, `match_no`). |
+| `traded_picks` | Draft-pick ownership, keyed by owners (stable across seasons). `league_id`, `pick_season`, `round`, `original_owner_id`, `current_owner_id`, `previous_owner_id`, `observed_at`, `source_transaction_id`, `extra_data` (raw roster ids). UNIQUE(`league_id`, `pick_season`, `round`, `original_owner_id`). |
+| `player_status_snapshots` | Daily injury / practice / depth state. `player_id`, `as_of_date`, `source`, `injury_*`, `practice_participation`, `depth_chart_*`, `nfl_team`, `status`, `extra_data`. UNIQUE(`player_id`, `as_of_date`, `source`). |
+| `legacy_nfl_com_2026_preseason` | Quarantine for the NFL.com 2026 placeholder (D-2): each moved row verbatim as `row_data` JSON with `source_table` + `original_pk`, `quarantined_at`, `amendment_id` FK. Written once by `ff-pipeline legacy quarantine-2026-stub` (S4, 2026-11-09), which also writes the audit row in `legacy_amendments`; never deleted. |
+
+`players` also gains `extra_data` (JSON, S3): static Sleeper profile (`years_exp`, `college`,
+`height`, `weight`, `fantasy_positions`) and extra cross-ids.
+
+**Migrations on guarded tables never use batch mode** (it rebuilds the table and drops its guard
+triggers): columns are added and dropped with native `ALTER TABLE` (S3-D1).
+
+### Legacy guard tables (S1)
+
+Protect the sealed NFL.com era (2010–2025). Timestamps are UTC ISO text
+(`YYYY-MM-DDTHH:MM:SSZ`) so the guard triggers can compare them. Design:
+`docs/sleeper/03_LEGACY_PRESERVATION.md` §6–§8, `docs/plans/S1-legacy-guard.md`.
+
+| Table | Purpose |
+|-------|---------|
+| `legacy_guard(id = 1, unlocked_until, unlocked_reason)` | Single-row lock. Guard triggers are bypassed only while `unlocked_until` is in the future (`legacy amend` opens a 10-minute window). |
+| `legacy_seals(seal_id PK, created_at, kind, git_commit, alembic_revision, manifest_sha256, manifest JSON)` | Fingerprint baselines (`adopt` = seal-v1, `amend` = seal-vN+1). Newest row is current. Append-only. |
+| `legacy_sealed_rows(table_name, pk, row_hash)` PK(`table_name`, `pk`), WITHOUT ROWID | Every row the current seal protects, with a 16-hex hash of its legacy columns. Global-table guards check membership; `legacy verify` uses the hashes to name changed rows. Changes only inside an unlock. |
+| `legacy_amendments(amendment_id PK, created_at, reason, command, git_commit, before_seal, after_seal, tables_changed JSON, rows_changed JSON)` | Audit log of every change to sealed data. Append-only. |
+
+**Guard triggers** (SQLite, `legacy_guard_<table>_<event>`): sealed seasons refuse INSERT, DELETE
+and any UPDATE that changes a legacy column, for `teams`, `matchups`, `transactions`,
+`scoring_rules`, `team_rosters`, `player_availability`; sealed `seasons` rows refuse edits
+(including un-sealing) and deletes; sealed rows of `leagues`, `owners`, `commissioners`,
+`owner_identity_overrides`, `player_id_overrides`, `player_identity_links` and the
+`players.player_id/nfl_com_player_id` mapping refuse changes and deletes, while new rows are
+allowed. Columns outside the seal's legacy column set (later additive columns, `updated_at`,
+re-derivable `players` columns) stay writable. Re-derivable tables (`player_stats_*`,
+`projections`, …) are not guarded.
 
 ---
 

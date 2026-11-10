@@ -86,6 +86,7 @@ def download_and_store(
     kind: str,
     source_url: str,
     assets_root: Path = DEFAULT_ASSETS_ROOT,
+    fetch_errors: tuple[type[Exception], ...] = (NflComClientError,),
 ) -> int | None:
     """Fetch one asset, content-address it, and upsert its ``assets`` row.
 
@@ -102,7 +103,7 @@ def download_and_store(
         content, content_type = fetcher.get_bytes(source_url)
     except AuthFailureError:
         raise  # dead cookie — abort the whole backfill, don't swallow it
-    except NflComClientError as exc:
+    except fetch_errors as exc:
         log.warning("avatar download failed", url=source_url, error=str(exc))
         return None
     if not content:

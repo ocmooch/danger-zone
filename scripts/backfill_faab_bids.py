@@ -93,7 +93,7 @@ def main() -> None:
 
     engine = create_app_engine(db_url)
     upgrade_to_head(engine=engine)
-    cookie_value = settings.nfl_cookie.get_secret_value()
+    cookie_value = settings.require_nfl_cookie()
 
     total_parsed_bids = 0
     try:

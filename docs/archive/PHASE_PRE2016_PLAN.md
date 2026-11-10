@@ -277,8 +277,8 @@ per-season `/history/{year}/owners` pages, derives one owner identity per NFL
 `userId` (tenure, aliases, active/inactive), and re-points `teams.owner_id` per
 season. It recovered 8 historical managers beyond the 12 current — including
 **two distinct Adams and two distinct Ills** (keyed by userId, not name) and the
-**two "Dan"s** (active `Dan` on T5; inactive `dan` on T7, 2014–24). One manager
-(`mike`) moved franchises (T3→T12) in 2018.
+**two "Owner 05"s** (active `Owner 05` on T5; inactive `dan` on T7, 2014–24). One manager
+(`Owner 19`) moved franchises (T3→T12) in 2018.
 
 Dashboard wiring (separate repo, not done here):
 - `analytics/season_schedule.py`: set the 13↔14 `_CONFIRMED` switch (2011, 2021).

@@ -48,7 +48,7 @@ def test_parse_league_home_extracts_name_id_week_year() -> None:
     assert parsed.current_week == 17
     assert parsed.current_season_year == 2025
     # window.analyticsData also exposes the viewer's own user + team id.
-    assert parsed.nfl_user_id == "168722"
+    assert parsed.nfl_user_id == "910006"
     assert parsed.current_team_id == 4
 
 
@@ -92,14 +92,14 @@ def test_parse_owners_returns_twelve_rows() -> None:
     assert len(owners) == 12
     by_team = {o.team_id: o for o in owners}
     # Viewer's own team — cross-checked against analyticsData on the
-    # league_home fixture (userID=168722, teamID=4).
-    assert by_team[4].team_name == "The Wizard Of BAA'z"
-    assert by_team[4].display_name == "sully"
-    assert by_team[4].nfl_user_id == "168722"
+    # league_home fixture (userID=910006, teamID=4).
+    assert by_team[4].team_name == "Team 177"
+    assert by_team[4].display_name == "Owner 21"
+    assert by_team[4].nfl_user_id == "910006"
     # First team in standings rank
-    assert by_team[1].team_name == "Cream of the C"
-    assert by_team[1].display_name == "harry"
-    assert by_team[1].nfl_user_id == "102530"
+    assert by_team[1].team_name == "Team 038"
+    assert by_team[1].display_name == "Owner 17"
+    assert by_team[1].nfl_user_id == "910001"
 
 
 def test_parse_owners_missing_table_raises() -> None:
@@ -114,9 +114,9 @@ def test_parse_owners_missing_table_raises() -> None:
 
 def test_parse_team_roster_slot_classification() -> None:
     roster = parse_team_roster(_read("team_roster_1.html"))
-    # Fixture is team 4 ("The Wizard Of BAA'z") on the live page.
+    # Fixture is team 4 ("Team 177") on the live page.
     assert roster.team_id == 4
-    assert roster.team_name == "The Wizard Of BAA'z"
+    assert roster.team_name == "Team 177"
     # Starters (QB, RB x2, WR x2, TE, R/W/T, K, DEF) + 4 bench + 1 reserve
     # + 2 bench defenses = 16 entries total.
     assert len(roster.entries) == 16
@@ -163,7 +163,7 @@ def test_parse_weekly_matchups_emits_two_rows_per_game() -> None:
 
     # Spot-check the first matchup: team 4 (84.60) vs team 10 (159.12).
     by_team = {r.team_id: r for r in rows}
-    assert by_team[4].team_name == "The Wizard Of BAA'z"
+    assert by_team[4].team_name == "Team 177"
     assert by_team[4].team_score == pytest.approx(84.60)
     assert by_team[4].opponent_team_id == 10
     assert by_team[4].opponent_score == pytest.approx(159.12)
@@ -208,7 +208,7 @@ def test_parse_transactions_maps_types_and_direction() -> None:
     # (the user's add+drop arrives as two adjacent rows sharing an id).
     assert txns[0].nfl_transaction_id == "2129"
     assert txns[0].transaction_type == "drop"
-    assert txns[0].team_id == 1  # Cream of the C
+    assert txns[0].team_id == 1  # Team 038
     assert txns[0].player_name == "Taysom Hill"
     assert txns[0].player_id == "2558954"
     assert txns[0].direction == "out"
@@ -236,9 +236,9 @@ def test_parse_transactions_maps_lm_commish_row_to_setting_change() -> None:
         <td class="transactionDate first">Dec 6, 7:01am</td>
         <td class="transactionWeek"></td>
         <td class="transactionType">LM</td>
-        <td class="playerNameAndInfo" colspan="3">harry updated playoff teams</td>
+        <td class="playerNameAndInfo" colspan="3">Owner 17 updated playoff teams</td>
         <td class="transactionOwner"><div class="teamOwner">
-          <span class="userName userId-102530">harry</span></div></td>
+          <span class="userName userId-910001">Owner 17</span></div></td>
       </tr>
     </tbody></table>
     """
@@ -246,8 +246,8 @@ def test_parse_transactions_maps_lm_commish_row_to_setting_change() -> None:
     assert txn.transaction_type == "setting_change"
     assert txn.team_id is None and txn.player_id is None and txn.direction is None
     assert txn.nfl_transaction_id == "1660"
-    assert txn.notes == "harry"
-    assert txn.extra_data == {"raw_type": "lm", "description": "harry updated playoff teams"}
+    assert txn.notes == "Owner 17"
+    assert txn.extra_data == {"raw_type": "lm", "description": "Owner 17 updated playoff teams"}
 
 
 def test_parse_transactions_captures_faab_bid_on_waiver_adds() -> None:
@@ -380,12 +380,12 @@ def test_parse_gamecenter_extracts_both_sides_and_full_rosters() -> None:
     gc = parse_gamecenter(_read("teamgamecenter.html"))
 
     assert gc.home.team_id == 4
-    assert gc.home.team_name == "The Wizard Of BAA'z"
+    assert gc.home.team_name == "Team 177"
     assert gc.home.total_points == pytest.approx(84.60)
     assert len(gc.home.entries) == 16
 
     assert gc.away.team_id == 10
-    assert gc.away.team_name == "London on da Track"
+    assert gc.away.team_name == "Team 094"
     assert gc.away.total_points == pytest.approx(159.12)
     assert len(gc.away.entries) == 16
 
@@ -462,10 +462,10 @@ def test_parse_standings_medal_rows_carry_record_and_points() -> None:
     champ = parsed.entries[0]
     assert champ.final_rank == 1
     assert champ.team_id == 6
-    assert champ.owner_name == "Dave"
+    assert champ.owner_name == "Owner 06"
     assert (champ.reg_wins, champ.reg_losses, champ.reg_ties) == (8, 6, 0)
     assert champ.points_for == 1765.40
-    assert champ.team_name == "Putting the CAP in CHAMP"
+    assert champ.team_name == "Team 112"
 
 
 def test_parse_standings_non_medal_rows_have_no_record() -> None:

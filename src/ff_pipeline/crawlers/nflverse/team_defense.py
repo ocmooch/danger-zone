@@ -53,6 +53,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ff_pipeline.crawlers.nflverse.play_stats import TEAM_PLAY_STAT_ZEROES, derive_play_counts
 from ff_pipeline.logging_config import get_logger
 from ff_pipeline.nfl_teams import canonical_franchise
 
@@ -165,6 +166,7 @@ def build_team_defense_stats(
     team_rows: Iterable[Mapping[str, object]],
     schedule_rows: Iterable[Mapping[str, object]],
     play_by_play_rows: Iterable[Mapping[str, object]] = (),
+    conversions_always_charged: frozenset[int] = frozenset(),
 ) -> list[TeamDefenseStat]:
     """Combine team-stat rows and schedule rows into DST stat dicts.
 
@@ -181,6 +183,12 @@ def build_team_defense_stats(
     schedule game or an opponent stat row can't be located, the
     corresponding bracket key is omitted (scores nothing) rather than
     defaulted.
+
+    With play-by-play, each row also gets the S6 counts (blocked kicks,
+    defensive 2-pt returns, special-teams fumble recoveries; zero-filled).
+    ``conversions_always_charged`` lists the seasons whose platform charges
+    the PAT / 2-pt after a defensive or return TD to the D/ST (Sleeper);
+    NFL.com seasons keep the conversion with the TD's classification.
     """
 
     # Index team offensive yards by (season, week, team) so an opponent's
@@ -197,7 +205,10 @@ def build_team_defense_stats(
     # Index each game's (opponent, points_allowed) per team-week, and the
     # play-by-play-derived D/ST touchdown counts (nflverse's columns undercount).
     play_by_play_rows = list(play_by_play_rows)
-    fantasy_points_allowed = _index_fantasy_points_allowed(play_by_play_rows)
+    fantasy_points_allowed = _index_fantasy_points_allowed(
+        play_by_play_rows, conversions_always_charged=conversions_always_charged
+    )
+    play_counts = derive_play_counts(play_by_play_rows).team if play_by_play_rows else None
     game_context = _index_schedule(schedule_rows, fantasy_points_allowed=fantasy_points_allowed)
     dst_touchdowns = _index_dst_touchdowns(play_by_play_rows)
 
@@ -205,6 +216,9 @@ def build_team_defense_stats(
     for key, row in team_row_index.items():
         season_year, week, team = key
         stats = project_team_counting_stats(row)
+        if play_counts is not None:
+            stats.update(TEAM_PLAY_STAT_ZEROES)
+            stats.update(play_counts.get(key, {}))
         season_type = str(row.get("season_type") or "REG")
 
         # Prefer the play-by-play TD count when it finds more than nflverse's
@@ -288,6 +302,8 @@ def _index_schedule(
 
 def _index_fantasy_points_allowed(
     play_by_play_rows: Iterable[Mapping[str, object]],
+    *,
+    conversions_always_charged: frozenset[int] = frozenset(),
 ) -> dict[tuple[int, int, str], float]:
     """Return fantasy D/ST points allowed by ``(season, week, defense_team)``.
 
@@ -295,7 +311,9 @@ def _index_fantasy_points_allowed(
     return TDs and safeties scored against the offense are not charged to that
     team's D/ST; kickoff/punt return TDs are charged because they are scored
     against the special-teams half of the D/ST unit. Extra points and two-point
-    conversions inherit the preceding touchdown's classification.
+    conversions inherit the preceding touchdown's classification (NFL.com);
+    in ``conversions_always_charged`` seasons (Sleeper) every PAT / 2-pt /
+    defensive 2-pt is charged, and only the return TD's 6 points are not.
     """
 
     out: dict[tuple[int, int, str], float] = {}
@@ -339,7 +357,12 @@ def _index_fantasy_points_allowed(
         if scoring_team is None or points <= 0:
             continue
 
-        counts = _score_counts_against_dst(row, scoring_team, last_td_counts_by_game_team, game_id)
+        if season in conversions_always_charged and _is_conversion(row):
+            counts = True
+        else:
+            counts = _score_counts_against_dst(
+                row, scoring_team, last_td_counts_by_game_team, game_id
+            )
         if counts:
             charged_team = away if scoring_team == home else home
             out[(season, week, charged_team)] = out.get((season, week, charged_team), 0.0) + points
@@ -416,11 +439,28 @@ def _score_counts_against_dst(
     return scoring_team == posteam
 
 
-def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
-    desc = (_as_opt_str(row.get("desc")) or "").lower()
-    return any(
-        marker in desc for marker in (" punt", " punts ", " kicks ", " kickoff", "field goal")
+def _is_conversion(row: Mapping[str, object]) -> bool:
+    """A PAT, 2-pt try or defensive 2-pt return (never the touchdown itself)."""
+    if _as_float(row.get("touchdown")):
+        return False
+    return (
+        row.get("extra_point_result") is not None
+        or row.get("two_point_conv_result") is not None
+        or bool(_as_float(row.get("defensive_two_point_conv")))
+        or bool(_as_float(row.get("defensive_extra_point_conv")))
     )
+
+
+def _is_special_teams_return_touchdown(row: Mapping[str, object]) -> bool:
+    play_type = _as_opt_str(row.get("play_type"))
+    if play_type in _SPECIAL_TEAMS_TD_PLAY_TYPES:
+        return True
+    # nflverse labels some aborted field-goal-formation return TDs as
+    # ``play_type='run'``. NFL.com is not consistent about charging these to
+    # D/ST PA, so this narrow legacy signal is retained instead of widening all
+    # return TDs on scrimmage-play types.
+    desc = (_as_opt_str(row.get("desc")) or "").lower()
+    return "(field goal formation)" in desc
 
 
 def _team_key(row: Mapping[str, object]) -> tuple[int, int, str] | None:

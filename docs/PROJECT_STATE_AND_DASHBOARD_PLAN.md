@@ -56,8 +56,8 @@ NFL.com team id `7`:
 
 | team_id | team_name | nfl_com_team_id | matchups | roster_rows |
 |---:|---|---:|---:|---:|
-| 192 | 1000 Bottles of Baby Boyle | 7 | 16 | 245 |
-| 222 | Rev Russell's Sunday Service | 7 | 1 | 15 |
+| 192 | Team 001 | 7 | 16 | 245 |
+| 222 | Team 116 | 7 | 1 | 15 |
 
 Week 1 has a matchup row for both ids, but only `222` has week-1 starters. This
 is stale live data, not an API-contract problem.
@@ -211,22 +211,22 @@ handoff `ff-pipeline-owner-identity.md`. **Per-season NFL.com
 `/history/{year}/owners` was used as source of truth and corrected three of the
 handoff's premises:**
 
-- **mike (user 167650) did not play 2016-2017.** He held franchise 3 in
-  2010-2015, sat out 2016 (Adam) and 2017 (ill), and returned as franchise 12 in
+- **Owner 19 (user 910005) did not play 2016-2017.** He held franchise 3 in
+  2010-2015, sat out 2016 (Owner 01) and 2017 (Owner 18), and returned as franchise 12 in
   2018+. His empty 2016/2017 rows were back-projection phantoms and were removed,
   not reconstructed.
-- **The two "Dan"s have distinct logins**, not one shared `179898`: DJ
-  (`179898`, franchise 5) and Cheese (`7655244`, franchise 7). Owner 17 was
-  mis-stamped with DJ's id, which is why the 2025 re-point misassigned DJ's team.
-- **DJ played 2025** (franchise 5, "The Princess McBride"); the mis-ownership was
-  a symptom of the shared-id bug, not DJ's absence.
+- **The two "Owner 05"s have distinct logins**, not one shared `910007`: Owner 04
+  (`910007`, franchise 5) and Owner 02 (`910019`, franchise 7). Owner 17 was
+  mis-stamped with Owner 04's id, which is why the 2025 re-point misassigned Owner 04's team.
+- **Owner 04 played 2025** (franchise 5, "Team 170"); the mis-ownership was
+  a symptom of the shared-id bug, not Owner 04's absence.
 
 What the repair did:
 
-- Renamed owner 5 -> `DJ`, owner 17 -> `Cheese`; corrected owner 17's
-  `nfl_user_id` to `7655244`; seeded durable `owner_identity_overrides`
-  (`179898`->DJ, `7655244`->Cheese) so the names survive `reconstruct-owners`.
-- Re-owned 2015 "Batesohardithurts" (owner 18 -> 3) and 2025 "The Princess
+- Renamed owner 5 -> `Owner 04`, owner 17 -> `Owner 02`; corrected owner 17's
+  `nfl_user_id` to `910019`; seeded durable `owner_identity_overrides`
+  (`910007`->Owner 04, `910019`->Owner 02) so the names survive `reconstruct-owners`.
+- Re-owned 2015 "Team 014" (owner 18 -> 3) and 2025 "The Princess
   McBride" (owner 17 -> 5).
 - Merged 26 `final_rank IS NULL` franchise-duplicate phantom rows (`team_id`
   193-222). 14 carried the franchise's real week-1 roster snapshot, which was
@@ -244,8 +244,8 @@ Before / after (`data/fantasy.db`), all handoff acceptance checks pass:
 | Played seasons not having exactly 12 ranked teams | 15 | 0 |
 | `final_rank IS NULL` rows in played seasons | 26 | 0 |
 | Distinct managed (owner, season) pairs | 194 | 192 |
-| Owners named `Dan` | 2 | 0 (DJ + Cheese, distinct) |
-| 2025 "The Princess McBride" owner | 17 (Cheese) | 5 (DJ) |
+| Owners named `Owner 05` | 2 | 0 (Owner 04 + Owner 02, distinct) |
+| 2025 "Team 170" owner | 17 (Owner 02) | 5 (Owner 04) |
 
 Backups: `data/backups/fantasy.db.pre-phantom-owner-repair-*.bak` and
 `data/backups/fantasy-pre-identity-phantom-repair-*.db`. Foreign-key integrity
@@ -257,36 +257,36 @@ Once `dz-dashboard` confirms, its temporary presentation overrides
 
 ## Mike Slot (team_abbrev) Back-projection Repair (executed 2026-06-10)
 
-Run via `scripts/archive/repair_mike_slot_backprojection.py --apply` (dry-run by
+Run via `scripts/archive/repair_Owner 19_slot_backprojection.py --apply` (dry-run by
 default; backs up the SQLite file before committing). Addresses the dashboard
 handoff `ff-pipeline-team-slot-backprojection.md` — the residual the owner-identity
 repair above re-owned but did not fully relabel.
 
-The lost-team reconstruction restored mike's (owner 3) 2010-2015 team rows but
+The lost-team reconstruction restored Owner 19's (owner 3) 2010-2015 team rows but
 stamped them with his *modern* franchise identity: `team_abbrev = "12"` (his
-current slot) and `team_name = "Batesohardithurts"` (his 2025 name), when his real
+current slot) and `team_name = "Team 014"` (his 2025 name), when his real
 slot those years was **3**. That produced, in each of 2010-2015, a duplicate
-`team_abbrev = "12"` (mike + the real slot-12 owner) and a missing slot 3 — which
-mislabeled mike's team on every dashboard surface (e.g. `/standings/2015` rendered
-both mike and Kevin as "Bruce Jenner DJ's").
+`team_abbrev = "12"` (Owner 19 + the real slot-12 owner) and a missing slot 3 — which
+mislabeled Owner 19's team on every dashboard surface (e.g. `/standings/2015` rendered
+both Owner 19 and Owner 12 as "Team 020").
 
-What the repair did — for mike's six rows (`team_id` 23, 35, 47, 59, 71, 83) set
+What the repair did — for Owner 19's six rows (`team_id` 23, 35, 47, 59, 71, 83) set
 `team_abbrev` `"12"` -> `"3"` and `team_name` to the period-correct NFL.com slot-3
 name (cross-checked against the dashboard's `(year, slot) -> name` table, whose
-surviving slot-12 name already matched the non-mike DB row each year):
+surviving slot-12 name already matched the non-Owner 19 DB row each year):
 
 | year | team_id | slot-3 name |
 | --- | --- | --- |
-| 2010 | 23 | ThisTeamMakesSullyNervous |
-| 2011 | 35 | IAMTHESACKO |
-| 2012 | 47 | Sulladismichaelbushleague |
-| 2013 | 59 | Salty Caramel Sullad |
-| 2014 | 71 | IStoleSulladsPick |
-| 2015 | 83 | Snow and Mirrors |
+| 2010 | 23 | Team 179 |
+| 2011 | 35 | Team 079 |
+| 2012 | 47 | Team 143 |
+| 2013 | 59 | Team 125 |
+| 2014 | 71 | Team 081 |
+| 2015 | 83 | Team 137 |
 
 Only `teams.team_abbrev` and `teams.team_name` changed; matchups, rosters,
 transactions, draft position, and `final_rank` key on `team_id` and stayed
-attached. mike's 2018-2025 rows were left alone (slot 12 is correct there).
+attached. Owner 19's 2018-2025 rows were left alone (slot 12 is correct there).
 
 Before / after (`data/fantasy.db`), all handoff acceptance checks pass:
 
@@ -294,9 +294,9 @@ Before / after (`data/fantasy.db`), all handoff acceptance checks pass:
 | --- | --- | --- |
 | Duplicate `team_abbrev` in a played season | 6 (2010-2015) | 0 |
 | Played seasons 2010-2015 holding slot 3 | 0 | 6 |
-| mike's 2015 team | `12` / "Batesohardithurts" | `3` / "Snow and Mirrors" |
+| Owner 19's 2015 team | `12` / "Team 014" | `3` / "Team 137" |
 
-Backup: `data/backups/fantasy-pre-mike-slot-repair-*.db`. `PRAGMA
+Backup: `data/backups/fantasy-pre-Owner 19-slot-repair-*.db`. `PRAGMA
 foreign_key_check` is clean and the repair script is idempotent (re-runs are
 no-ops). No dashboard change is required — its `(year, team_abbrev)` name overlay
-now resolves mike to the period-correct slot-3 name automatically.
+now resolves Owner 19 to the period-correct slot-3 name automatically.

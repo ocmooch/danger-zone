@@ -2,10 +2,12 @@
 
 Conventions:
 
-* ``NFL_LEAGUE_ID`` and ``NFL_COOKIE`` are *required* — missing either
-  raises a single readable error pointing the user at ``.env.example``.
-* ``NFL_COOKIE`` is wrapped in ``SecretStr`` so it never accidentally
-  leaks via ``repr`` / log formatting / FastAPI debug pages.
+* ``NFL_LEAGUE_ID`` is *required* — missing it raises a single readable
+  error pointing the user at ``.env.example``.
+* ``NFL_COOKIE`` is optional: NFL.com is defunct, so only the historical
+  NFL.com commands need it, and they call ``require_nfl_cookie()``. It is
+  wrapped in ``SecretStr`` so it never accidentally leaks via ``repr`` /
+  log formatting / FastAPI debug pages.
 * Paths are resolved relative to the project root if given as relative
   strings, so ``./data/fantasy.db`` always means the same file no matter
   what the current working directory is when commands are invoked.
@@ -40,8 +42,22 @@ class Settings(BaseSettings):
 
     # --- Required: league identity ---
     nfl_league_id: str
-    nfl_cookie: SecretStr
     league_start_year: int
+
+    # --- NFL.com (historical; only NFL.com commands need it) ---
+    nfl_cookie: SecretStr | None = None
+
+    # --- Sleeper league (2026+) ---
+    # Newest Sleeper league id; earlier seasons are found by walking
+    # ``previous_league_id``. Only ``sleeper-league`` commands need it.
+    sleeper_league_id: str | None = None
+    # Content-addressed raw payload archive (gitignored, like assets_dir).
+    sleeper_raw_dir: Path = Path("./data/raw/sleeper")
+    # The ~5 MB players directory is captured at most this often.
+    sleeper_players_refresh_hours: int = 24
+    # S9-D2: the weekly job also loads + scores the season (`sleeper-league update`).
+    # Off until the 2026 go-live; the go-live sets SLEEPER_AUTO_LOAD=true in .env.
+    sleeper_auto_load: bool = False
 
     # --- Database ---
     database_url: str = "sqlite:///./data/fantasy.db"
@@ -91,10 +107,17 @@ class Settings(BaseSettings):
 
     @field_validator("nfl_cookie")
     @classmethod
-    def _cookie_not_blank(cls, v: SecretStr) -> SecretStr:
-        if not v.get_secret_value().strip():
-            raise ValueError("NFL_COOKIE is empty")
+    def _cookie_blank_is_unset(cls, v: SecretStr | None) -> SecretStr | None:
+        if v is None or not v.get_secret_value().strip():
+            return None
         return v
+
+    @field_validator("sleeper_league_id")
+    @classmethod
+    def _sleeper_league_id_blank_is_unset(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        return v.strip()
 
     @field_validator("league_start_year")
     @classmethod
@@ -103,12 +126,30 @@ class Settings(BaseSettings):
             raise ValueError(f"LEAGUE_START_YEAR={v} is outside the supported range (1999..2100)")
         return v
 
-    @field_validator("log_dir", "nflverse_cache_dir", "assets_dir")
+    @field_validator("log_dir", "nflverse_cache_dir", "assets_dir", "sleeper_raw_dir")
     @classmethod
     def _resolve_path(cls, v: Path) -> Path:
         if not v.is_absolute():
             return (PROJECT_ROOT / v).resolve()
         return v
+
+    def require_nfl_cookie(self) -> str:
+        """The NFL.com cookie, or a readable error when it is not configured."""
+        if self.nfl_cookie is None:
+            raise SettingsError(
+                "NFL_COOKIE is not set. It is only needed by the historical NFL.com "
+                "commands (NFL.com is defunct); see .env.example."
+            )
+        return self.nfl_cookie.get_secret_value()
+
+    def require_sleeper_league_id(self) -> str:
+        """The configured Sleeper league id, or a readable error."""
+        if self.sleeper_league_id is None:
+            raise SettingsError(
+                "SLEEPER_LEAGUE_ID is not set (needed by sleeper-league commands); "
+                "see .env.example."
+            )
+        return self.sleeper_league_id
 
     @property
     def relevant_positions_set(self) -> frozenset[str]:

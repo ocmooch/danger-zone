@@ -285,5 +285,20 @@ def test_no_op_when_season_absent(session: Session) -> None:
     assert result.applied is False
 
 
+def test_no_op_when_2022_is_sealed(session: Session) -> None:
+    """A sealed 2022 already holds the ruling; the override must not rewrite it."""
+    cmc_id, _doubs_id = _seed(session)
+    season = session.query(Season).filter_by(year=2022).one()
+    season.is_sealed = True
+    session.commit()
+
+    result = apply_hamlin_2022_wk17_override(session, league_id=LEAGUE_ID)
+    session.commit()
+
+    assert result.applied is False
+    assert result.reason == "2022 season is sealed"
+    assert session.query(Season).filter_by(year=2022).one().champion_team_id == cmc_id
+
+
 def result_season(session: Session) -> int:
     return session.query(Season).filter_by(year=2022).one().season_id

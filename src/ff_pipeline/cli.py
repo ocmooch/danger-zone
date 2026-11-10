@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import typer
 
 from ff_pipeline import __version__
+from ff_pipeline.legacy.cli import legacy_app, run_preflight
 
 if TYPE_CHECKING:
     # Only referenced in the _run_* helper signatures, which typer never
@@ -30,6 +31,10 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Root app
 # ---------------------------------------------------------------------------
+
+# ``ff-pipeline run`` with no ``--source``. NFL.com is defunct (S2), so the
+# default no longer includes ``nfl_com``.
+DEFAULT_RUN_SOURCES: tuple[str, ...] = ("nflverse", "sleeper", "team_defense")
 
 app = typer.Typer(
     name="ff-pipeline",
@@ -85,6 +90,17 @@ def _bootstrap_settings_and_logging() -> None:
     configure_logging(settings)
 
 
+def _require_nfl_cookie(settings: Settings) -> str:
+    """NFL.com cookie for the historical NFL.com commands; exit 4 when unset."""
+    from ff_pipeline.settings import SettingsError
+
+    try:
+        return settings.require_nfl_cookie()
+    except SettingsError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=4) from exc  # EX_CONFIG
+
+
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
@@ -123,7 +139,7 @@ def run_cmd(
     source: str | None = typer.Option(
         None,
         "--source",
-        help="Sync only one source: nflverse | nfl_com | sleeper.",
+        help="Sync only one source: nflverse | nfl_com | sleeper | team_defense | adp.",
     ),
     season: int | None = typer.Option(
         None,
@@ -153,14 +169,15 @@ def run_cmd(
 ) -> None:
     """Full sync from all sources (or just one with --source).
 
-    With no ``--source``, every source runs in sequence: nflverse →
-    nfl_com → sleeper. nflverse goes first so players exist before
-    NFL.com rosters and Sleeper projections resolve against them. Each
-    source commits independently, so a failure mid-sequence (e.g. an
-    NFL.com auth failure exiting 77) preserves the work of sources that
-    already ran.
+    With no ``--source``, the default sources run in sequence: nflverse →
+    sleeper → team_defense. nflverse goes first so players exist before
+    Sleeper projections resolve against them. Each source commits
+    independently, so a failure mid-sequence preserves the work of sources
+    that already ran. NFL.com is defunct and no longer runs by default;
+    ``--source nfl_com`` still works when NFL_COOKIE is set.
     """
     _bootstrap_settings_and_logging()
+    run_preflight("run")
     _ = (verify, dry_run)
     if snapshot_kind is not None and snapshot_kind not in {"pre_kickoff", "audit"}:
         typer.secho(
@@ -170,7 +187,13 @@ def run_cmd(
         )
         raise typer.Exit(code=2)
 
-    if source is not None and source not in {"nflverse", "nfl_com", "sleeper", "team_defense"}:
+    if source is not None and source not in {
+        "nflverse",
+        "nfl_com",
+        "sleeper",
+        "team_defense",
+        "adp",
+    }:
         _stub(f"run --source {source}", "unknown source")
 
     from sqlalchemy.orm import Session
@@ -181,10 +204,10 @@ def run_cmd(
     settings = get_settings()
     target_year = season or _default_run_season()
     # No --source = the full sequence; nflverse first so player rows exist
-    # before nfl_com / sleeper try to resolve against them. team_defense
-    # runs last because it matches against the DEF players that the NFL.com
-    # roster sync creates.
-    sources = [source] if source is not None else ["nflverse", "nfl_com", "sleeper", "team_defense"]
+    # before sleeper resolves against them. team_defense runs last because
+    # it matches against the DEF players. NFL.com is defunct, so nfl_com is
+    # no longer in the default; ``--source nfl_com`` still works with a cookie.
+    sources = [source] if source is not None else list(DEFAULT_RUN_SOURCES)
 
     engine = create_app_engine(settings.database_url)
     try:
@@ -202,6 +225,8 @@ def run_cmd(
                     )
                 elif src == "team_defense":
                     _run_team_defense(ss, seasons=[target_year])
+                elif src == "adp":
+                    _run_adp(ss, settings=settings, target_year=target_year)
                 else:  # sleeper
                     _run_sleeper(ss, settings=settings, target_year=target_year, week=week)
             # Deterministic post-ingest overrides re-apply on every run so a
@@ -276,7 +301,7 @@ def _run_nfl_com(
     )
 
     target_week = week if week is not None else _resolve_current_week(target_year)
-    cookie_value = settings.nfl_cookie.get_secret_value()
+    cookie_value = _require_nfl_cookie(settings)
     try:
         with build_default_client(cookie_value, settings.nfl_com_delay_seconds) as client:
             # mypy-friendly literal narrowing (validated by the caller).
@@ -344,6 +369,33 @@ def _run_sleeper(ss: Session, *, settings: Settings, target_year: int, week: int
             "projected_points left NULL. Run `ff-pipeline scoring load` first.",
             fg="yellow",
             err=True,
+        )
+
+
+def _run_adp(ss: Session, *, settings: Settings, target_year: int) -> None:
+    """Pull consensus ADP (FFC + MFL + Sleeper) for one season, then commit.
+
+    Opt-in only (``--source adp``); it is not part of the default all-source
+    sequence because it hits external mock-draft aggregators on a separate
+    cadence. Backfill every season with ``scripts/backfill_adp.py``.
+    """
+    from ff_pipeline.crawlers.adp.runner import run_adp
+
+    result = run_adp(ss, league_id=settings.nfl_league_id, year=target_year)
+    ss.commit()
+    if not result.outcomes:
+        typer.secho(
+            f"adp year={target_year}: no season row; nothing stored.",
+            fg="yellow",
+            err=True,
+        )
+        return
+    for o in result.outcomes:
+        fb = f" (fallback→{o.actual_format})" if o.format_fallback else ""
+        typer.echo(
+            f"adp {o.source} {target_year} [{o.actual_format or o.requested_format}{fb}]: "
+            f"+{o.rows_added}~{o.rows_updated}, matched {o.matched}, "
+            f"unresolved {o.unresolved} ({o.status})"
         )
 
 
@@ -464,6 +516,7 @@ def backfill_cmd(
 ) -> None:
     """Pull historical seasons (resumable, idempotent)."""
     _bootstrap_settings_and_logging()
+    run_preflight("backfill")
 
     from datetime import datetime
 
@@ -515,7 +568,7 @@ def backfill_cmd(
         ]
         chosen = tuple(ordered)
 
-    cookie_value = settings.nfl_cookie.get_secret_value() if "nfl_com" in chosen else None
+    cookie_value = _require_nfl_cookie(settings) if "nfl_com" in chosen else None
     engine = create_app_engine(settings.database_url)
     try:
         with Session(engine) as ss:
@@ -685,6 +738,7 @@ def reconstruct_cmd(
     resumed after ``cookie set``.
     """
     _bootstrap_settings_and_logging()
+    run_preflight("reconstruct")
 
     from datetime import datetime
 
@@ -708,7 +762,7 @@ def reconstruct_cmd(
         typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
         raise typer.Exit(code=2)
 
-    cookie_value = settings.nfl_cookie.get_secret_value()
+    cookie_value = _require_nfl_cookie(settings)
     engine = create_app_engine(settings.database_url)
     client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
     try:
@@ -784,7 +838,7 @@ def reconstruct_owners_cmd(
 
     engine = create_app_engine(settings.database_url)
     client = NflComClient(
-        cookie=settings.nfl_cookie.get_secret_value(), delay_seconds=settings.nfl_com_delay_seconds
+        cookie=_require_nfl_cookie(settings), delay_seconds=settings.nfl_com_delay_seconds
     )
     try:
         with Session(engine) as ss:
@@ -869,7 +923,7 @@ def draft_cmd(
         typer.secho(f"--start ({start_year}) must be <= --end ({end_year}).", fg="red", err=True)
         raise typer.Exit(code=2)
 
-    cookie_value = settings.nfl_cookie.get_secret_value()
+    cookie_value = _require_nfl_cookie(settings)
     engine = create_app_engine(settings.database_url)
     client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
     try:
@@ -964,7 +1018,7 @@ def avatars_cmd(
         raise typer.Exit(code=2)
 
     years = list(range(start_year, end_year + 1))
-    cookie_value = settings.nfl_cookie.get_secret_value()
+    cookie_value = _require_nfl_cookie(settings)
     engine = create_app_engine(settings.database_url)
     client = NflComClient(cookie=cookie_value, delay_seconds=settings.nfl_com_delay_seconds)
     try:
@@ -1010,6 +1064,7 @@ def rescore_cmd(
 ) -> None:
     """Recompute league points from raw stats using current scoring rules."""
     _bootstrap_settings_and_logging()
+    run_preflight("rescore")
 
     from sqlalchemy.orm import Session
 
@@ -1291,7 +1346,7 @@ def verify_cmd(
         raise typer.Exit(code=2)
 
     settings = get_settings()
-    cookie_value = settings.nfl_cookie.get_secret_value()
+    cookie_value = _require_nfl_cookie(settings)
     tolerance = settings.scoring_verify_tolerance
 
     engine = create_app_engine(settings.database_url)
@@ -1728,7 +1783,7 @@ def cookie_test_cmd() -> None:
     from ff_pipeline.settings import get_settings
 
     settings = get_settings()
-    cookie = settings.nfl_cookie.get_secret_value()
+    cookie = _require_nfl_cookie(settings)
     try:
         with NflComClient(cookie=cookie, delay_seconds=settings.nfl_com_delay_seconds) as client:
             ok = client.test_auth(league_home(settings.nfl_league_id))
@@ -1906,6 +1961,7 @@ app.add_typer(migrate_app, name="migrate")
 def migrate_up_cmd() -> None:
     """Run pending alembic migrations to head."""
     _bootstrap_settings_and_logging()
+    run_preflight("migrate up")
 
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.repository.migrations import upgrade_to_head
@@ -1945,6 +2001,21 @@ def migrate_status_cmd() -> None:
         current_revision(engine=engine)
     finally:
         engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# legacy (S1 legacy guard)
+# ---------------------------------------------------------------------------
+
+app.add_typer(legacy_app, name="legacy")
+
+from ff_pipeline.crawlers.sleeper_league.cli import sleeper_league_app  # noqa: E402
+
+app.add_typer(sleeper_league_app, name="sleeper-league")
+
+from ff_pipeline.owners_cli import owners_app  # noqa: E402
+
+app.add_typer(owners_app, name="owners")
 
 
 if __name__ == "__main__":

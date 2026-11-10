@@ -263,6 +263,230 @@ If a `pre_kickoff` row is missing for a week the games have already played, the 
 
 ---
 
+## Legacy vault
+
+The NFL.com era (2010–2025 + the 2026 stub) is sealed as **seal-v1** (2026-11-07). Full design:
+`docs/sleeper/03_LEGACY_PRESERVATION.md` and `docs/sleeper/05_VAULT_OFFSITE_SYNC.md`.
+
+- **Local copy:** `~/ff-legacy-vault/seal-v1-2026-11-07/` (read-only). Check it any time with
+  `python3 ~/ff-legacy-vault/seal-v1-2026-11-07/verify.py`.
+- **Off-machine copies** (age-encrypted, same bytes everywhere): Google Drive
+  `ff-legacy-vault/`, iCloud Drive `ff-legacy-vault/`, and a release on the private
+  `ocmooch/ff-legacy-vault` repo. seal-v1 is pinned forever; up to 4 newer archives are kept.
+- **Tamper evidence:** the seal's `MANIFEST.json` is committed at
+  `docs/sleeper/seals/seal-v1.manifest.json` (hashes and counts only; sha256
+  `d11c9ff0b39e032e093cccab958224cdce97a9ea1ab4ec6d778599bba6178830`).
+- **Sync:** `scripts/vault/vault_sync.sh` (no args = weekly snapshot + sync; also
+  `pack-seal`, `snapshot`, `sync`, `status`). Per-destination status:
+  `~/ff-legacy-vault/sync-status.json`; logs: `data/logs/vault_sync-<date>.log`.
+- **Restore drill:** download one archive, then in a plain terminal (never through Claude)
+  `scripts/vault/restore_check.sh primary <archive>` (passphrase) or `… recovery <archive>`
+  (paste the paper key). Restore procedure: `03_LEGACY_PRESERVATION.md` §12.
+- **Old one-off DB backups** live in `data/backups/historical/`; backup pruning never touches
+  that folder.
+
+### Legacy guard (live DB)
+
+2010–2025 are sealed in the live DB (`seasons.is_sealed = 1`). SQLite triggers refuse any change
+to their league facts from any writer — the pipeline, a script, or the `sqlite3` shell
+(`legacy_guard: … use ff-pipeline legacy amend`). Stats, scoring, projections and nflverse data
+keep refreshing on those years.
+
+- `ff-pipeline legacy status` — current seal, sealed seasons, lock state, trigger count, last
+  amendment.
+- `ff-pipeline legacy verify` — full check against the current seal (triggers, sealed seasons,
+  per-table and per-season hashes, row registry, `integrity_check`); `--quick` skips the
+  row-by-row and integrity checks. Prints table, seasons and the changed / missing / added
+  primary keys. Never repairs; exit 1 on mismatch.
+- **Preflight:** `run`, `backfill`, `reconstruct`, `rescore` and `migrate up` run
+  `legacy verify --quick` first and stop (exit 1) on a mismatch. If that happens, do not
+  "fix forward": compare with the newest vault copy and restore or amend deliberately.
+- **Changing sealed data** (the only way):
+  `ff-pipeline legacy amend --reason "Correct 2019 wk7 trade (issue #NN)" -- uv run python scripts/fix_x.py --apply`.
+  It requires a clean verify, writes `data/backups/amendments/fantasy-pre-amend-<slug>-<ts>.db`
+  (never pruned), unlocks for 10 minutes (`--unlock-minutes`), runs the command, relocks even if
+  it fails, records a `legacy_amendments` row and stores the next seal baseline (`seal-v2`, …).
+  It then prints the vault follow-up: build and sync an archive for the new seal
+  (`scripts/vault/build_vault_dir.py`, `scripts/vault/vault_sync.sh`; automated in S9).
+- NFL.com is defunct and unreachable, so the sealed data cannot be re-crawled: the DB and the
+  vault copies are the only record. The NFL.com commands (`reconstruct`, `reconstruct-owners`,
+  `draft`, `avatars`, the NFL.com path of `run`/`backfill`) can no longer run, and `scoring load`
+  into a sealed year is refused. Corrections are scripted fixes or overlays run through
+  `legacy amend`, never a re-crawl.
+
+## Sleeper league capture (2026+)
+
+Raw Sleeper league payloads are archived before anything parses them (S2,
+`docs/plans/S2-sleeper-league-capture.md`). Bytes: `SLEEPER_RAW_DIR`
+(`data/raw/sleeper/<sha[:2]>/<sha>.json.gz`, gitignored). Index: the `source_payloads` table.
+
+```
+uv run ff-pipeline sleeper-league capture --season 2026   # all endpoints, weeks 1..current
+uv run ff-pipeline sleeper-league capture --dry-run       # fetch + report, write nothing
+uv run ff-pipeline sleeper-league lineage                 # season -> league id chain
+uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list revisions
+```
+
+- Needs `SLEEPER_LEAGUE_ID` (the newest season's league). At a season rollover, set it to the
+  new league id; earlier seasons are found through `previous_league_id`.
+- Re-running is safe: identical responses only bump `last_fetched_at` / `fetch_count`;
+  changed responses (stat corrections, late moves) become new revisions. `stats_week`
+  revisions also appear when only Sleeper's embedded player news changed (expected, ~100 KB each).
+- Exit code 1 = at least one request failed after retries (listed); everything else was archived.
+  Re-run later. A 429 waits for `Retry-After` (max 120 s).
+- It is a writing command, so the legacy preflight runs first.
+- **Weekly job:** Windows task `dz-sleeper-capture` (Wed 06:00, runs at next start if missed)
+  runs `scripts/sleeper/weekly_capture.sh`: capture of the newest league + `legacy verify --quick`,
+  log in `data/logs/sleeper_capture-<UTC date>.log`. Check it with
+  `schtasks.exe /Query /TN dz-sleeper-capture /V /FO LIST` ("Last Result" 0 = ok). Like the vault
+  job, it runs whatever branch `~/danger-zone` has checked out. Registered with:
+  ```powershell
+  $action  = New-ScheduledTaskAction -Execute "wsl.exe" `
+             -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone/scripts/sleeper/weekly_capture.sh"
+  $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At 6am
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
+              -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+  Register-ScheduledTask -TaskName "dz-sleeper-capture" -Action $action -Trigger $trigger -Settings $settings
+  ```
+- **Status snapshots (S7-D7):** the weekly capture's players directory (Wednesday 06:00 ET,
+  after Monday night) becomes one `player_status_snapshots` row per league player at the next
+  load: the status after that week's games. Each week's official game status (Out / Doubtful /
+  Questionable) comes from nflverse: `uv run ff-pipeline injury-reports --season 2026`
+  (`player_injury_reports`; part of the go-live sequence).
+- A full capture also downloads the league / owner / team avatars into `ASSETS_DIR` (new URLs
+  only, deduped by sha256); the load links them to `teams`.
+- Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
+  `scripts/sleeper/build_fixtures.py` (pseudonymized test fixtures; review the diff before commit).
+
+## Sleeper identity (S4)
+
+Owners, the 2026 placeholder and players, all from the archive (`docs/plans/S4-identity.md`).
+
+```
+uv run ff-pipeline owners map                  # validate data/owner_platform_identities.yaml (read-only)
+uv run ff-pipeline owners map --apply          # load owner_platform_identities (idempotent)
+uv run ff-pipeline sleeper-league resolve-players          # dry run: resolved / stub-needed
+uv run ff-pipeline sleeper-league map-player <sleeper_id> <player_id> --note "why"
+uv run ff-pipeline legacy quarantine-2026-stub # one-time (done 2026-11-09); re-run = no-op
+```
+
+- **New Sleeper user** (e.g. a new manager at a renewal): `owners map` fails and prints the YAML
+  stanza to add. Use an existing `owner_id`, or `new_owner: true` + `owner_display_name` for a
+  genuinely new person. Only `confidence: high` / `confirmed` is accepted. The YAML holds real
+  names, stays local, and is gitignored.
+- **stub-needed player:** first check whether the player already exists under another name or
+  position (nickname, CB vs DB). If yes, pin it with `map-player`. Otherwise the S5 loader creates
+  a stub (league-referenced players only).
+- **The quarantine** wrote its own `legacy_amendments` row (`legacy amend` audits only sealed
+  rows). The stub's rows are in `legacy_nfl_com_2026_preseason` and in the seal-v1 vault archive.
+  A pre-move backup sits in `data/backups/amendments/`.
+
+## Sleeper season load (S5)
+
+```
+uv run ff-pipeline sleeper-league load --dry-run   # load + roll back: counts and records check
+uv run ff-pipeline sleeper-league load             # archive → seasons/teams/matchups/rosters/transactions
+```
+
+- Offline: reads only the raw archive. Capture first (`sleeper-league capture`).
+- Idempotent: a reload prints `+0 ~0 -0` for unchanged data. A stat correction shows up as `~N`
+  on that week's matchups and rosters.
+- "records vs Sleeper" must say `ok`. A difference means a scored week changed after capture
+  (re-capture, then reload) or a mapping bug (stop and investigate).
+- "owner change NOT written": a sealed (legacy) owner would change `is_active`/`joined_year`/
+  `left_year`, which needs `legacy amend`.
+- Since S7 the load also writes `playoff_brackets`, postseason flags and places, season results
+  (champion / runner-up / Sacko), `traded_picks`, team extras, `seasons.settings_snapshot` and
+  status snapshots. A warning "bracket winner scored less than loser" means Sleeper's bracket
+  may run loser-advances: places are withheld; re-probe the bracket (`04` §7) before trusting it.
+- **Live use is gated (S5-D1):** load the live DB only once the dashboard is ready to show 2026
+  (dz-dashboard D0–D3). Until then, use a copy.
+
+## Sleeper scoring (S6)
+
+Run after a season load, in this order (each is offline except the nflverse fetches):
+
+```
+uv run ff-pipeline sleeper-league adopt-gsis --season 2026          # list; then --apply
+uv run ff-pipeline injury-reports --season 2026                     # weekly official game status
+uv run ff-pipeline run --source nflverse --season 2026              # stats + 40+/ST play counts
+uv run ff-pipeline sleeper-league rules --diff 2025                 # review; then --write
+uv run ff-pipeline run --source team_defense --season 2026          # DST rows (Sleeper PA rule)
+uv run ff-pipeline sleeper-league stats                             # Sleeper's own stats, non-primary
+uv run ff-pipeline rescore --season 2026
+uv run ff-pipeline sleeper-league reconcile --season 2026 --out docs/sleeper/reports/2026-reconcile.md
+```
+
+- `adopt-gsis`: Sleeper has no gsis id for most rookies, so a rostered rookie and the row nflverse
+  creates for him are two rows. It lists the exact name+position pairs and moves the real id and
+  stats onto the rostered row; anything ambiguous is listed and skipped (fix with `map-player`).
+  Re-run it after each nflverse ingest while rookies keep debuting.
+- `rules`: any non-zero Sleeper setting the mapping doesn't know aborts. A change to the league's
+  settings is a new D-10 sign-off, not a silent rewrite.
+- `reconcile` classes: `stat_source` = Sleeper's own stats reproduce its points, nflverse differs
+  (expected, small); `rule` = they don't (stop: a mapping bug); `unexplained` = no Sleeper stats
+  stored (run `sleeper-league stats`). The in-progress week is reported apart.
+- **Live use** joins the S5 go-live: load → the sequence above (S6-D1).
+
+## Sleeper era operations (S9)
+
+**Every week (unattended):** `dz-sleeper-capture` (Wed 06:00 ET) runs
+`scripts/sleeper/weekly_capture.sh`:
+1. capture;
+2. `sleeper-league update --if-enabled`;
+3. full `legacy verify`.
+
+The log is `data/logs/sleeper_capture-<UTC date>.log`. Each step prints `ok` or `FAILED`; the job
+stops at the first failure. Fix the cause, then run the same thing by hand
+(`uv run ff-pipeline sleeper-league update`). Nothing is lost by waiting a week: every capture
+re-fetches the whole season.
+
+**`sleeper-league update`** (the season update, also the go-live command):
+- runs load → `adopt-gsis --apply` → `injury-reports` → nflverse → team_defense →
+  `sleeper-league stats` → `rules --check` → rescore → reconcile (report in `data/reports/`);
+- `--dry-run` stops after a dry-run load;
+- a sealed season → "nothing to update";
+- if the league's scoring settings changed, it reports `rules check: CHANGED` and exits 1
+  **without** rescoring. Review with `sleeper-league rules --diff <prev year>`, get the user's
+  sign-off, run `rules --write`, then re-run `update`.
+
+**2026 go-live (once, with the user's approval, after dashboard D0–D3):**
+1. `uv run ff-pipeline migrate up` (adds guard v2; inert until a Sleeper season is sealed);
+2. `uv run ff-pipeline sleeper-league rules --diff 2025`, then `rules --write`;
+3. `uv run ff-pipeline sleeper-league update`;
+4. set `SLEEPER_AUTO_LOAD=true` in `.env`; from then on the weekly job keeps the season current.
+
+**Rollover (a renewed league):** when `/state/nfl` moves to a new season, the capture looks up the
+commissioner's leagues for that season. It archives the league whose `previous_league_id` is
+the current one, and prints "renewed league found and archived: <id>". Then, with the user:
+1. set `SLEEPER_LEAGUE_ID=<id>`;
+2. map any new owners (`owners map`);
+3. sign off the new season's rules (`rules --diff`);
+4. run `update`.
+
+Nothing loads the new season by itself.
+
+**Season close (~mid-January, with the user):**
+
+`uv run ff-pipeline legacy seal-season --season 2026 --champion "<team name as shown>"`
+
+It refuses unless the league is complete, the final week is ≥ 7 days old, the reconcile has no
+`rule` / `unexplained` divergence, the bracket check is clean and the typed champion matches.
+It then:
+1. backs up to `data/backups/historical/fantasy-pre-seal-2026-<ts>.db`;
+2. seals 2026 as the next `seal-vN` (incl. guard v2 fingerprints of the Sleeper-era columns and
+   brackets) and verifies;
+3. writes `docs/sleeper/seals/seal-vN.manifest.json` (+ `.sha256`; hashes only, commit it);
+4. runs `vault_sync.sh build-seal` → `pack-seal` → `sync`.
+
+Every `seal-*` archive is kept forever. The `ff-legacy-evergreen` folders stay seal-v1 only and
+are never touched. After the seal, the weekly `update` reports "2026 is sealed; nothing to
+update". `--skip-vault` seals the DB only (then run the three vault steps by hand).
+
+**Restore drills** (quarterly + before each release; log in `docs/sleeper/drills.md`):
+- you: `scripts/vault/restore_check.sh primary <newest archive>`;
+- key-free: `uv run python scripts/vault/local_restore_drill.py`.
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):

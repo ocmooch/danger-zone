@@ -24,9 +24,11 @@ from ff_pipeline.repository.models import (
     Owner,
     PipelineRun,
     Player,
+    PlayerAdp,
     PlayerAvailability,
     PlayerIdentityLink,
     PlayerInjuryReport,
+    PlayerSeasonPosition,
     PlayerStatsRaw,
     PlayerStatsScored,
     Projection,
@@ -37,7 +39,52 @@ from ff_pipeline.repository.models import (
     TeamRoster,
     Transaction,
 )
+
+# S8 source-neutral reads, re-exported: this module is the dashboard's import surface.
+from ff_pipeline.repository.platform_reads import (
+    Capability as Capability,
+)
+from ff_pipeline.repository.platform_reads import (
+    PlatformInfo as PlatformInfo,
+)
+from ff_pipeline.repository.platform_reads import (
+    SeasonFreshness as SeasonFreshness,
+)
+from ff_pipeline.repository.platform_reads import (
+    authoritative_week_points_expr as authoritative_week_points_expr,
+)
+from ff_pipeline.repository.platform_reads import (
+    brackets_for_season as brackets_for_season,
+)
+from ff_pipeline.repository.platform_reads import (
+    failed_waiver_claims as failed_waiver_claims,
+)
+from ff_pipeline.repository.platform_reads import (
+    is_provisional_matchup as is_provisional_matchup,
+)
+from ff_pipeline.repository.platform_reads import (
+    official_slot_points_expr as official_slot_points_expr,
+)
+from ff_pipeline.repository.platform_reads import (
+    player_status_asof as player_status_asof,
+)
+from ff_pipeline.repository.platform_reads import (
+    season_capabilities as season_capabilities,
+)
+from ff_pipeline.repository.platform_reads import (
+    season_freshness as season_freshness,
+)
+from ff_pipeline.repository.platform_reads import (
+    season_platform as season_platform,
+)
+from ff_pipeline.repository.platform_reads import (
+    trade_assets as trade_assets,
+)
+from ff_pipeline.repository.platform_reads import (
+    traded_picks_for_league as traded_picks_for_league,
+)
 from ff_pipeline.repository.player_identity_integrity import source_identity_mismatches
+from ff_pipeline.repository.player_position_integrity import season_position_divergences
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -221,19 +268,37 @@ def transactions_for_team(session: Session, team_id: int) -> list[Transaction]:
 def standings_for_season(
     session: Session, season_id: int, through_week: int | None = None
 ) -> list[dict[str, Any]]:
-    """Aggregate matchups into a {team_id: {wins, losses, ties, pf, pa}} table."""
+    """Aggregate matchups into a {team_id: {wins, losses, ties, pf, pa}} table.
+
+    W-L-T and PF/PA count finalized games only. While a season is active
+    (S8-D3), a week the platform hasn't finalized is the current state: its
+    points are ``live_points_for`` (``live_week``), never a result, and every
+    row is ``provisional``. Rows without an opponent (Sleeper postseason byes
+    and placed teams) are not games. Legacy rows have neither case, so their
+    W-L-T / PF / PA are unchanged.
+    """
     conditions = [Matchup.season_id == season_id]
     if through_week is not None:
         conditions.append(Matchup.week <= through_week)
     stmt = select(Matchup).where(*conditions)
     matchups = list(session.execute(stmt).scalars().all())
+    fresh = season_freshness(session, season_id)
+    provisional = not fresh.is_final if fresh is not None else False
 
     teams_in_season = {team.team_id: team for team in list_teams_for_season(session, season_id)}
 
     by_team: dict[int, dict[str, float]] = defaultdict(
         lambda: {"wins": 0, "losses": 0, "ties": 0, "points_for": 0.0, "points_against": 0.0}
     )
+    live: dict[int, tuple[int, float]] = {}
     for m in matchups:
+        if m.opponent_team_id is None:
+            continue  # an idle Sleeper postseason team-week: not a game (legacy has none)
+        if is_provisional_matchup(m):
+            if m.team_score is not None:
+                live[m.team_id] = (m.week, float(m.team_score))
+            _ = by_team[m.team_id]  # keep the team in the table
+            continue
         row = by_team[m.team_id]
         if m.is_win is True:
             row["wins"] += 1
@@ -249,6 +314,7 @@ def standings_for_season(
     out: list[dict[str, Any]] = []
     for team_id, row in by_team.items():
         team = teams_in_season.get(team_id)
+        lw = live.get(team_id)
         out.append(
             {
                 "team_id": team_id,
@@ -258,6 +324,9 @@ def standings_for_season(
                 "ties": int(row["ties"]),
                 "points_for": round(row["points_for"], 2),
                 "points_against": round(row["points_against"], 2),
+                "provisional": provisional,
+                "live_week": lw[0] if lw else None,
+                "live_points_for": round(lw[1], 2) if lw else None,
             }
         )
     out.sort(key=lambda r: (-r["wins"], r["losses"], -r["points_for"]))
@@ -427,6 +496,11 @@ def player_source_identity_mismatches(session: Session) -> list[dict[str, Any]]:
     return source_identity_mismatches(session)
 
 
+def player_season_position_divergences(session: Session) -> list[dict[str, Any]]:
+    """Players whose static position disagrees with a rostered season's position."""
+    return season_position_divergences(session)
+
+
 def player_season_teams(
     session: Session, player_ids: Sequence[int], season_year: int
 ) -> dict[int, str]:
@@ -481,6 +555,41 @@ def player_nfl_team(session: Session, player_id: int, season_year: int) -> str |
     ``None`` when no per-week team is stored for that player-season.
     """
     return player_season_teams(session, [player_id], season_year).get(player_id)
+
+
+def player_season_positions(
+    session: Session, player_ids: Sequence[int], season_year: int
+) -> dict[int, str]:
+    """Map each player to their season-correct NFL position for ``season_year``.
+
+    Read from the stored ``player_season_positions`` table (one row per
+    player-season, sourced from nflverse's per-season rosters). This is the
+    season-aware counterpart to the single current/last-known snapshot on
+    ``players.position`` — a player who lined up at WR in 2014 reads "WR" even if
+    his stored snapshot later became "TE". Players with no stored row that season
+    are absent from the map; callers fall back to ``players.position``.
+
+    Batched so a whole box score / leaderboard page resolves in one query.
+    """
+    if not player_ids:
+        return {}
+    stmt = select(
+        PlayerSeasonPosition.player_id,
+        PlayerSeasonPosition.position,
+    ).where(
+        PlayerSeasonPosition.player_id.in_(player_ids),
+        PlayerSeasonPosition.season_year == season_year,
+    )
+    return {row.player_id: row.position for row in session.execute(stmt).all()}
+
+
+def player_position(session: Session, player_id: int, season_year: int) -> str | None:
+    """Season-correct NFL position for one player-season.
+
+    Thin single-player wrapper over :func:`player_season_positions`; returns
+    ``None`` when no per-season position is stored for that player-season.
+    """
+    return player_season_positions(session, [player_id], season_year).get(player_id)
 
 
 def player_ownership(session: Session, player_id: int) -> list[tuple[TeamRoster, Team]]:
@@ -725,6 +834,36 @@ def injury_reports_for_week(
         .all()
     )
     return {r.player_id: r for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# Average draft position (ADP)
+# ---------------------------------------------------------------------------
+
+
+def player_adp_rows_for_season(session: Session, season_id: int) -> dict[int, list[PlayerAdp]]:
+    """Return ``player_id → [PlayerAdp, ...]`` (one per source) for a season.
+
+    Raw, source-faithful rows for the BFF to blend (the weighted composite and
+    the reach/value delta are dashboard math, kept out of storage so the
+    weighting stays tunable). Unresolved rows (``player_id`` NULL) are coverage
+    audit only and are omitted here — they cannot attach to a pick.
+    """
+    rows = (
+        session.execute(
+            select(PlayerAdp).where(
+                PlayerAdp.season_id == season_id,
+                PlayerAdp.player_id.is_not(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out: dict[int, list[PlayerAdp]] = {}
+    for row in rows:
+        assert row.player_id is not None  # guaranteed by the WHERE above
+        out.setdefault(row.player_id, []).append(row)
+    return out
 
 
 # ---------------------------------------------------------------------------
