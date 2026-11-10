@@ -24,6 +24,8 @@ from ff_pipeline.crawlers.sleeper_league.endpoints import (
     league_requests,
     players_request,
     state_request,
+    user_leagues_request,
+    users_request,
     weeks_to_capture,
 )
 from ff_pipeline.crawlers.sleeper_league.lineage import (
@@ -64,6 +66,7 @@ class CaptureSummary:
     errors: list[str] = field(default_factory=list)
     players_skipped: bool = False
     dry_run: bool = False
+    renewed_league_id: str | None = None  # S9-D4: a renewal found and followed this run
 
 
 @dataclass(slots=True)
@@ -181,6 +184,14 @@ def capture_season(
         return body if isinstance(body, dict) else None
 
     chain = walk_lineage(fetch_league, start_league_id)
+    state_season = _int(state.get("season"))
+    newest = chain[0]
+    if season is None and state_season and newest.season and state_season > newest.season:
+        renewed = find_renewal(arc, newest.league_id, newest.season, state_season)
+        if renewed is not None:
+            chain = walk_lineage(fetch_league, renewed)
+            summary.renewed_league_id = renewed
+            log.info("renewed league found", league_id=renewed, season=state_season)
     summary.lineage = chain
     link = chain[0] if season is None else league_for_season(chain, season)
     if link.season is None:
@@ -210,4 +221,31 @@ def capture_season(
     return summary
 
 
-__all__ = ["CaptureError", "CaptureSummary", "capture_season", "players_due"]
+def find_renewal(arc: _Archiver, league_id: str, season: int, target: int) -> str | None:
+    """The ``target``-season league whose ``previous_league_id`` is ``league_id``,
+    looked up in the commissioner's (``is_owner``) leagues (S9-D4)."""
+    users_payload = arc.fetch(users_request(league_id, season))
+    users = users_payload.json() if users_payload is not None else None
+    if not isinstance(users, list):
+        return None
+    commissioner = next(
+        (str(u["user_id"]) for u in users if isinstance(u, dict) and u.get("is_owner")), None
+    )
+    if commissioner is None:
+        return None
+    payload = arc.fetch(user_leagues_request(commissioner, target))
+    leagues = payload.json() if payload is not None else None
+    for lg in leagues if isinstance(leagues, list) else []:
+        if isinstance(lg, dict) and str(lg.get("previous_league_id") or "") == league_id:
+            return str(lg["league_id"])
+    return None
+
+
+def _int(v: Any) -> int | None:
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+__all__ = ["CaptureError", "CaptureSummary", "capture_season", "find_renewal", "players_due"]

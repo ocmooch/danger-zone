@@ -4,8 +4,8 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S9. Design sources: `03_LEGACY_
 §7 (verification), §8 (amendments), §10 (rolling seal), §12 (restore); `05_VAULT_OFFSITE_SYNC.md`;
 `01_PIPELINE_ARCHITECTURE.md` §8.1-8.2 (lifecycle, rollover); `docs/08_OPERATIONS.md`.
 
-**Status:** PLAN, written 2026-11-09 on `feature/s9-ops-release`. Nothing is built yet.
-**The decisions at the end need the user's approval before the BUILD session.**
+**Status:** PLAN approved 2026-11-09 (S9-D1..D8 as recommended, "approve all"). BUILD on
+`feature/s9-ops-release`.
 
 ## Goal
 
@@ -168,11 +168,13 @@ Live migration needs the user's OK; it changes nothing until a Sleeper season is
 ## Done when
 
 - [ ] The weekly job runs unattended with `success` for one real Wednesday (capture + verify; the
-  load part once the go-live sets `SLEEPER_AUTO_LOAD`).
-- [ ] Rollover dry run against a fixture chain passes.
-- [ ] Restore drill executed and logged (the user's `restore_check.sh` + the local drill).
-- [ ] `seal-season` built and fixture-tested (real run at season close).
-- [ ] Docs updated; PR → `dev`; `dev → main` promoted and tagged.
+  load part once the go-live sets `SLEEPER_AUTO_LOAD`). *First run of the new script: Wed
+  2026-11-11 06:00 (needs `dev` checked out with S9 merged).*
+- [x] Rollover dry run against a fixture chain passes.
+- [~] Restore drill executed and logged: local drill ✅ 2026-11-10; the user's `restore_check.sh`
+  pending.
+- [x] `seal-season` built and fixture-tested (real run at season close).
+- [ ] Docs updated ✅; PR → `dev`; `dev → main` promoted and tagged (after the merge).
 
 ## Decisions (recommended defaults — need the user's approval)
 
@@ -186,3 +188,26 @@ Live migration needs the user's OK; it changes nothing until a Sleeper season is
 | S9-D6 | What a sealed Sleeper season protects | Extend the guard (additive migration) to the Sleeper-era columns of the guarded tables and `playoff_brackets`; re-derivable tables stay out. | Guard only the seal-v1 column set (Sleeper extras protected by the vault copy and `verify` only). |
 | S9-D7 | Restore drill | You run `restore_check.sh` (key + passphrase) on the newest archive; Claude runs a key-free local drill from the plaintext seal directory (restore → migrate → verify → dashboard smoke). Both logged. Quarterly + before release. | Only the user's `restore_check.sh`. |
 | S9-D8 | Release | After S9 merges, promote danger-zone `dev → main` and tag **`v2.0.0`** (the Sleeper-era pipeline; legacy stays read-compatible). The dashboard's promotion comes with its D8. | Tag `v1.7.0` (minor). |
+
+## Build notes (2026-11-10)
+
+- **`sleeper-league update`** runs each step as its own `ff-pipeline` process (each with its own
+  preflight) and stops at the first failure. On a copy of the S7 copy it ran end to end in 22 s,
+  and `legacy verify` passed afterwards. `rules --check` exits 3 on a changed or missing rule
+  set; `update` then skips rescore + reconcile and exits 1.
+- **`SLEEPER_AUTO_LOAD`** setting (default false; `.env.example` documents it). `.env` is untouched.
+- **Rollover** adds the `user_leagues` endpoint (fetched only when `/state/nfl` is newer than the
+  newest league) and `users_request` / `user_leagues_request` builders.
+- **Guard v2:** `legacy/spec.GUARD_V2_TABLES` + `triggers.trigger_ddl_v2` (7 triggers), frozen in
+  migration `c9e1f3a5b7d4`. `legacy/guard_v2.py` covers verify (triggers present → all must be
+  intact; a v2 baseline requires them; v2 fingerprints compared) and amend (re-seals on a v2
+  change, carries `platform_tables` forward). seal-v1 lists and manifest are unchanged; the
+  migration round trip leaves the S1 triggers intact.
+- **`legacy seal-season`** (`legacy/seal_season.py` + `crawlers/sleeper_league/season_close.py`
+  for the facts). The backup goes to `data/backups/historical/` (outside pruning). The vault
+  steps run `vault_sync.sh build-seal` (new: plaintext seal dir beside seal-v1, verified,
+  read-only) → `pack-seal` → `sync`. Retention pins every `seal-v<N>`.
+- **Restore drill:** `scripts/vault/local_restore_drill.py` restores the newest plaintext seal
+  dir. 2026-11-10 run: integrity ok, migrate up ok, re-adopted seal-v1 + verify passed,
+  dashboard smoke 16 seasons + a box score. Logged in `docs/sleeper/drills.md`.
+- **Live:** nothing applied. Guard v2 (`migrate up`) joins the go-live steps.

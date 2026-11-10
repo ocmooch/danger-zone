@@ -130,27 +130,21 @@ ff-pipeline export --table NAME --format csv   # Dump a table for ad-hoc analysi
 
 ## Scheduling
 
-Phase 1 default: **cron on your local machine.** A ready-to-install crontab ships at `scripts/cron.example` — placeholders `<PROJECT_ROOT>` and `<FF_PIPELINE>` are the only edits required:
+**Sleeper era (2026→, S9):** two Windows Task Scheduler jobs, both running whatever branch
+`~/danger-zone` has checked out (keep it on `dev`):
 
-```bash
-# Find the binary path:
-which ff-pipeline                          # if installed via `uv tool install .`
-# or: ls $PWD/.venv/bin/ff-pipeline        # for a uv-managed venv
+| Task | When | What |
+|---|---|---|
+| `dz-sleeper-capture` | Wed 06:00 ET (after Monday night + Tuesday's stat corrections) | `scripts/sleeper/weekly_capture.sh`: capture (every week to date; follows a renewed league) → `sleeper-league update --if-enabled` (load + score; on only once `SLEEPER_AUTO_LOAD=true`) → full `legacy verify`. Log `data/logs/sleeper_capture-<date>.log`. |
+| `dz-vault-sync` | Sun 03:00 | `scripts/vault/vault_sync.sh`: encrypted snapshot (DB + raw Sleeper archive + assets) to every vault destination; 4 rotating copies + every `seal-*` pinned. |
 
-sed -i 's|<PROJECT_ROOT>|/abs/path/to/checkout|g; s|<FF_PIPELINE>|/abs/path/to/ff-pipeline|g' \
-    scripts/cron.example
+Check either with `schtasks.exe /Query /TN <task> /V /FO LIST` ("Last Result" 0 = ok). A failed
+step stops the job with a non-zero exit; nothing retries silently, and the next run re-does
+everything idempotently (a missed correction lands the following Wednesday). There are no daily
+or game-day jobs: the user prefers retroactive, after-the-games captures.
 
-crontab scripts/cron.example               # install (replaces existing crontab)
-crontab -l                                  # verify
-```
-
-The shipped schedule covers four in-season runs (Sun 23:30, Mon 23:30, Tue 09:00, Wed 23:30 + `--verify`) plus a nightly 04:00 SQLite backup. Times are local. The pipeline is idempotent so over-running is safe.
-
-Off-season (February → early September): keep the same schedule or trim to a weekly Sunday run.
-
-### Why not a daemon / scheduled task / launchd?
-
-For a single-user system, cron is the lowest-overhead approach. If/when you go cloud-hosted (a Phase 2 question), the same `ff-pipeline run` command works under any modern scheduler (systemd timers, GitHub Actions schedule, Fly.io scheduled tasks, etc.).
+**NFL.com era (historical):** `scripts/cron.example` was the Phase 1 cron schedule (Sun/Mon/Tue/Wed
+runs + nightly backup). NFL.com fantasy is defunct; the crontab is not installed and must not be.
 
 ### Keeping the read API up
 

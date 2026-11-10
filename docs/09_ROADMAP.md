@@ -6,6 +6,10 @@ The order is **not negotiable** without thinking hard. Two specific reasons:
 - Scoring engine before any crawler (M3 before M4-6): so you have a tested correctness oracle before depending on data
 - API before automation (M8 before M9): so you can manually validate data before scheduling
 
+> **Sleeper era (2026→):** the S0–S9 program (vault, legacy guard, capture, schema, identity,
+> loader, scoring, rich data, read surface, operations) is in `docs/sleeper/02_PIPELINE_BUILD_PLAN.md`
+> and is complete. The M-milestones below are the Phase 1 (NFL.com) roadmap.
+
 ## Milestone summary
 
 | # | Milestone | Time est. | Deliverable |

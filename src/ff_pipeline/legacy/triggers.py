@@ -16,6 +16,8 @@ listed in ``legacy_sealed_rows``; so a fresh or test DB behaves as before.
 from __future__ import annotations
 
 from ff_pipeline.legacy.spec import (
+    GUARD_V2_FULL_TABLES,
+    GUARD_V2_TABLES,
     GUARDED_TABLES,
     SEASON_SEAL_COLUMNS,
     GuardedTable,
@@ -172,3 +174,37 @@ def trigger_ddl() -> list[tuple[str, str]]:
 
 def trigger_names() -> list[str]:
     return [name for name, _ in trigger_ddl()]
+
+
+def trigger_ddl_v2() -> list[tuple[str, str]]:
+    """Guard v2 (S9-D6): the Sleeper-era columns of guarded tables, and the whole
+    of ``playoff_brackets``, for sealed seasons. Frozen copy in the
+    ``s9_legacy_guard_v2`` migration (a unit test keeps them equal)."""
+    out: list[tuple[str, str]] = []
+    for spec in GUARD_V2_TABLES:
+        t = spec.name
+        prefix = f"legacy_guard_v2_{t}"
+        if t in GUARD_V2_FULL_TABLES:
+            out.extend(
+                (
+                    name.replace(f"legacy_guard_{t}", prefix),
+                    sql.replace(f"legacy_guard_{t}", prefix),
+                )
+                for name, sql in _table_triggers(spec)
+            )
+            continue
+        if spec.kind is GuardKind.SEASON_ROW:
+            when = f"{LOCKED} AND OLD.is_sealed = 1 AND {_changed(spec.legacy_columns)}"
+            msg = f"season is sealed; {AMEND_HINT}"
+        else:
+            when = (
+                f"{LOCKED} AND ({_sealed(spec, 'OLD')} OR {_sealed(spec, 'NEW')})"
+                f" AND {_changed(spec.legacy_columns)}"
+            )
+            msg = f"{t} row belongs to a sealed season; {AMEND_HINT}"
+        out.append(_trigger(f"{prefix}_update", "UPDATE", t, when, _abort(msg)))
+    return out
+
+
+def trigger_names_v2() -> list[str]:
+    return [name for name, _ in trigger_ddl_v2()]

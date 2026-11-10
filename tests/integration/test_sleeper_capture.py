@@ -170,7 +170,8 @@ def test_capture_archives_every_endpoint(env: Env) -> None:
         lineage_seasons = sorted(
             ss.scalars(select(SourcePayload.season_year).where(SourcePayload.endpoint == "league"))
         )
-    assert endpoints == {e.value for e in Endpoint}
+    # user_leagues is fetched only to discover a renewed league (S9-D4)
+    assert endpoints == {e.value for e in Endpoint} - {Endpoint.USER_LEAGUES.value}
     assert lineage_seasons == [2026, 2027, 2028]
     # identical bodies (e.g. the many "[]" payloads) share one file
     assert _files(env) < EXPECTED_REQUESTS
@@ -351,3 +352,77 @@ def test_players_points_equal_stats_dot_scoring_in_fixtures() -> None:
                 assert round(calc, 2) == pytest.approx(pts, abs=0.011), (week, pid)
                 checked += 1
     assert checked > 1000
+
+
+L29 = "900000000000002029"
+
+
+def _renewal_fixtures(env: Env, *, previous: str, is_owner: bool = True) -> None:
+    """State says 2029; the 2028 commissioner's 2029 leagues list one candidate."""
+    from ff_pipeline.crawlers.sleeper_league.endpoints import (
+        drafts_request,
+        league_request,
+        user_leagues_request,
+        users_request,
+    )
+
+    fx = env.fixtures
+    (fx / "v1_state_nfl.json").write_text(
+        json.dumps({"season": "2029", "season_type": "pre", "week": 0, "leg": 0})
+    )
+    users = [{"user_id": "u0001", "display_name": "Manager 01", "is_owner": is_owner or None}]
+    _write(fx, users_request(L28, 2028), users)
+    _write(
+        fx,
+        user_leagues_request("u0001", 2029),
+        [
+            {"league_id": "900000000000009999", "previous_league_id": "0", "season": "2029"},
+            {"league_id": L29, "previous_league_id": previous, "season": "2029"},
+        ],
+    )
+    _write(
+        fx,
+        league_request(L29),
+        {
+            "league_id": L29,
+            "season": "2029",
+            "previous_league_id": L28,
+            "status": "pre_draft",
+            "name": "Fixture League",
+            "draft_id": None,
+        },
+    )
+    _write(fx, drafts_request(L29, 2029), [])
+    for req in league_requests(L29, 2029, 0):
+        _write(fx, req, [])
+
+
+def test_rollover_discovers_and_archives_the_renewed_league(env: Env) -> None:
+    _renewal_fixtures(env, previous=L28)
+    s = _capture(env)
+    assert s.renewed_league_id == L29
+    assert (s.season, s.league_id) == (2029, L29)
+    assert [link.season for link in s.lineage] == [2029, 2028, 2027, 2026]
+    assert s.max_week == 0  # pre-draft: no weeks yet
+    assert s.errors == []
+
+
+def test_rollover_needs_the_right_predecessor_and_a_commissioner(env: Env) -> None:
+    from ff_pipeline.crawlers.sleeper_league.capture import CaptureSummary, _Archiver, find_renewal
+
+    for previous, owner, want in (
+        (L28, True, L29),
+        ("900000000000000123", True, None),
+        (L28, False, None),
+    ):
+        _renewal_fixtures(env, previous=previous, is_owner=owner)
+        with Session(env.engine) as ss:
+            arc = _Archiver(
+                ss,
+                FixtureSleeperLeagueSource(env.fixtures, fetched_at=T0),
+                env.store,
+                "t",
+                True,
+                CaptureSummary(dry_run=True),
+            )
+            assert find_renewal(arc, L28, 2028, 2029) == want

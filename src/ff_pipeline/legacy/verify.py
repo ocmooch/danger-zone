@@ -11,6 +11,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from ff_pipeline.legacy import guard_v2
 from ff_pipeline.legacy.fingerprint import ScopedScan, manifest_sha256, scan_table, sealed_years
 from ff_pipeline.legacy.spec import GUARDED_TABLES
 from ff_pipeline.legacy.triggers import trigger_ddl
@@ -185,6 +186,7 @@ def verify(conn: sqlite3.Connection, *, full: bool = False) -> VerifyReport:
         return VerifyReport(seal_id=None, full=full)
     report = VerifyReport(seal_id=seal.seal_id, full=full)
     report.problems.extend(check_triggers(conn))
+    report.problems.extend(guard_v2.trigger_problems(conn, required=guard_v2.is_v2(seal.manifest)))
 
     years: list[int] = [int(y) for y in seal.manifest["sealed_years"]]
     live_years = sealed_years(conn)
@@ -214,6 +216,8 @@ def verify(conn: sqlite3.Connection, *, full: bool = False) -> VerifyReport:
                 report.diffs.append(diff)
                 continue
         report.checked[spec.name] = got["row_count"]
+
+    report.problems.extend(guard_v2.fingerprint_problems(conn, seal.manifest, years, full=full))
 
     if full:
         check = conn.execute("PRAGMA integrity_check").fetchone()[0]

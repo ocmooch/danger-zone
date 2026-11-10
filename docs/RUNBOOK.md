@@ -428,6 +428,65 @@ uv run ff-pipeline sleeper-league reconcile --season 2026 --out docs/sleeper/rep
   stored (run `sleeper-league stats`). The in-progress week is reported apart.
 - **Live use** joins the S5 go-live: load → the sequence above (S6-D1).
 
+## Sleeper era operations (S9)
+
+**Every week (unattended):** `dz-sleeper-capture` (Wed 06:00 ET) runs
+`scripts/sleeper/weekly_capture.sh`:
+1. capture;
+2. `sleeper-league update --if-enabled`;
+3. full `legacy verify`.
+
+The log is `data/logs/sleeper_capture-<UTC date>.log`. Each step prints `ok` or `FAILED`; the job
+stops at the first failure. Fix the cause, then run the same thing by hand
+(`uv run ff-pipeline sleeper-league update`). Nothing is lost by waiting a week: every capture
+re-fetches the whole season.
+
+**`sleeper-league update`** (the season update, also the go-live command):
+- runs load → `adopt-gsis --apply` → `injury-reports` → nflverse → team_defense →
+  `sleeper-league stats` → `rules --check` → rescore → reconcile (report in `data/reports/`);
+- `--dry-run` stops after a dry-run load;
+- a sealed season → "nothing to update";
+- if the league's scoring settings changed, it reports `rules check: CHANGED` and exits 1
+  **without** rescoring. Review with `sleeper-league rules --diff <prev year>`, get the user's
+  sign-off, run `rules --write`, then re-run `update`.
+
+**2026 go-live (once, with the user's approval, after dashboard D0–D3):**
+1. `uv run ff-pipeline migrate up` (adds guard v2; inert until a Sleeper season is sealed);
+2. `uv run ff-pipeline sleeper-league rules --diff 2025`, then `rules --write`;
+3. `uv run ff-pipeline sleeper-league update`;
+4. set `SLEEPER_AUTO_LOAD=true` in `.env`; from then on the weekly job keeps the season current.
+
+**Rollover (a renewed league):** when `/state/nfl` moves to a new season, the capture looks up the
+commissioner's leagues for that season. It archives the league whose `previous_league_id` is
+the current one, and prints "renewed league found and archived: <id>". Then, with the user:
+1. set `SLEEPER_LEAGUE_ID=<id>`;
+2. map any new owners (`owners map`);
+3. sign off the new season's rules (`rules --diff`);
+4. run `update`.
+
+Nothing loads the new season by itself.
+
+**Season close (~mid-January, with the user):**
+
+`uv run ff-pipeline legacy seal-season --season 2026 --champion "<team name as shown>"`
+
+It refuses unless the league is complete, the final week is ≥ 7 days old, the reconcile has no
+`rule` / `unexplained` divergence, the bracket check is clean and the typed champion matches.
+It then:
+1. backs up to `data/backups/historical/fantasy-pre-seal-2026-<ts>.db`;
+2. seals 2026 as the next `seal-vN` (incl. guard v2 fingerprints of the Sleeper-era columns and
+   brackets) and verifies;
+3. writes `docs/sleeper/seals/seal-vN.manifest.json` (+ `.sha256`; hashes only, commit it);
+4. runs `vault_sync.sh build-seal` → `pack-seal` → `sync`.
+
+Every `seal-*` archive is kept forever. The `ff-legacy-evergreen` folders stay seal-v1 only and
+are never touched. After the seal, the weekly `update` reports "2026 is sealed; nothing to
+update". `--skip-vault` seals the DB only (then run the three vault steps by hand).
+
+**Restore drills** (quarterly + before each release; log in `docs/sleeper/drills.md`):
+- you: `scripts/vault/restore_check.sh primary <newest archive>`;
+- key-free: `uv run python scripts/vault/local_restore_drill.py`.
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):

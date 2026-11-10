@@ -240,3 +240,67 @@ GUARDED_TABLES: tuple[GuardedTable, ...] = (
 )
 
 GUARDED_BY_NAME: dict[str, GuardedTable] = {t.name: t for t in GUARDED_TABLES}
+
+
+# ── guard v2: Sleeper-era coverage (S9-D6) ───────────────────────────────────
+#
+# Columns added by the S3 platform-era schema, guarded for sealed seasons on top
+# of the frozen seal-v1 lists above (which stay byte-identical), plus
+# ``playoff_brackets`` as a season-scoped table. Re-derivable tables
+# (player_stats_*, player_status_snapshots, player_injury_reports,
+# source_payloads) and ``traded_picks`` (future picks) are left out on purpose.
+# A NFL.com season carries no values in these columns, so sealing behaviour for
+# 2010-2025 does not change.
+
+GUARD_V2_TABLES: tuple[GuardedTable, ...] = (
+    GuardedTable(
+        "matchups",
+        GuardKind.SEASON,
+        "matchup_id",
+        ("platform_matchup_key", "extra_data"),
+        season_link="season_id",
+    ),
+    GuardedTable(
+        "playoff_brackets",
+        GuardKind.SEASON,
+        "bracket_id",
+        (
+            "bracket_id",
+            "season_id",
+            "bracket",
+            "round",
+            "match_no",
+            "team1_id",
+            "team2_id",
+            "winner_team_id",
+            "loser_team_id",
+            "placement",
+            "team1_from",
+            "team2_from",
+            "source",
+        ),
+        season_link="season_id",
+    ),
+    GuardedTable(
+        "seasons",
+        GuardKind.SEASON_ROW,
+        "season_id",
+        ("platform", "platform_league_id", "platform_draft_id", "settings_snapshot"),
+    ),
+    GuardedTable(
+        "teams",
+        GuardKind.SEASON,
+        "team_id",
+        ("platform_team_key", "division", "extra_data"),
+        season_link="season_id",
+    ),
+    GuardedTable(
+        "transactions",
+        GuardKind.SEASON,
+        "transaction_id",
+        ("platform_transaction_id", "status"),
+        season_link="season_id",
+    ),
+)
+# Tables guard v2 covers completely (insert / update / delete), not just columns.
+GUARD_V2_FULL_TABLES = frozenset({"playoff_brackets"})
