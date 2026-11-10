@@ -415,7 +415,16 @@ follow-ups (operational, not design):
   the dashboard (its D0 snapshots first, D1–D3 built).
 - **Bracket re-probe** after weeks 15 and 17 (`04` §7 ⏸): confirm Sleeper's `w`/`l` semantics on
   decided games before trusting places on live.
-- **Key restore drill**: the user's `restore_check.sh` run, logged in `docs/sleeper/drills.md`.
+- **Key restore drill**: done 2026-11-10 (primary key, logged in `docs/sleeper/drills.md`). Next
+  ones are quarterly and before each release.
+- **Deferred: move the weekly jobs to an always-on server with cron.** Today the Wednesday capture
+  (06:00) and vault sync (07:00) are Windows Task Scheduler jobs on the user's PC, which isn't
+  always on. A missed run happens at the next login, which is fine while the 2026 data is still
+  being filled in. The user's stated expectation (2026-11-10) is that these eventually run as
+  server cron jobs. The scripts are plain bash plus `uv` and already refuse non-`main` code, so
+  they can move as they are. What has to move with them: the live `data/` (DB, raw archive,
+  assets), `.env`, the vault tooling (`age` public keys, `rclone`, `gh`), and the iCloud/evergreen
+  paths, which are Windows-specific today.
 - **Season close** (~mid-January 2027): `legacy seal-season --season 2026 --champion "…"`.
 
 ## Locked in — do not re-litigate

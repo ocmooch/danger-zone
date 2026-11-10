@@ -450,6 +450,13 @@ logs, backups, nflverse_cache}` point into `~/danger-zone`. The tracked files in
 `main`. A sparse checkout hides the three `.gitkeep` files under the linked directories, so
 `git status` stays clean. Never commit or develop in it.
 
+- **Missed runs (PC off or nobody logged in):** both tasks run once, soon after the next login,
+  that day or days later. They don't wake the PC. Nothing is lost: each capture re-fetches the
+  season to date, and a missed week only means one fewer rotating snapshot. When both are
+  missed they start together. The vault run then waits (2-min grace, up to 30 min) for the
+  capture's lock (`data/logs/weekly_capture.lock`), so its snapshot still holds that week's data.
+  The wait is logged as `wait:` lines in `data/logs/vault_sync-<date>.log`. Moving these jobs to an
+  always-on server with cron is a deferred item (`10_OPEN_QUESTIONS.md` "Sleeper era").
 - **After each `dev → main` release:** follow the release checklist in `CONTRIBUTING.md`
   ("Releases"). Until the main copy is pulled, both jobs keep running the previous release.
 - **Rebuild it** (e.g. after a WSL reinstall):
