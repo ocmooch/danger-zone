@@ -142,8 +142,8 @@ own. The loader only writes DTOs.
 
 - [x] `sleeper-league load` loads weeks 1..current on a copy of the live DB (live per S5-D1: later).
 - [x] Team W-L-T / PF / PA equal Sleeper's roster settings for all 12 teams (finalized weeks).
-- [ ] Three box scores spot-checked against the Sleeper app by the user.
-- [x] Load is idempotent; `legacy verify` passes; full gate green. [ ] `02` §S5 updated; PR → `dev`.
+- [x] Three box scores spot-checked against the Sleeper app by the user (match, 2026-11-09).
+- [x] Load is idempotent; `legacy verify` passes; full gate green; `02` §S5 updated; PR #74 → `dev`.
 
 ## As built (2026-11-09)
 
@@ -175,7 +175,7 @@ load deferred (S5-D1), capture and load stay separate commands until the dashboa
   non-starters are `BN` + `slot_certainty='bench_or_reserve'`.
 - Owners recompute: no change (the same 12 managers are active).
 - Box-score spot-check: three games (weeks 1, 5, 8); starters' points sum exactly to each team
-  score. **The user compares them with the Sleeper app.**
+  score. **The user confirmed all three match the Sleeper app.**
 
 ## Known issues (out of scope)
 
