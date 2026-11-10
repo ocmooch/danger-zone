@@ -155,7 +155,11 @@ only for league-referenced players; quarantine amendment preserves rows byte-for
 **Done when:** YAML approved; dry run shows 0 unresolved users and an explained list of stubs;
 seal-v2 exists in all vault locations.
 
-## S5 — Canonical loader
+## S5 — Canonical loader — DONE (merged via PR #74, 2026-11-09; verified on a DB copy)
+
+As-built record: `docs/plans/S5-canonical-loader.md`. All 12 team records equal Sleeper's; three box
+scores confirmed against the Sleeper app. **The live DB is not loaded yet** (decision S5-D1): run
+`ff-pipeline sleeper-league load` on live once the dashboard is ready to show 2026 (D0–D3).
 
 **Goal:** the 2026 season in canonical tables, idempotently.
 

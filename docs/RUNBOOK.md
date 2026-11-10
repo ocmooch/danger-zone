@@ -374,6 +374,23 @@ uv run ff-pipeline legacy quarantine-2026-stub # one-time (done 2026-11-09); re-
   rows). The stub's rows are in `legacy_nfl_com_2026_preseason` and in the seal-v1 vault archive.
   A pre-move backup sits in `data/backups/amendments/`.
 
+## Sleeper season load (S5)
+
+```
+uv run ff-pipeline sleeper-league load --dry-run   # load + roll back: counts and records check
+uv run ff-pipeline sleeper-league load             # archive → seasons/teams/matchups/rosters/transactions
+```
+
+- Offline: reads only the raw archive. Capture first (`sleeper-league capture`).
+- Idempotent: a reload prints `+0 ~0 -0` for unchanged data. A stat correction shows up as `~N`
+  on that week's matchups and rosters.
+- "records vs Sleeper" must say `ok`. A difference means a scored week changed after capture
+  (re-capture, then reload) or a mapping bug (stop and investigate).
+- "owner change NOT written": a sealed (legacy) owner would change `is_active`/`joined_year`/
+  `left_year`, which needs `legacy amend`.
+- **Live use is gated (S5-D1):** load the live DB only once the dashboard is ready to show 2026
+  (dz-dashboard D0–D3). Until then, use a copy.
+
 ## When to escalate to development work
 
 The runbook covers recovery; the following push you back to writing code (and updating tests):

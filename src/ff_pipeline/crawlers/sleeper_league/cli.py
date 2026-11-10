@@ -257,3 +257,80 @@ def map_player_cmd(
         engine.dispose()
     verb = "pinned" if added else "already pinned"
     typer.echo(f"Sleeper {sleeper_id} {verb} to player {player_id} ({name}).")
+
+
+@sleeper_league_app.command("load")
+def load_cmd(
+    league_id: str | None = typer.Option(None, "--league-id", help="Default: SLEEPER_LEAGUE_ID."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Load inside a transaction and roll it back."
+    ),
+) -> None:
+    """Load the archived Sleeper season into the canonical tables (offline; S5)."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.canonical.loader import PlatformMismatchError
+    from ff_pipeline.crawlers.sleeper_league.archive_view import load_league
+    from ff_pipeline.crawlers.sleeper_league.client import (
+        ArchiveMissError,
+        ArchiveSleeperLeagueSource,
+    )
+    from ff_pipeline.crawlers.sleeper_league.runner import (
+        load_league_season,
+        reserve_by_week_from_archive,
+    )
+    from ff_pipeline.legacy.cli import run_preflight
+    from ff_pipeline.normalizer.sleeper_league import NormalizeError
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.legacy_guard import SealedSeasonError
+
+    settings = _settings()
+    lid = _league_id(settings, league_id)
+    if not dry_run:
+        run_preflight("sleeper-league load")
+    store = RawStore(settings.sleeper_raw_dir)
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            source = ArchiveSleeperLeagueSource(ss, store)
+            try:
+                season = load_league(source, lid).season
+                reserve = reserve_by_week_from_archive(ss, store, lid, season)
+                out = load_league_season(ss, source, lid, reserve_by_week=reserve)
+            except (
+                ArchiveMissError,
+                NormalizeError,
+                PlatformMismatchError,
+                SealedSeasonError,
+            ) as exc:
+                ss.rollback()
+                typer.secho(f"sleeper-league load failed: {exc}", fg="red", err=True)
+                raise typer.Exit(code=1) from exc
+            if dry_run:
+                ss.rollback()
+            else:
+                ss.commit()
+    finally:
+        engine.dispose()
+    r = out.result
+    prefix = "[dry run, rolled back] " if dry_run else ""
+    typer.echo(f"{prefix}sleeper-league load: season {out.season} (season_id {r.season_id})")
+    for entity, c in r.counts.items():
+        typer.echo(f"  {entity:13s} {c}")
+    typer.echo(
+        f"  players       DEF sleeper_id stamped {len(out.prep.stamped)}, "
+        f"stubs {len(out.prep.stubbed)}; rostered spans refreshed {r.spans_refreshed}"
+    )
+    typer.echo(
+        "  records vs Sleeper: "
+        + ("ok (all teams)" if not r.record_mismatches else f"{len(r.record_mismatches)} differ")
+    )
+    for line in r.record_mismatches:
+        typer.secho(f"    {line}", fg="yellow")
+    for line in r.owner_changes:
+        typer.echo(f"  owner updated: {line}")
+    for line in r.owner_blocked:
+        typer.secho(f"  owner change NOT written: {line}", fg="yellow")
+    for line in r.warnings:
+        typer.secho(f"  warning: {line}", fg="yellow")
