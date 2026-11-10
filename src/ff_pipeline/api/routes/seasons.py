@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Query
 
@@ -10,6 +10,8 @@ from ff_pipeline.api._meta import build_meta
 from ff_pipeline.api.deps import SessionDep  # noqa: TC001 — used at runtime by FastAPI
 from ff_pipeline.api.errors import not_found
 from ff_pipeline.api.schemas import (
+    BracketMatchOut,
+    CapabilityOut,
     Envelope,
     SeasonOut,
     Standings,
@@ -17,10 +19,19 @@ from ff_pipeline.api.schemas import (
     TeamOut,
 )
 from ff_pipeline.repository.queries import (
+    brackets_for_season,
     get_season,
     list_teams_for_season,
+    season_capabilities,
+    season_freshness,
+    season_platform,
     standings_for_season,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.repository.models import Season
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -34,8 +45,41 @@ def get_season_endpoint(
     if season is None:
         raise not_found(f"No season with id {season_id}")
     return Envelope(
-        data=SeasonOut.model_validate(season),
+        data=season_out(session, season),
         meta=build_meta(session, entity_updated_at=season.updated_at),
+    )
+
+
+def season_out(session: Session, season: Season) -> SeasonOut:
+    """``SeasonOut`` with provenance, freshness and capabilities (S8)."""
+    season_id = season.season_id
+    out = SeasonOut.model_validate(season)
+    platform = season_platform(session, season_id)
+    fresh = season_freshness(session, season_id)
+    if platform is not None:
+        out.platform, out.platform_label = platform.platform, platform.label
+    if fresh is not None:
+        out.is_final = fresh.is_final
+        out.last_finalized_week = fresh.last_finalized_week
+        out.provisional_weeks = list(fresh.provisional_weeks)
+    out.capabilities = {
+        k: CapabilityOut(state=c.state, note=c.note)
+        for k, c in season_capabilities(session, season_id).items()
+    }
+    return out
+
+
+@router.get("/{season_id}/brackets", response_model=Envelope[list[BracketMatchOut]])
+def get_brackets_endpoint(
+    season_id: int,
+    session: SessionDep,
+) -> Envelope[list[BracketMatchOut]]:
+    """Official playoff brackets (Sleeper seasons; empty for NFL.com seasons)."""
+    if get_season(session, season_id) is None:
+        raise not_found(f"No season with id {season_id}")
+    return Envelope(
+        data=[BracketMatchOut.model_validate(b) for b in brackets_for_season(session, season_id)],
+        meta=build_meta(session),
     )
 
 

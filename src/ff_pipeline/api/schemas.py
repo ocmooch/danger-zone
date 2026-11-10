@@ -119,6 +119,62 @@ class SeasonOut(BaseModel):
     champion_team_id: int | None = None
     runner_up_team_id: int | None = None
     last_place_team_id: int | None = None
+    # S8: provenance, freshness and the capability matrix
+    platform: str = "nfl_com"
+    platform_label: str = "NFL.com"
+    is_final: bool = True
+    last_finalized_week: int | None = None
+    provisional_weeks: list[int] = Field(default_factory=list)
+    capabilities: dict[str, CapabilityOut] = Field(default_factory=dict)
+
+
+class CapabilityOut(BaseModel):
+    """``state``: available | partial | derived | not_yet | not_on_platform |
+    not_used. ``not_used`` carries no note and is rendered as nothing."""
+
+    state: str
+    note: str | None = None
+
+
+class BracketMatchOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    bracket: str
+    round: int
+    match_no: int
+    team1_id: int | None = None
+    team2_id: int | None = None
+    winner_team_id: int | None = None
+    loser_team_id: int | None = None
+    placement: int | None = None
+
+
+class TradedPickOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    pick_season: int
+    round: int
+    original_owner_id: int
+    current_owner_id: int | None = None
+    previous_owner_id: int | None = None
+    observed_at: datetime | None = None
+    source_transaction_id: str | None = None
+
+
+class PlayerStatusOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    player_id: int
+    as_of_date: date
+    source: str
+    injury_status: str | None = None
+    injury_body_part: str | None = None
+    injury_start_date: date | None = None
+    practice_participation: str | None = None
+    depth_chart_position: str | None = None
+    depth_chart_order: int | None = None
+    nfl_team: str | None = None
+    status: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +248,10 @@ class StandingsRow(BaseModel):
     ties: int
     points_for: float
     points_against: float
+    # S8-D3: while the season is active the table is the current state
+    provisional: bool = False
+    live_week: int | None = None
+    live_points_for: float | None = None
 
 
 class Standings(BaseModel):
@@ -308,6 +368,8 @@ class TransactionOut(BaseModel):
     direction: str | None = None
     waiver_priority_used: int | None = None
     notes: str | None = None
+    # S8-D4: every row is returned; ``failed`` = a waiver claim that lost (Sleeper)
+    status: str | None = None
     # Slot move for lineup_change rows ({"from_slot", "to_slot"}) and the
     # change detail for setting_change rows; null for add/drop/trade.
     extra_data: dict[str, Any] | None = None
