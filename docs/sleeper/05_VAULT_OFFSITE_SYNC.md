@@ -105,7 +105,8 @@ Scheduler starts the job instead:
 ```powershell
 # Run once in Windows PowerShell (not as admin). Weekly, Wednesday 07:00 (an hour after the
 # 06:00 capture, so the snapshot includes that week's data); runs at next login if missed.
-# Runs from the main copy (~/danger-zone-main); the weekly run refuses any branch but main.
+# Runs from the main copy (~/danger-zone-main); the weekly run refuses any branch but main,
+# and waits for a running weekly capture (shared lock) before snapshotting.
 $action  = New-ScheduledTaskAction -Execute "wsl.exe" `
            -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone-main/scripts/vault/vault_sync.sh"
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At 7am
