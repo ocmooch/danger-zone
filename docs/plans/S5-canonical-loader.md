@@ -4,8 +4,8 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S5. Design sources: `01_PIPELIN
 §6 (loader), §8.1 (lifecycle); `04_SLEEPER_FIELD_MAPPING.md` §2–§6 (+ §10 probe evidence);
 S4 helpers (`normalizer/{owner_identity,sleeper_players,slots}.py`, `archive_view.py`).
 
-**Status:** PLAN, written 2026-11-09 on `feature/s5-canonical-loader`. Nothing is built yet.
-The decisions at the end need the user's approval before the BUILD session.
+**Status:** PLAN approved 2026-11-09 (decisions S5-D1..D9 as recommended). BUILD in progress on
+`feature/s5-canonical-loader`.
 
 ## Goal
 
@@ -150,7 +150,7 @@ own. The loader only writes DTOs.
 `prune-players` FK failure (5 players); `ruff format` debt (`crawlers/adp/sleeper.py`); PyYAML
 undeclared; console debug lines at `LOG_LEVEL=WARNING`; vault-staleness warning (S9).
 
-## Decisions (recommended defaults — need the user's approval)
+## Decisions (defaults approved by the user 2026-11-09)
 
 | # | Decision | Recommended default | Alternative |
 |---|---|---|---|

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from ff_pipeline.crawlers.sleeper_league.client import (
     ArchiveMissError,
     ArchiveSleeperLeagueSource,
+    SleeperLeagueSource,
 )
 from ff_pipeline.crawlers.sleeper_league.endpoints import (
     Endpoint,
@@ -45,6 +46,9 @@ class ArchivedLeague:
     transactions: list[dict[str, Any]] = field(default_factory=list)
     draft_picks: list[dict[str, Any]] = field(default_factory=list)
     players: dict[str, dict[str, Any]] = field(default_factory=dict)
+    draft: dict[str, Any] = field(default_factory=dict)
+    winners_bracket: list[dict[str, Any]] = field(default_factory=list)
+    matchups_by_week: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 def load_archived_league(session: Session, store: RawStore, league_id: str) -> ArchivedLeague:
@@ -52,12 +56,16 @@ def load_archived_league(session: Session, store: RawStore, league_id: str) -> A
 
     Raises ``ArchiveMissError`` when the league itself was never captured.
     """
-    src = ArchiveSleeperLeagueSource(session, store)
+    return load_league(ArchiveSleeperLeagueSource(session, store), league_id)
+
+
+def load_league(src: SleeperLeagueSource, league_id: str) -> ArchivedLeague:
+    """Every payload of one league season from any source (archive or fixtures)."""
 
     def j(req: PayloadRequest) -> Any:
         try:
             return src.get(req).json()
-        except ArchiveMissError:
+        except (ArchiveMissError, FileNotFoundError):
             return None
 
     league = j(league_request(league_id))
@@ -73,9 +81,15 @@ def load_archived_league(session: Session, store: RawStore, league_id: str) -> A
         return [x for x in got if isinstance(x, dict)] if isinstance(got, list) else []
 
     picks: list[dict[str, Any]] = []
+    draft: dict[str, Any] = {}
     for did in draft_ids(league, j(drafts_request(league_id, season))):
-        picks.extend(lst(draft_requests(league_id, season, did)[1]))
+        detail_req, picks_req = draft_requests(league_id, season, did)
+        detail = j(detail_req)
+        if isinstance(detail, dict) and not draft:
+            draft = detail
+        picks.extend(lst(picks_req))
     players = j(players_request())
+    by_week = {w: lst(by[(Endpoint.MATCHUPS, w)]) for w in range(1, weeks + 1)}
     return ArchivedLeague(
         league_id=league_id,
         season=season,
@@ -83,11 +97,14 @@ def load_archived_league(session: Session, store: RawStore, league_id: str) -> A
         league=league,
         users=lst(by[(Endpoint.USERS, None)]),
         rosters=lst(by[(Endpoint.ROSTERS, None)]),
-        matchups=[m for w in range(1, weeks + 1) for m in lst(by[(Endpoint.MATCHUPS, w)])],
+        matchups=[m for w in range(1, weeks + 1) for m in by_week[w]],
         transactions=[t for w in range(1, weeks + 1) for t in lst(by[(Endpoint.TRANSACTIONS, w)])],
         draft_picks=picks,
         players=players if isinstance(players, dict) else {},
+        draft=draft,
+        winners_bracket=lst(by[(Endpoint.WINNERS_BRACKET, None)]),
+        matchups_by_week=by_week,
     )
 
 
-__all__ = ["ArchivedLeague", "load_archived_league"]
+__all__ = ["ArchivedLeague", "load_archived_league", "load_league"]

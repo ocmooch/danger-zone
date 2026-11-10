@@ -45,6 +45,7 @@ class StubCandidate:
 class Resolution:
     resolved: dict[str, int] = field(default_factory=dict)  # sleeper id -> player_id
     by_method: dict[str, int] = field(default_factory=dict)  # method -> count
+    methods: dict[str, str] = field(default_factory=dict)  # sleeper id -> method
     linked: int = 0  # matches folded through player_identity_links
     stub_needed: list[StubCandidate] = field(default_factory=list)
 
@@ -172,6 +173,7 @@ def resolve(
             res.linked += 1
         res.resolved[sid] = pid
         res.by_method[method] = res.by_method.get(method, 0) + 1
+        res.methods[sid] = method
     return res
 
 
