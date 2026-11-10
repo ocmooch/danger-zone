@@ -4,8 +4,8 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S8 (gate **G3**: the dashboard 
 eras through supported helpers). Design sources: `00_SLEEPER_ERA_MASTER_PLAN.md` §4.1-4.2 (read
 seam, capability matrix), `01_PIPELINE_ARCHITECTURE.md` §8.3 and §9.1, `docs/06_API_CONTRACT.md`.
 
-**Status:** PLAN, written 2026-11-09 on `feature/s8-read-surface`. Nothing is built yet.
-**The decisions at the end need the user's approval before the BUILD session.**
+**Status:** PLAN approved 2026-11-09 with changes (see "Approved decisions" at the end, which
+override the table and the design text where they differ). BUILD on `feature/s8-read-surface`.
 
 ## Goal
 
@@ -127,3 +127,35 @@ the merge it sees the helpers (additive; existing outputs unchanged).
 | S8-D4 | Failed waiver claims in the existing transaction readers and `GET /transactions` | Hidden by default (`include_failed=False`) so "transactions" keeps meaning moves that happened; `failed_waiver_claims()` returns them. | Return them and let every caller filter on `status`. |
 | S8-D5 | How old a status snapshot may be and still count as "status as of" a date | 7 days (one weekly capture); older → no status (an honest gap). | No limit (a 3-week-old injury status would show as current). |
 | S8-D6 | Phase 1 API scope | `SeasonOut` platform + capabilities and `TransactionOut.status` only; brackets / picks / statuses stay helper reads for the dashboard. | Also add Phase 1 endpoints for brackets, traded picks and statuses now. |
+
+## Approved decisions (2026-11-09, the user's words → what is built)
+
+- **S8-D1 approved, "resolve silently":** the `not_used` state exists, carries **no note**, and the
+  contract says consumers render nothing for it (no "no divisions this season" message).
+- **S8-D2 "trades available, co-owners not":** two groups.
+  - *Activity* (`trades_with_picks_faab`, `traded_future_picks`, `faab_failed_bids`): `available`
+    whenever the platform captures them, even with zero events.
+  - *League structure* (`co_owners`, and by the same logic `commissioner_score_overrides` and
+    `official_divisions`): `available` only when present, otherwise `not_used` (silent, D1).
+- **S8-D3 "current state while the season is active, static at season end"** (for standings and
+  every other in-season representation):
+  - Helpers that summarize a season report freshness: `season_freshness(session, season_id)` →
+    `{is_final, last_finalized_week, provisional_weeks}`; in-season outputs carry
+    `provisional = not is_final`.
+  - Standings: W-L-T and PF/PA from finalized games (a game in progress has no result, so never a
+    tie), plus the in-progress week as `live_points_for` / `live_week`; idle postseason rows are
+    not games. At season end nothing is provisional and the output is static.
+  - Capabilities are computed from current data each call; `not_yet` exists only while the
+    season is active.
+- **S8-D4 "include, for richer data" (and other similar sources):** existing readers return
+  everything, with the fields to tell it apart: failed waiver claims and the player-less pick/FAAB
+  legs stay in `list_transactions` / `transactions_for_team` (with `status`, `extra_data`);
+  `player_raw_stats` keeps every source incl. `sleeper` (non-primary). Focused helpers
+  (`failed_waiver_claims`, `trade_assets`) remain for convenience. *Dashboard note:* its team page
+  uses `transactions_for_team`; 2026 views must read `status` (D-milestone work; legacy rows are
+  unaffected).
+- **S8-D5 approved:** 7-day staleness cutoff.
+- **S8-D6 approved, at the agent's discretion given D4:** besides `SeasonOut` platform /
+  capabilities / freshness and `TransactionOut.status`, small read endpoints so the richer data is
+  reachable over HTTP too: `GET /seasons/{id}/brackets`, `GET /leagues/{id}/traded-picks`,
+  `GET /players/{id}/status?as_of=`.
