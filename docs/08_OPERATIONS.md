@@ -130,15 +130,15 @@ ff-pipeline export --table NAME --format csv   # Dump a table for ad-hoc analysi
 
 ## Scheduling
 
-**Sleeper era (2026→, S9):** two Windows Task Scheduler jobs. `dz-sleeper-capture` runs from
-`~/danger-zone-main`, a worktree pinned to `main` that shares the live `data/` and `.env`, and
-refuses any other branch (RUNBOOK "The main copy"). `dz-vault-sync` still runs whatever branch
-`~/danger-zone` has checked out (keep it on `dev`).
+**Sleeper era (2026→, S9):** two Windows Task Scheduler jobs, both on Wednesday and both run from
+`~/danger-zone-main`. That folder is a worktree pinned to `main` that shares the live `data/` and
+`.env`. Both scripts refuse any branch but `main` (RUNBOOK "The main copy"). They stay separate
+tasks so a Sleeper outage or a failed capture can never stop the backup.
 
 | Task | When | What |
 |---|---|---|
 | `dz-sleeper-capture` | Wed 06:00 ET (after Monday night + Tuesday's stat corrections) | `scripts/sleeper/weekly_capture.sh`: capture (every week to date; follows a renewed league) → `sleeper-league update --if-enabled` (load + score; on only once `SLEEPER_AUTO_LOAD=true`) → full `legacy verify`. Log `data/logs/sleeper_capture-<date>.log`. |
-| `dz-vault-sync` | Sun 03:00 | `scripts/vault/vault_sync.sh`: encrypted snapshot (DB + raw Sleeper archive + assets) to every vault destination; 4 rotating copies + every `seal-*` pinned. |
+| `dz-vault-sync` | Wed 07:00 (an hour after the capture, so the snapshot includes that week's data) | `scripts/vault/vault_sync.sh`: encrypted snapshot (DB + raw Sleeper archive + assets) to every vault destination; 4 rotating copies + every `seal-*` pinned. |
 
 Check either with `schtasks.exe /Query /TN <task> /V /FO LIST` ("Last Result" 0 = ok). A failed
 step stops the job with a non-zero exit; nothing retries silently, and the next run re-does

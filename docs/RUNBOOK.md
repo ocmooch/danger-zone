@@ -441,7 +441,8 @@ stops at the first failure. Fix the cause, then run the same thing by hand from 
 (`cd ~/danger-zone-main && uv run ff-pipeline sleeper-league update`). Nothing is lost by waiting
 a week: every capture re-fetches the whole season.
 
-**The main copy (`~/danger-zone-main`):** captures run only on released code, never on `dev` or a
+**The main copy (`~/danger-zone-main`):** the weekly capture (Wed 06:00) and the vault sync
+(Wed 07:00) run only on released code, never on `dev` or a
 feature branch, whose unfinished work could change what a capture records. The main copy is a
 git worktree of this repo pinned to `main`. It shares the live data by symlinks: `.env` and
 `data/{fantasy.db, fantasy_validation.db, owner_platform_identities.yaml, assets, raw, reports,
@@ -449,10 +450,8 @@ logs, backups, nflverse_cache}` point into `~/danger-zone`. The tracked files in
 `main`. A sparse checkout hides the three `.gitkeep` files under the linked directories, so
 `git status` stays clean. Never commit or develop in it.
 
-- **After each `dev → main` release:** `cd ~/danger-zone-main && git pull --ff-only`, then
-  back up and `uv run ff-pipeline migrate up` if the release adds a migration. Until then the job
-  keeps running the previous release. Tag from here or with `git tag -a vX.Y.Z origin/main`
-  (`main` can't be checked out in `~/danger-zone` while this worktree holds it).
+- **After each `dev → main` release:** follow the release checklist in `CONTRIBUTING.md`
+  ("Releases"). Until the main copy is pulled, both jobs keep running the previous release.
 - **Rebuild it** (e.g. after a WSL reinstall):
   ```bash
   cd ~/danger-zone && git worktree add --no-checkout ~/danger-zone-main main && cd ~/danger-zone-main
