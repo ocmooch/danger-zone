@@ -176,7 +176,7 @@ def test_transaction_legs(bundle: SeasonBundle) -> None:
 def test_trade_legs_with_counterparts() -> None:
     data = fixture_league(synthetic=True)
     b = normalize(data, fixture_ids(data))
-    trade = [t for t in b.transactions if t.transaction_type == "trade"]
+    trade = [t for t in b.transactions if t.transaction_type == "trade" and t.player_id]
     assert len(trade) == 4  # two players, an in and an out leg each
     for leg in trade:
         assert leg.counterpart_key is not None and leg.counterpart_key != leg.team_key
@@ -201,3 +201,39 @@ def test_unmapped_user_fails_loudly(data: ArchivedLeague) -> None:
 def test_fixture_directory_is_what_the_tests_assume() -> None:
     d = json.loads((FX / "season_2026" / "v1_players_nfl.json").read_text())
     assert sum(1 for k in d if not k.isdigit()) == 28  # team defenses
+
+
+def test_trade_picks_and_faab_ride_on_player_less_legs() -> None:
+    data = fixture_league(synthetic=True)
+    b = normalize(data, fixture_ids(data))
+    assets = {
+        t.team_key: t.extra_data
+        for t in b.transactions
+        if t.transaction_type == "trade" and t.player_id is None
+    }
+    pick = {"season": 2027, "round": 2, "original_team_key": team_key(1)}
+    assert assets == {
+        team_key(1): {"picks_in": [], "picks_out": [pick], "faab_in": 7, "faab_out": 0},
+        team_key(2): {"picks_in": [pick], "picks_out": [], "faab_in": 0, "faab_out": 7},
+    }
+    assert len({t.key for t in b.transactions}) == len(b.transactions)
+
+
+def test_team_extras_settings_snapshot_and_avatar_urls(bundle: SeasonBundle) -> None:
+    t = bundle.teams[0]
+    assert t.extra_data is not None
+    assert set(t.extra_data) >= {"ppts", "streak", "record_string", "total_moves", "as_of_week"}
+    assert t.extra_data["as_of_week"] == 8
+    assert t.division is None  # no divisions in 2026
+    snap = bundle.season.settings_snapshot or {}
+    assert set(snap) == {"settings", "roster_positions", "scoring_settings", "draft"}
+    assert "name" not in snap and "metadata" not in snap
+    assert snap["draft"]["rounds"] == 15
+
+
+def test_undecided_brackets_give_rows_but_no_places(bundle: SeasonBundle) -> None:
+    assert len(bundle.brackets) == 14
+    assert {m.bracket for m in bundle.brackets} == {"winners", "losers"}
+    assert not any(t.final_rank for t in bundle.teams)
+    assert bundle.results.champion_key is None
+    assert not any(m.is_playoff for m in bundle.matchups)  # weeks 1-9 are regular season

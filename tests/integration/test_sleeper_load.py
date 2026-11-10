@@ -137,6 +137,8 @@ def test_load_is_idempotent_and_matches_sleeper_records(db: Path, engine: Engine
         "matchups": 108,
         "team_rosters": sum(c.inserted for c in [r.counts["team_rosters"]]),
         "transactions": r.counts["transactions"].inserted,
+        "playoff_brackets": 14,  # 7 + 7 pre-generated matches (S7)
+        "traded_picks": 0,
     }
     assert r.counts["team_rosters"].inserted > 1500
     assert r.record_mismatches == []

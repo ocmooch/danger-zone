@@ -18,6 +18,7 @@ from ff_pipeline.crawlers.sleeper_league.archive_view import ArchivedLeague, loa
 from ff_pipeline.crawlers.sleeper_league.endpoints import SOURCE, Endpoint
 from ff_pipeline.normalizer.sleeper_league import IdentityMaps, normalize
 from ff_pipeline.normalizer.sleeper_players import league_referenced_ids, resolve
+from ff_pipeline.normalizer.sleeper_status import store_status_snapshots
 from ff_pipeline.repository.models import (
     Owner,
     OwnerPlatformIdentity,
@@ -28,6 +29,8 @@ from ff_pipeline.repository.models import (
 )
 
 if TYPE_CHECKING:
+    from datetime import date
+
     from sqlalchemy.orm import Session
 
     from ff_pipeline.archive.raw_store import RawStore
@@ -169,6 +172,7 @@ class SeasonLoad:
     season: int
     result: LoadResult
     prep: PlayerPrep
+    status_snapshots: int = 0  # rows written to player_status_snapshots (S7)
 
 
 def load_league_season(
@@ -178,15 +182,23 @@ def load_league_season(
     *,
     franchise_league_id: str = FRANCHISE_LEAGUE_ID,
     reserve_by_week: dict[int, dict[int, set[str]]] | None = None,
+    directory_revisions: list[tuple[date, dict[str, Any]]] | None = None,
 ) -> SeasonLoad:
-    """Normalize + load one Sleeper league season. The caller commits."""
+    """Normalize + load one Sleeper league season. The caller commits.
+
+    ``directory_revisions`` (capture date, players directory) feed the status
+    snapshots for the league's players (S7)."""
     data = load_league(source, league_id)
     ids, prep = build_identity_maps(
         session, data, league_id=franchise_league_id, reserve_by_week=reserve_by_week
     )
     bundle = normalize(data, ids)
     result = load_season(session, bundle, league_id=franchise_league_id)
-    return SeasonLoad(season=data.season, result=result, prep=prep)
+    snaps = 0
+    if directory_revisions:
+        c = store_status_snapshots(session, directory_revisions, player_ids=ids.player_ids)
+        snaps = c.rows_added + c.rows_updated
+    return SeasonLoad(season=data.season, result=result, prep=prep, status_snapshots=snaps)
 
 
 __all__ = [

@@ -355,6 +355,11 @@ def _synthetic(
     }
     tx_req = fake_reqs[(Endpoint.TRANSACTIONS, 1)]
     files[f"synthetic/{tx_req.fixture_name}"] = [trade, *files[f"{base}/{tx_req.fixture_name}"]]
+    # the traded pick as /traded_picks lists it afterwards (S7)
+    tp_req = fake_reqs[(Endpoint.TRADED_PICKS, None)]
+    files[f"synthetic/{tp_req.fixture_name}"] = [
+        {**trade["draft_picks"][0], "_synthetic": True}  # type: ignore[index]
+    ]
     # commissioner custom_points on one team-week (week 1)
     m_req = fake_reqs[(Endpoint.MATCHUPS, 1)]
     matchups = copy.deepcopy(files[f"{base}/{m_req.fixture_name}"])

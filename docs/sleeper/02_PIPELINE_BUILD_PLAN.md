@@ -192,7 +192,7 @@ fixture (Sleeper `players_points` == engine output for a clean player-week); rec
 **Done when:** rules written and approved; 2026 scored; reconcile report committed under
 `docs/sleeper/reports/`; residual divergences explained.
 
-## S7 — Rich Sleeper data
+## S7 — Rich Sleeper data — **DONE** (2026-11-09; plan `docs/plans/S7-rich-sleeper-data.md`)
 
 **Goal:** the new facts the dashboard will surface.
 

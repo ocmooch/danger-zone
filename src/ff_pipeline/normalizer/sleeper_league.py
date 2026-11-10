@@ -8,7 +8,7 @@ Mapping rules: ``docs/sleeper/04_SLEEPER_FIELD_MAPPING.md`` §2-§6 and
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -18,8 +18,10 @@ from ff_pipeline.canonical.dto import (
     SeasonBundle,
     SeasonDTO,
     TeamDTO,
+    TradedPickDTO,
     TxLegDTO,
 )
+from ff_pipeline.normalizer.sleeper_brackets import derive_postseason
 from ff_pipeline.normalizer.slots import reserve_slot, starter_slots
 
 if TYPE_CHECKING:
@@ -37,6 +39,7 @@ ADD_TYPE = {
     "commissioner": "free_agent_add",
 }
 LOADED_TX_STATUS = frozenset({"complete", "failed"})
+AVATAR_BASE = "https://sleepercdn.com/avatars"
 
 
 class NormalizeError(ValueError):
@@ -64,16 +67,116 @@ def normalize(data: ArchivedLeague, ids: IdentityMaps) -> SeasonBundle:
     season = _season(data, settings)
     bundle = SeasonBundle(season=season)
     rosters = {int(r["roster_id"]): r for r in data.rosters}
-    bundle.teams = _teams(data, rosters, ids)
+    bundle.teams = _teams(data, rosters, ids, season.last_finalized_week)
     bundle.matchups, week_rosters = _matchups(data, season, ids, bundle.warnings)
     bundle.rosters = _draft_rosters(data, ids, bundle.warnings) + week_rosters
     bundle.transactions = _draft_legs(data, ids, bundle.warnings) + _transactions(
         data, ids, bundle.warnings
     )
+    _apply_postseason(data, settings, bundle)
+    bundle.traded_picks = _traded_picks(data)
     return bundle
 
 
-# ── season / teams ───────────────────────────────────────────────────────────
+def avatar_urls(data: ArchivedLeague) -> list[tuple[str, str]]:
+    """``(kind, url)`` for every league / user / team avatar (S7-D8)."""
+    out: list[tuple[str, str]] = []
+    if data.league.get("avatar"):
+        out.append(("league_avatar", f"{AVATAR_BASE}/{data.league['avatar']}"))
+    for u in data.users:
+        if u.get("avatar"):
+            out.append(("owner_avatar", f"{AVATAR_BASE}/{u['avatar']}"))
+        team_avatar = str((u.get("metadata") or {}).get("avatar") or "").strip()
+        if team_avatar.startswith("http"):
+            out.append(("team_avatar", team_avatar))
+    return out
+
+
+# ── postseason (S7) ──────────────────────────────────────────────────────────
+
+
+def _apply_postseason(data: ArchivedLeague, settings: dict[str, Any], bundle: SeasonBundle) -> None:
+    scores = {(m.week, m.team_key): m.team_score for m in bundle.matchups if m.finalized}
+    post = derive_postseason(
+        winners=data.winners_bracket,
+        losers=data.losers_bracket,
+        team_key=team_key,
+        playoff_week_start=_int(settings.get("playoff_week_start")),
+        playoff_round_type=_int(settings.get("playoff_round_type")),
+        last_finalized_week=bundle.season.last_finalized_week,
+        scores=scores,
+    )
+    bundle.brackets = post.matches
+    bundle.results = post.results
+    bundle.warnings.extend(post.warnings)
+    flagged: list[MatchupDTO] = []
+    for m in bundle.matchups:
+        tw = post.team_weeks.get((m.week, m.team_key))
+        if tw is None:
+            flagged.append(m)
+            continue
+        extra = dict(m.extra_data)
+        if tw["role"] != "game":
+            extra["postseason_role"] = tw["role"]
+        flagged.append(
+            replace(
+                m,
+                is_playoff=tw["is_playoff"],
+                is_consolation=tw["is_consolation"],
+                extra_data=extra,
+            )
+        )
+    bundle.matchups = flagged
+    bundle.teams = [
+        replace(
+            t,
+            final_rank=post.places.get(t.team_key),
+            playoff_finish=post.places.get(t.team_key),
+            made_playoffs=post.made_playoffs.get(t.team_key),
+        )
+        for t in bundle.teams
+    ]
+
+
+def _traded_picks(data: ArchivedLeague) -> list[TradedPickDTO]:
+    """Current owners of traded future picks; the latest completed trade that
+    moved each pick to its current owner is its source (S7-D6)."""
+    PickKey = tuple[int, int, int, int]  # season, round, original roster, new owner
+    source: dict[PickKey, tuple[int, str]] = {}
+    for t in data.transactions:
+        if t.get("type") != "trade" or t.get("status") != "complete":
+            continue
+        when = _int(t.get("status_updated")) or _int(t.get("created")) or 0
+        for p in t.get("draft_picks") or []:
+            key = _pick_key(p)
+            if key is not None and (key not in source or when >= source[key][0]):
+                source[key] = (when, str(t.get("transaction_id")))
+    out: list[TradedPickDTO] = []
+    for p in data.traded_picks:
+        key = _pick_key(p)
+        if key is None or key[2] == key[3]:
+            continue  # back with its original owner: not a traded pick
+        prev = _int(p.get("previous_owner_id"))
+        src = source.get(key)
+        out.append(
+            TradedPickDTO(
+                pick_season=key[0],
+                round=key[1],
+                original_key=team_key(key[2]),
+                current_key=team_key(key[3]),
+                previous_key=team_key(prev) if prev is not None else None,
+                source_transaction_id=src[1] if src else None,
+            )
+        )
+    return out
+
+
+def _pick_key(p: dict[str, Any]) -> tuple[int, int, int, int] | None:
+    vals = [_int(p.get(k)) for k in ("season", "round", "roster_id", "owner_id")]
+    if any(v is None for v in vals):
+        return None
+    season, rnd, orig, owner = (int(v) for v in vals)  # type: ignore[arg-type]
+    return (season, rnd, orig, owner)
 
 
 def _season(data: ArchivedLeague, settings: dict[str, Any]) -> SeasonDTO:
@@ -92,11 +195,28 @@ def _season(data: ArchivedLeague, settings: dict[str, Any]) -> SeasonDTO:
         platform_league_id=data.league_id,
         platform_draft_id=_str(data.league.get("draft_id")),
         last_finalized_week=last_scored,
+        settings_snapshot=_settings_snapshot(data),
     )
 
 
+def _settings_snapshot(data: ArchivedLeague) -> dict[str, Any]:
+    """League settings without the name, avatar or metadata (imported-history ids)."""
+    draft = data.draft or {}
+    return {
+        "settings": data.league.get("settings") or {},
+        "roster_positions": data.league.get("roster_positions") or [],
+        "scoring_settings": data.league.get("scoring_settings") or {},
+        "draft": {
+            "type": draft.get("type"),
+            "rounds": (draft.get("settings") or {}).get("rounds"),
+            "draft_order": draft.get("draft_order"),
+            "slot_to_roster_id": draft.get("slot_to_roster_id"),
+        },
+    }
+
+
 def _teams(
-    data: ArchivedLeague, rosters: dict[int, dict[str, Any]], ids: IdentityMaps
+    data: ArchivedLeague, rosters: dict[int, dict[str, Any]], ids: IdentityMaps, last_scored: int
 ) -> list[TeamDTO]:
     users = {str(u.get("user_id")): u for u in data.users}
     slot_of_roster = {
@@ -129,6 +249,19 @@ def _teams(
             name, n = f"{base} ({n})", n + 1
         used_names.add(name)
         s = r.get("settings") or {}
+        user = users.get(user_id) or {}
+        team_avatar = str(meta.get("avatar") or "").strip()
+        extras: dict[str, Any] = {
+            "ppts": _points(s.get("ppts"), s.get("ppts_decimal")),
+            "streak": (r.get("metadata") or {}).get("streak"),
+            "record_string": (r.get("metadata") or {}).get("record"),
+            "waiver_position": _int(s.get("waiver_position")),
+            "waiver_budget_used": _int(s.get("waiver_budget_used")),
+            "total_moves": _int(s.get("total_moves")),
+            "as_of_week": last_scored,
+        }
+        if r.get("co_owners"):
+            extras["co_owner_user_ids"] = [str(x) for x in r["co_owners"]]
         teams.append(
             TeamDTO(
                 team_key=team_key(rid),
@@ -142,6 +275,12 @@ def _teams(
                     _int(s.get("ties")) or 0,
                     _points(s.get("fpts"), s.get("fpts_decimal")),
                     _points(s.get("fpts_against"), s.get("fpts_against_decimal")),
+                ),
+                division=_str(s.get("division")),
+                extra_data=extras,
+                team_avatar_url=team_avatar if team_avatar.startswith("http") else None,
+                owner_avatar_url=(
+                    f"{AVATAR_BASE}/{user['avatar']}" if user.get("avatar") else None
                 ),
             )
         )
@@ -340,6 +479,7 @@ def _transactions(data: ArchivedLeague, ids: IdentityMaps, warnings: list[str]) 
             return p
 
         if kind == "trade":
+            legs.extend(_trade_asset_legs(t, tid, when, week, status))
             for sid, to_rid in adds.items():
                 from_rid = drops.get(sid)
                 p = pid(sid)
@@ -439,6 +579,62 @@ def _transactions(data: ArchivedLeague, ids: IdentityMaps, warnings: list[str]) 
                         extra_data=drop_extra,
                     )
                 )
+    return legs
+
+
+def _trade_asset_legs(
+    t: dict[str, Any], tid: str, when: datetime | None, week: int | None, status: str
+) -> list[TxLegDTO]:
+    """One player-less ``trade`` leg per team that moved picks or FAAB (S7-D5)."""
+    picks = t.get("draft_picks") or []
+    budget = t.get("waiver_budget") or []
+    rids = {int(r) for r in (t.get("roster_ids") or [])}
+    rids |= {
+        int(p[k]) for p in picks for k in ("owner_id", "previous_owner_id") if p.get(k) is not None
+    }
+    rids |= {int(b[k]) for b in budget for k in ("sender", "receiver") if b.get(k) is not None}
+
+    def pick(p: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "season": _int(p.get("season")),
+            "round": _int(p.get("round")),
+            "original_team_key": team_key(p["roster_id"])
+            if p.get("roster_id") is not None
+            else None,
+        }
+
+    legs: list[TxLegDTO] = []
+    for rid in sorted(rids):
+        assets = {
+            "picks_in": [pick(p) for p in picks if _int(p.get("owner_id")) == rid],
+            "picks_out": [pick(p) for p in picks if _int(p.get("previous_owner_id")) == rid],
+            "faab_in": sum(
+                _int(b.get("amount")) or 0 for b in budget if _int(b.get("receiver")) == rid
+            ),
+            "faab_out": sum(
+                _int(b.get("amount")) or 0 for b in budget if _int(b.get("sender")) == rid
+            ),
+        }
+        if not (
+            assets["picks_in"] or assets["picks_out"] or assets["faab_in"] or assets["faab_out"]
+        ):
+            continue
+        others = sorted(rids - {rid})
+        legs.append(
+            TxLegDTO(
+                tid,
+                "trade",
+                "in",
+                team_key(rid),
+                None,
+                when,
+                week,
+                status,
+                counterpart_key=team_key(others[0]) if len(others) == 1 else None,
+                notes="draft picks / FAAB",
+                extra_data=assets,
+            )
+        )
     return legs
 
 

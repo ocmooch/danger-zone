@@ -6,13 +6,14 @@ new, and removed when stale. Re-running a load therefore changes nothing, and
 surrogate ids stay stable across reloads. The caller commits.
 
 Order: season → teams → matchups → rosters (draft week 0 + weekly) →
-transactions → records → rostered spans → owners recompute.
+transactions → brackets, season results, traded picks (S7) → records →
+rostered spans → owners recompute.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from sqlalchemy import select
@@ -20,18 +21,19 @@ from sqlalchemy import select
 from ff_pipeline.repository.legacy_guard import SealedSeasonError, assert_writable
 from ff_pipeline.repository.maintenance import recompute_rostered_spans
 from ff_pipeline.repository.models import (
+    Asset,
     LegacySealedRow,
     Matchup,
     Owner,
+    PlayoffBracket,
     Season,
     Team,
     TeamRoster,
+    TradedPick,
     Transaction,
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from sqlalchemy.orm import Session
 
     from ff_pipeline.canonical.dto import SeasonBundle
@@ -118,6 +120,8 @@ def load_season(
     res.season_id = season.season_id
     assert_writable(session, season.season_id)
 
+    avatar_ids = _avatar_ids(session, bundle)
+
     # teams
     teams: dict[str | None, Team] = {
         t.platform_team_key: t
@@ -147,6 +151,13 @@ def load_season(
                 "team_name": t.team_name,
                 "team_abbrev": t.team_abbrev,
                 "draft_position": t.draft_position,
+                "division": t.division,
+                "extra_data": t.extra_data,
+                "final_rank": t.final_rank,
+                "playoff_finish": t.playoff_finish,
+                "made_playoffs": t.made_playoffs,
+                "team_avatar_asset_id": avatar_ids.get(t.team_avatar_url or ""),
+                "owner_avatar_asset_id": avatar_ids.get(t.owner_avatar_url or ""),
             }
             for t in bundle.teams
         },
@@ -179,8 +190,8 @@ def load_season(
                 "team_score": m.team_score,
                 "opponent_score": m.opponent_score,
                 "is_win": _is_win(m.team_score, m.opponent_score) if m.finalized else None,
-                "is_playoff": False,
-                "is_consolation": False,
+                "is_playoff": m.is_playoff,
+                "is_consolation": m.is_consolation,
                 "platform_matchup_key": m.platform_matchup_key,
                 "extra_data": m.extra_data,
             }
@@ -266,11 +277,115 @@ def load_season(
         },
     )
 
+    _load_postseason(session, season, bundle, team_id, res)
+    res.counts["traded_picks"] = _load_traded_picks(session, season, bundle, league_id)
+
     res.record_mismatches = _records(session, season, bundle, team_id)
     res.spans_refreshed = recompute_rostered_spans(session)
     res.owner_changes, res.owner_blocked = _recompute_owners(session, league_id)
     session.flush()
     return res
+
+
+def _avatar_ids(session: Session, bundle: SeasonBundle) -> dict[str, int]:
+    """Asset ids for the avatar URLs the capture already downloaded (S7-D8)."""
+    urls = {u for t in bundle.teams for u in (t.team_avatar_url, t.owner_avatar_url) if u}
+    if not urls:
+        return {}
+    return {
+        str(url): int(aid)
+        for url, aid in session.execute(
+            select(Asset.source_url, Asset.asset_id).where(Asset.source_url.in_(urls))
+        ).tuples()
+    }
+
+
+def _load_postseason(
+    session: Session,
+    season: Season,
+    bundle: SeasonBundle,
+    team_id: dict[str, int],
+    res: LoadResult,
+) -> None:
+    def tid(key: str | None) -> int | None:
+        return team_id.get(key) if key is not None else None
+
+    existing = {
+        (b.bracket, b.round, b.match_no): b
+        for b in session.scalars(
+            select(PlayoffBracket).where(PlayoffBracket.season_id == season.season_id)
+        )
+    }
+    res.counts["playoff_brackets"] = _sync(
+        session,
+        PlayoffBracket,
+        existing,
+        {
+            (b.bracket, b.round, b.match_no): {
+                "season_id": season.season_id,
+                "bracket": b.bracket,
+                "round": b.round,
+                "match_no": b.match_no,
+                "team1_id": tid(b.team1_key),
+                "team2_id": tid(b.team2_key),
+                "winner_team_id": tid(b.winner_key),
+                "loser_team_id": tid(b.loser_key),
+                "placement": b.placement,
+                "team1_from": b.team1_from,
+                "team2_from": b.team2_from,
+                "source": "sleeper",
+            }
+            for b in bundle.brackets
+        },
+    )
+    r = bundle.results
+    for col, key in (
+        ("champion_team_id", r.champion_key),
+        ("runner_up_team_id", r.runner_up_key),
+        ("last_place_team_id", r.last_place_key),
+    ):
+        if getattr(season, col) != tid(key):
+            setattr(season, col, tid(key))
+    session.flush()
+
+
+def _load_traded_picks(
+    session: Session, season: Season, bundle: SeasonBundle, league_id: str
+) -> Counts:
+    """Current owners of traded future picks (pick seasons after this one), S7-D6."""
+    owner_of = {t.team_key: t.owner_id for t in bundle.teams}
+    existing = {
+        (p.pick_season, p.round, p.original_owner_id): p
+        for p in session.scalars(
+            select(TradedPick).where(
+                TradedPick.league_id == league_id, TradedPick.pick_season > season.year
+            )
+        )
+    }
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    incoming: dict[tuple[int, int, int], dict[str, Any]] = {}
+    for p in bundle.traded_picks:
+        if p.pick_season <= season.year or p.original_key not in owner_of:
+            continue
+        key = (p.pick_season, p.round, owner_of[p.original_key])
+        current = owner_of.get(p.current_key)
+        old = existing.get(key)
+        incoming[key] = {
+            "league_id": league_id,
+            "pick_season": p.pick_season,
+            "round": p.round,
+            "original_owner_id": key[2],
+            "current_owner_id": current,
+            "previous_owner_id": owner_of.get(p.previous_key) if p.previous_key else None,
+            # first seen with its current owner
+            "observed_at": (
+                old.observed_at if old is not None and old.current_owner_id == current else now
+            ),
+            "source_transaction_id": p.source_transaction_id,
+            "extra_data": {"original_team_key": p.original_key, "current_team_key": p.current_key},
+        }
+    counts = _sync(session, TradedPick, existing, incoming)
+    return counts
 
 
 def _season(session: Session, bundle: SeasonBundle, *, league_id: str, platform: str) -> Season:
@@ -295,6 +410,7 @@ def _season(session: Session, bundle: SeasonBundle, *, league_id: str, platform:
         ("playoff_weeks", dto.playoff_weeks),
         ("platform_league_id", dto.platform_league_id),
         ("platform_draft_id", dto.platform_draft_id),
+        ("settings_snapshot", dto.settings_snapshot),
     ):
         if getattr(season, col) != val:
             setattr(season, col, val)

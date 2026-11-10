@@ -348,6 +348,13 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
               -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
   Register-ScheduledTask -TaskName "dz-sleeper-capture" -Action $action -Trigger $trigger -Settings $settings
   ```
+- **Status snapshots (S7-D7):** the weekly capture's players directory (Wednesday 06:00 ET,
+  after Monday night) becomes one `player_status_snapshots` row per league player at the next
+  load: the status after that week's games. Each week's official game status (Out / Doubtful /
+  Questionable) comes from nflverse: `uv run ff-pipeline injury-reports --season 2026`
+  (`player_injury_reports`; part of the go-live sequence).
+- A full capture also downloads the league / owner / team avatars into `ASSETS_DIR` (new URLs
+  only, deduped by sha256); the load links them to `teams`.
 - Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
   `scripts/sleeper/build_fixtures.py` (pseudonymized test fixtures; review the diff before commit).
 
@@ -388,6 +395,10 @@ uv run ff-pipeline sleeper-league load             # archive → seasons/teams/m
   (re-capture, then reload) or a mapping bug (stop and investigate).
 - "owner change NOT written": a sealed (legacy) owner would change `is_active`/`joined_year`/
   `left_year`, which needs `legacy amend`.
+- Since S7 the load also writes `playoff_brackets`, postseason flags and places, season results
+  (champion / runner-up / Sacko), `traded_picks`, team extras, `seasons.settings_snapshot` and
+  status snapshots. A warning "bracket winner scored less than loser" means Sleeper's bracket
+  may run loser-advances: places are withheld; re-probe the bracket (`04` §7) before trusting it.
 - **Live use is gated (S5-D1):** load the live DB only once the dashboard is ready to show 2026
   (dz-dashboard D0–D3). Until then, use a copy.
 
@@ -397,6 +408,7 @@ Run after a season load, in this order (each is offline except the nflverse fetc
 
 ```
 uv run ff-pipeline sleeper-league adopt-gsis --season 2026          # list; then --apply
+uv run ff-pipeline injury-reports --season 2026                     # weekly official game status
 uv run ff-pipeline run --source nflverse --season 2026              # stats + 40+/ST play counts
 uv run ff-pipeline sleeper-league rules --diff 2025                 # review; then --write
 uv run ff-pipeline run --source team_defense --season 2026          # DST rows (Sleeper PA rule)
