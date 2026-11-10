@@ -103,10 +103,12 @@ WSL shuts down when nothing is running, so timers inside WSL can't be relied on.
 Scheduler starts the job instead:
 
 ```powershell
-# Run once in Windows PowerShell (not as admin). Weekly, Sunday 03:00; runs at next login if missed.
+# Run once in Windows PowerShell (not as admin). Weekly, Wednesday 07:00 (an hour after the
+# 06:00 capture, so the snapshot includes that week's data); runs at next login if missed.
+# Runs from the main copy (~/danger-zone-main); the weekly run refuses any branch but main.
 $action  = New-ScheduledTaskAction -Execute "wsl.exe" `
-           -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone/scripts/vault/vault_sync.sh"
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3am
+           -Argument "-d Ubuntu -u mainuser -- /home/mainuser/danger-zone-main/scripts/vault/vault_sync.sh"
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At 7am
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
             -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 Register-ScheduledTask -TaskName "dz-vault-sync" -Action $action -Trigger $trigger -Settings $settings
