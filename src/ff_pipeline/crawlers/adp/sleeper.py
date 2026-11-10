@@ -179,9 +179,8 @@ def _parse(rows: list[dict[str, Any]], *, stat_key: str) -> list[AdpEntry]:
             AdpEntry(
                 source=SOURCE_NAME,
                 source_player_key=sleeper_id,
-                name=_opt_str(player.get("full_name")) or _join_name(
-                    player.get("first_name"), player.get("last_name")
-                ),
+                name=_opt_str(player.get("full_name"))
+                or _join_name(player.get("first_name"), player.get("last_name")),
                 position=_opt_str(player.get("position")),
                 nfl_team=_opt_str(raw.get("team")) or _opt_str(player.get("team")),
                 adp=adp,

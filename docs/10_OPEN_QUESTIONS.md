@@ -406,6 +406,18 @@ v1.0.0 closes Phase 1, so re-evaluate these before Phase 2 design:
 
 ---
 
+## Sleeper-era program (S0–S9) — closed 2026-11-10
+
+Every S-milestone decision is recorded with the user's wording in `docs/plans/S1…S9-*.md`. Open
+follow-ups (operational, not design):
+
+- **2026 go-live**: one approved `sleeper-league update`, then `SLEEPER_AUTO_LOAD=true`; waits for
+  the dashboard (its D0 snapshots first, D1–D3 built).
+- **Bracket re-probe** after weeks 15 and 17 (`04` §7 ⏸): confirm Sleeper's `w`/`l` semantics on
+  decided games before trusting places on live.
+- **Key restore drill**: the user's `restore_check.sh` run, logged in `docs/sleeper/drills.md`.
+- **Season close** (~mid-January 2027): `legacy seal-season --season 2026 --champion "…"`.
+
 ## Locked in — do not re-litigate
 
 Stated so they aren't reopened in later sessions:

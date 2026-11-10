@@ -86,3 +86,14 @@ def test_evergreen_folders_are_never_sync_destinations() -> None:
     assert sync.EVERGREEN_ICLOUD != sync.ICLOUD_DIR
     assert sync.EVERGREEN_LOCAL.resolve() != sync.VAULT.resolve()
     assert "evergreen" not in str(sync.OUTBOX)
+
+
+def test_retention_pins_every_seal() -> None:
+    seals = [
+        "dz-vault_seal-v1_20261107_aaaaaaaa.tar.gz.age",
+        "dz-vault_seal-v2_20270115_cccccccc.tar.gz.age",
+    ]
+    snaps = [f"dz-vault_snap_202701{d:02d}_bbbbbbbb.tar.gz.age" for d in range(1, 10)]
+    keep, delete = sync.plan_retention([*seals, *snaps])
+    assert set(seals) <= set(keep) and not set(seals) & set(delete)
+    assert len(keep) == 2 + 4

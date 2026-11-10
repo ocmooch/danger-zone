@@ -140,6 +140,13 @@ def capture_cmd(
         f"non-2xx {len(summary.non_ok)}, errors {len(summary.errors)}"
         + (", players directory fresh (skipped)" if summary.players_skipped else "")
     )
+    if summary.renewed_league_id:
+        typer.secho(
+            f"renewed league found and archived: {summary.renewed_league_id} "
+            f"(season {summary.season}). Set SLEEPER_LEAGUE_ID to it; loading the new season "
+            "waits for your go-ahead (owners map, rules sign-off).",
+            fg="yellow",
+        )
     for line in summary.non_ok:
         typer.echo(f"  non-2xx: {line}")
     for line in summary.errors:
@@ -386,6 +393,11 @@ def rules_cmd(
     write: bool = typer.Option(
         False, "--write", help="Replace the season's scoring_rules with the derived set (D-10)."
     ),
+    check: bool = typer.Option(
+        False,
+        "--check",
+        help="Exit 3 if the derived rules differ from the season's stored rules (S9 weekly job).",
+    ),
 ) -> None:
     """Derive scoring rules from the archived league's scoring_settings (S6; offline)."""
     from sqlalchemy import select
@@ -423,6 +435,33 @@ def rules_cmd(
                 typer.secho(f"sleeper-league rules: {exc}", fg="red", err=True)
                 raise typer.Exit(code=1) from exc
             typer.echo(f"season {data.season}: {len(rows)} rules derived")
+            if check:
+                stored = [
+                    RuleRow(
+                        r.category,
+                        r.stat_key,
+                        float(r.points_per_unit or 0.0),
+                        float(r.unit_size or 1.0),
+                        r.threshold_min,
+                        r.threshold_max,
+                        r.flat_points,
+                    )
+                    for r in ss.scalars(
+                        select(ScoringRule)
+                        .join(Season, Season.season_id == ScoringRule.season_id)
+                        .where(Season.league_id == FRANCHISE_LEAGUE_ID, Season.year == data.season)
+                    )
+                ]
+                d = diff_rules(stored, rows)
+                if stored and d.identical:
+                    typer.echo("rules unchanged")
+                    return
+                typer.secho(
+                    "scoring rules changed (or none stored): review with "
+                    "`sleeper-league rules --diff <year>` and sign off before `--write`",
+                    fg="yellow",
+                )
+                raise typer.Exit(code=3)
             if diff is not None:
                 other = [
                     RuleRow(
@@ -595,3 +634,112 @@ def adopt_gsis_cmd(
     )
     if apply and plan.adoptions:
         typer.echo("  next: `run --source nflverse --season N`, then `rescore --season N`")
+
+
+UPDATE_RULES_CHANGED = 3
+
+
+@sleeper_league_app.command("update")
+def update_cmd(
+    if_enabled: bool = typer.Option(
+        False, "--if-enabled", help="Do nothing unless SLEEPER_AUTO_LOAD is true (weekly job)."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run the load as a dry run and stop."),
+    league_id: str | None = typer.Option(None, "--league-id", help="Default: SLEEPER_LEAGUE_ID."),
+) -> None:
+    """Load and score the season from the archive (S9-D2): load, rookie ids, injury reports,
+    nflverse, team defense, Sleeper stats, rules check, rescore, reconcile."""
+    import subprocess
+    import sys
+    import time
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.crawlers.sleeper_league.archive_view import load_league
+    from ff_pipeline.crawlers.sleeper_league.client import (
+        ArchiveMissError,
+        ArchiveSleeperLeagueSource,
+    )
+    from ff_pipeline.crawlers.sleeper_league.runner import FRANCHISE_LEAGUE_ID
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.models import Season
+    from ff_pipeline.settings import PROJECT_ROOT
+
+    settings = _settings()
+    if if_enabled and not settings.sleeper_auto_load:
+        typer.echo("sleeper-league update: off (SLEEPER_AUTO_LOAD is false); nothing to do")
+        return
+    lid = _league_id(settings, league_id)
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            try:
+                year = load_league(
+                    ArchiveSleeperLeagueSource(ss, RawStore(settings.sleeper_raw_dir)), lid
+                ).season
+            except ArchiveMissError as exc:
+                typer.secho(f"sleeper-league update: {exc}", fg="red", err=True)
+                raise typer.Exit(code=1) from exc
+            row = ss.scalars(
+                select(Season).where(Season.league_id == FRANCHISE_LEAGUE_ID, Season.year == year)
+            ).first()
+            sealed = bool(row and row.is_sealed)
+    finally:
+        engine.dispose()
+    if sealed:
+        typer.echo(f"sleeper-league update: {year} is sealed; nothing to update")
+        return
+
+    y = str(year)
+    report = PROJECT_ROOT / "data" / "reports" / f"{y}-reconcile.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    steps: list[tuple[str, list[str]]] = [("load", ["sleeper-league", "load", "--league-id", lid])]
+    if dry_run:
+        steps = [("load (dry run)", ["sleeper-league", "load", "--league-id", lid, "--dry-run"])]
+    else:
+        steps += [
+            ("adopt-gsis", ["sleeper-league", "adopt-gsis", "--season", y, "--apply"]),
+            ("injury-reports", ["injury-reports", "--season", y]),
+            ("nflverse", ["run", "--source", "nflverse", "--season", y]),
+            ("team_defense", ["run", "--source", "team_defense", "--season", y]),
+            ("sleeper stats", ["sleeper-league", "stats", "--league-id", lid]),
+            ("rules check", ["sleeper-league", "rules", "--check", "--league-id", lid]),
+            ("rescore", ["rescore", "--season", y]),
+            ("reconcile", ["sleeper-league", "reconcile", "--season", y, "--out", str(report)]),
+        ]
+    typer.echo(f"sleeper-league update: season {y}")
+    attention = False
+    for name, args in steps:
+        start = time.monotonic()
+        proc = subprocess.run(
+            [sys.executable, "-m", "ff_pipeline.cli", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        took = time.monotonic() - start
+        tail = [
+            ln
+            for ln in (proc.stdout + proc.stderr).splitlines()
+            if ln.strip() and not ln.lstrip().startswith("{")  # skip JSON log records
+        ][-3:]
+        if name == "rules check" and proc.returncode == UPDATE_RULES_CHANGED:
+            typer.secho(
+                f"  {name}: CHANGED, rescore and reconcile skipped ({took:.0f}s)", fg="yellow"
+            )
+            attention = True
+            break
+        if proc.returncode != 0:
+            typer.secho(
+                f"  {name}: FAILED (exit {proc.returncode}, {took:.0f}s)", fg="red", err=True
+            )
+            for ln in tail:
+                typer.secho(f"    {ln}", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"  {name}: ok ({took:.0f}s) {tail[-1] if tail else ''}".rstrip())
+    if attention:
+        raise typer.Exit(code=1)
+    if not dry_run:
+        typer.echo(f"  reconcile report: {report}")

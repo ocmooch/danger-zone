@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from ff_pipeline.legacy import guard_v2
 from ff_pipeline.legacy.fingerprint import scan_all, sealed_years
 from ff_pipeline.legacy.seal import (
     LegacyError,
@@ -27,7 +28,7 @@ from ff_pipeline.legacy.seal import (
     set_unlock,
     write_baseline,
 )
-from ff_pipeline.legacy.verify import TableDiff, diff_rows, registry, verify
+from ff_pipeline.legacy.verify import TableDiff, current_seal, diff_rows, registry, verify
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -44,6 +45,7 @@ class AmendResult:
     after_seal: str | None = None
     amendment_id: int | None = None
     diffs: list[TableDiff] = field(default_factory=list)
+    v2_changed: list[str] = field(default_factory=list)  # Sleeper-era coverage (guard v2)
 
 
 def slugify(reason: str, max_len: int = 40) -> str:
@@ -122,12 +124,16 @@ def amend(
         diff = diff_rows(name, scan, sealed, len(sealed))
         if diff.changed or diff.missing or diff.added:
             result.diffs.append(diff)
-    if not result.diffs:
+    seal_now = current_seal(conn)
+    manifest = seal_now.manifest if seal_now is not None else {}
+    result.v2_changed = guard_v2.changed_tables(conn, manifest, years)
+    if not result.diffs and not result.v2_changed:
         return result
 
     after_seal = next_seal_id(conn)
     created_at = now_text()
     tables_changed: dict[str, Any] = {d.table: d.seasons for d in result.diffs}
+    tables_changed.update({f"v2:{name}": "sleeper-era columns" for name in result.v2_changed})
     rows_changed: dict[str, Any] = {
         d.table: {"changed": d.changed, "missing": d.missing, "added": d.added}
         for d in result.diffs
@@ -144,7 +150,12 @@ def amend(
             years=years,
             scans=scans,
             git_commit=git_commit,
-            extra={"previous_seal": before_seal, "reason": reason},
+            extra={
+                "previous_seal": before_seal,
+                "reason": reason,
+                # keep the Sleeper-era coverage once a baseline has it
+                **(guard_v2.baseline_extra(conn, years) if guard_v2.is_v2(manifest) else {}),
+            },
         )
         cur = conn.execute(
             "INSERT INTO legacy_amendments (created_at, reason, command, git_commit,"

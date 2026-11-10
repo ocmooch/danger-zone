@@ -253,6 +253,101 @@ def amend_cmd(
         raise typer.Exit(code=result.returncode if 0 < result.returncode < 256 else 1)
 
 
+@legacy_app.command("seal-season")
+def seal_season_cmd(
+    season: int = typer.Option(..., "--season", help="The finished Sleeper season to seal."),
+    champion: str = typer.Option(
+        ..., "--champion", help="The champion's team name, typed by you as a confirmation."
+    ),
+    skip_vault: bool = typer.Option(
+        False, "--skip-vault", help="Seal the DB only; build/encrypt/upload the vault copy later."
+    ),
+) -> None:
+    """Season close (S9-D5): seal a finished Sleeper season as the next seal-vN, then vault it."""
+    _bootstrap()
+    import subprocess
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.crawlers.sleeper_league.runner import FRANCHISE_LEAGUE_ID
+    from ff_pipeline.crawlers.sleeper_league.season_close import gather_facts
+    from ff_pipeline.legacy.seal import LegacyError
+    from ff_pipeline.legacy.seal_season import seal_season
+    from ff_pipeline.legacy.verify import connect
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.settings import PROJECT_ROOT, get_settings
+
+    settings = get_settings()
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            facts = gather_facts(
+                ss,
+                RawStore(settings.sleeper_raw_dir),
+                year=season,
+                franchise_league_id=FRANCHISE_LEAGUE_ID,
+            )
+    finally:
+        engine.dispose()
+    conn = connect(_db_path())
+    try:
+        result = seal_season(
+            conn,
+            season,
+            champion,
+            facts,
+            backup_dir=(PROJECT_ROOT / "data" / "backups" / "historical").resolve(),
+        )
+        manifest = conn.execute(
+            "SELECT manifest FROM legacy_seals WHERE seal_id = ?", (result.seal_id,)
+        ).fetchone()[0]
+    except LegacyError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        conn.close()
+
+    import hashlib
+
+    seals_dir = PROJECT_ROOT / "docs" / "sleeper" / "seals"
+    path = seals_dir / f"{result.seal_id}.manifest.json"
+    path.write_text(manifest + "\n", encoding="utf-8")
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    (seals_dir / f"{path.name}.sha256").write_text(f"{sha}  {path.name}\n", encoding="utf-8")
+    typer.echo(
+        f"Sealed {season} as {result.seal_id} (after {result.previous_seal}); "
+        f"{result.sealed_rows} rows registered. Backup: {result.backup_path}"
+    )
+    typer.echo(f"Manifest (hashes only, commit it): {path}")
+    for line in result.problems:
+        typer.secho(f"  verify after seal: {line}", fg="red", err=True)
+    if result.problems:
+        raise typer.Exit(code=1)
+    if skip_vault:
+        typer.echo(
+            f"Vault later: scripts/vault/vault_sync.sh build-seal {result.seal_id}, "
+            "then pack-seal <dir>, then sync."
+        )
+        return
+    vault = PROJECT_ROOT / "scripts" / "vault" / "vault_sync.sh"
+    built = subprocess.run(
+        [str(vault), "build-seal", result.seal_id], capture_output=True, text=True, check=False
+    )
+    seal_dir = (built.stdout.strip().splitlines() or [""])[-1]
+    if built.returncode != 0 or not seal_dir:
+        typer.secho(f"vault build-seal failed: {built.stderr[-500:]}", fg="red", err=True)
+        raise typer.Exit(code=1)
+    for step in (["pack-seal", seal_dir], ["sync"]):
+        rc = subprocess.run([str(vault), *step], check=False).returncode
+        if rc != 0:
+            typer.secho(
+                f"vault {step[0]} failed (exit {rc}); re-run it by hand", fg="red", err=True
+            )
+            raise typer.Exit(code=1)
+    typer.echo(f"Vaulted {result.seal_id} from {seal_dir} to every destination.")
+
+
 @legacy_app.command("quarantine-2026-stub")
 def quarantine_cmd(
     sleeper_league_id: str | None = typer.Option(

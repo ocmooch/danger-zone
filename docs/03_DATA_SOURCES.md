@@ -4,6 +4,13 @@ This is the most consequential document in the package. Picking the wrong data s
 
 ## TL;DR — Source selection
 
+> **Since 2026 the league plays on Sleeper.** NFL.com fantasy is defunct: its 2010–2025 data is
+> sealed history (`docs/sleeper/03_LEGACY_PRESERVATION.md`) and is never re-crawled. League data
+> now comes from the **Sleeper league API** (archived raw first; field mapping
+> `docs/sleeper/04_SLEEPER_FIELD_MAPPING.md`, operations `RUNBOOK.md`). nflverse stays the stats
+> source for reconstructed points; Sleeper projections/ADP are unchanged. The table below is the
+> Phase 1 (NFL.com era) selection.
+
 | Source | Role | Auth | Stability | License | Why |
 |--------|------|------|-----------|---------|-----|
 | **NFL.com fantasy HTML** | League-private data (rosters, matchups, transactions, scoring rules) | User session cookie | Medium (DOM can change) | Personal use OK per NFL ToS | Only source for **your** league's data |

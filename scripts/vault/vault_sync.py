@@ -2,6 +2,7 @@
 """Encrypt vault archives and ship them off-machine. Standard library only.
 
     vault_sync.sh                     # weekly job: snapshot + sync (what Task Scheduler runs)
+    vault_sync.sh build-seal <label>  # build a plaintext seal dir (e.g. seal-v2) beside seal-v1
     vault_sync.sh pack-seal <dir>     # encrypt a sealed directory into the outbox
     vault_sync.sh snapshot            # snapshot the live DB into the outbox
     vault_sync.sh sync                # ship the outbox to every destination
@@ -56,7 +57,8 @@ SUFFIX = ".tar.gz.age"
 ARCHIVE_RE = re.compile(
     r"^dz-vault_(?P<kind>[a-z0-9-]+)_(?P<date>\d{8})_(?P<sha8>[0-9a-f]{8})\.tar\.gz\.age$"
 )
-PINNED_KIND = "seal-v1"
+PINNED_KIND = "seal-v1"  # the evergreen seal (also pinned by the rule below)
+PINNED_RE = re.compile(r"^seal-v\d+$")  # S9-D5: every seal is kept forever
 KEEP_NEWEST = 4
 
 # Evergreen fallback copy (05 §10): read-only to this script, never synced or pruned.
@@ -82,8 +84,10 @@ def archive_name(kind: str, day: str, sha256: str) -> str:
 def plan_retention(names: list[str]) -> tuple[list[str], list[str]]:
     """Split archive names into (keep, delete). Non-archive names are ignored."""
     parsed = [(n, m) for n in names if (m := ARCHIVE_RE.match(n))]
-    pinned = [n for n, m in parsed if m["kind"] == PINNED_KIND]
-    others = sorted(((m["date"], n) for n, m in parsed if m["kind"] != PINNED_KIND), reverse=True)
+    pinned = [n for n, m in parsed if PINNED_RE.match(m["kind"])]
+    others = sorted(
+        ((m["date"], n) for n, m in parsed if not PINNED_RE.match(m["kind"])), reverse=True
+    )
     keep = sorted(pinned + [n for _, n in others[:KEEP_NEWEST]])
     delete = sorted(n for _, n in others[KEEP_NEWEST:])
     return keep, delete
@@ -491,6 +495,24 @@ def snapshot() -> Path:
         shutil.rmtree(out, ignore_errors=True)
 
 
+def build_seal(label: str) -> Path:
+    """A plaintext seal directory beside seal-v1 (``VAULT/<label>-<date>``), with the
+    raw Sleeper archive, verified and made read-only (S9-D5). ``pack-seal`` then
+    encrypts it; ``sync`` ships it. The evergreen folders are not touched."""
+    import build_vault_dir as builder
+
+    out = VAULT / f"{label}-{datetime.now(tz=UTC):%Y-%m-%d}"
+    builder.build(out, label, "seal", extra_dirs={"raw/sleeper": REPO / "data" / "raw" / "sleeper"})
+    if vfy.verify(out) != 0:
+        raise RuntimeError(f"{out} failed its own verify.py")
+    write_bits = 0o222
+    for path in sorted(out.rglob("*"), reverse=True):
+        path.chmod(path.stat().st_mode & ~write_bits)
+    out.chmod(out.stat().st_mode & ~write_bits)
+    log.info("seal dir built: %s", out)
+    return out
+
+
 def setup_logging() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
@@ -509,6 +531,8 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd")
     p_seal = sub.add_parser("pack-seal")
     p_seal.add_argument("seal_dir", type=Path)
+    p_build = sub.add_parser("build-seal")
+    p_build.add_argument("label")
     sub.add_parser("snapshot")
     sub.add_parser("sync")
     sub.add_parser("check-evergreen")
@@ -527,6 +551,9 @@ def main() -> int:
             log.error("another vault_sync is running")
             return 1
         try:
+            if args.cmd == "build-seal":
+                print(build_seal(args.label))
+                return 0
             if args.cmd == "pack-seal":
                 seal = args.seal_dir.resolve()
                 if vfy.verify(seal) != 0:

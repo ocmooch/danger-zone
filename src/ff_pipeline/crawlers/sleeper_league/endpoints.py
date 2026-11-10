@@ -36,6 +36,7 @@ class Endpoint(StrEnum):
     DRAFT_PICKS = "draft_picks"
     PLAYERS = "players"
     STATS_WEEK = "stats_week"
+    USER_LEAGUES = "user_leagues"  # only fetched to discover a renewed league (S9-D4)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +69,22 @@ def state_request() -> PayloadRequest:
 
 def league_request(league_id: str, season_year: int | None = None) -> PayloadRequest:
     return PayloadRequest(Endpoint.LEAGUE, f"{BASE_APP}/league/{league_id}", league_id, season_year)
+
+
+def users_request(league_id: str, season_year: int | None = None) -> PayloadRequest:
+    return PayloadRequest(
+        Endpoint.USERS, f"{BASE_APP}/league/{league_id}/users", league_id, season_year
+    )
+
+
+def user_leagues_request(user_id: str, season_year: int) -> PayloadRequest:
+    """A user's leagues for one season: where a renewed league shows up (S9-D4)."""
+    return PayloadRequest(
+        Endpoint.USER_LEAGUES,
+        f"{BASE_APP}/user/{user_id}/leagues/nfl/{season_year}",
+        None,
+        season_year,
+    )
 
 
 def players_request() -> PayloadRequest:

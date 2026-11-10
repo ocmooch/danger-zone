@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     sleeper_raw_dir: Path = Path("./data/raw/sleeper")
     # The ~5 MB players directory is captured at most this often.
     sleeper_players_refresh_hours: int = 24
+    # S9-D2: the weekly job also loads + scores the season (`sleeper-league update`).
+    # Off until the 2026 go-live; the go-live sets SLEEPER_AUTO_LOAD=true in .env.
+    sleeper_auto_load: bool = False
 
     # --- Database ---
     database_url: str = "sqlite:///./data/fantasy.db"

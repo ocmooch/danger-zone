@@ -58,3 +58,19 @@ def test_update_guards_compare_every_legacy_column() -> None:
             assert f"NEW.{col} IS NOT OLD.{col}" in sql
     for col in ("is_sealed", "sealed_at", "seal_id"):
         assert f"NEW.{col} IS NOT OLD.{col}" in ddl["legacy_guard_seasons_update"]
+
+
+MIGRATION_V2 = ROOT / "alembic" / "versions" / "c9e1f3a5b7d4_s9_legacy_guard_v2.py"
+
+
+def test_v2_migration_ddl_equals_generator() -> None:
+    from ff_pipeline.legacy.triggers import trigger_ddl_v2
+
+    spec = importlib.util.spec_from_file_location("s9_legacy_guard_v2", MIGRATION_V2)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert list(module.TRIGGERS) == trigger_ddl_v2()
+    names = [n for n, _ in trigger_ddl_v2()]
+    assert len(set(names)) == len(names)
+    assert not set(names) & set(trigger_names())  # v1 stays untouched

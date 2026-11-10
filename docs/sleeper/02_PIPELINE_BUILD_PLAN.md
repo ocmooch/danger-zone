@@ -223,7 +223,7 @@ current expression for every legacy fixture row.
 **Done when:** helpers merged; dashboard D1/D2 can start; legacy outputs of the moved expression
 proven identical.
 
-## S9 — Operations and release
+## S9 — Operations and release — **DONE** (2026-11-10; plan `docs/plans/S9-ops-release.md`)
 
 **Goal:** the Sleeper era runs itself, and every finished season becomes protected history.
 
