@@ -348,12 +348,11 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
               -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
   Register-ScheduledTask -TaskName "dz-sleeper-capture" -Action $action -Trigger $trigger -Settings $settings
   ```
-- **Game-day job (S7-D7):** Windows task `dz-sleeper-gameday` (Sun 12:15 PM ET, after the 1 PM
-  games' inactives; runs at next start if missed) runs `scripts/sleeper/gameday_capture.sh` =
-  `sleeper-league capture --directory-only` (only `/state/nfl` + the players directory), log in
-  `data/logs/sleeper_gameday-<UTC date>.log`. The next `sleeper-league load` turns each captured
-  directory into `player_status_snapshots` rows dated by capture day. Registered like the weekly
-  task with `-DaysOfWeek Sunday -At 12:15pm`, `-ExecutionTimeLimit (New-TimeSpan -Minutes 15)`.
+- **Status snapshots (S7-D7):** the weekly capture's players directory (Wednesday 06:00 ET,
+  after Monday night) becomes one `player_status_snapshots` row per league player at the next
+  load: the status after that week's games. Each week's official game status (Out / Doubtful /
+  Questionable) comes from nflverse: `uv run ff-pipeline injury-reports --season 2026`
+  (`player_injury_reports`; part of the go-live sequence).
 - A full capture also downloads the league / owner / team avatars into `ASSETS_DIR` (new URLs
   only, deduped by sha256); the load links them to `teams`.
 - Probe / fixtures: `scripts/sleeper/probe_field_mapping.py` (evidence report, offline) and
@@ -409,6 +408,7 @@ Run after a season load, in this order (each is offline except the nflverse fetc
 
 ```
 uv run ff-pipeline sleeper-league adopt-gsis --season 2026          # list; then --apply
+uv run ff-pipeline injury-reports --season 2026                     # weekly official game status
 uv run ff-pipeline run --source nflverse --season 2026              # stats + 40+/ST play counts
 uv run ff-pipeline sleeper-league rules --diff 2025                 # review; then --write
 uv run ff-pipeline run --source team_defense --season 2026          # DST rows (Sleeper PA rule)

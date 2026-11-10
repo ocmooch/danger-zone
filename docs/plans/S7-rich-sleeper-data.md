@@ -5,9 +5,10 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S7. Design sources: `04_SLEEPER
 S3 schema (`playoff_brackets`, `traded_picks`, `player_status_snapshots`, `assets`, the new
 `teams` / `seasons` columns).
 
-**Status:** PLAN approved 2026-11-09: S7-D1..D8 as recommended, **except S7-D7 = game-day
-capture** (a Sunday-morning players-directory capture, so statuses are as of kickoff). BUILD on
-`feature/s7-rich-sleeper-data`.
+**Status:** PLAN approved 2026-11-09: S7-D1..D8 as recommended. S7-D7 was first changed to a
+Sunday game-day capture, then (same day) the user chose a capture **after the games** instead:
+the existing Wednesday capture already is one, and per-week official game status comes
+retroactively from nflverse injury reports. BUILT on `feature/s7-rich-sleeper-data`.
 
 ## Goal
 
@@ -162,10 +163,11 @@ On a copy of the S6 copy: capture stored 20 avatars (1 league, 9 owner, 10 team;
 one image URL); the load wrote 14 bracket rows (undecided), extras on 12 teams, a 4.6 KB settings
 snapshot, 289 status rows; the reload changed nothing; `legacy verify` passed before and after.
 
-- **Game-day capture (S7-D7 as chosen):** `sleeper-league capture --directory-only` +
-  `scripts/sleeper/gameday_capture.sh`; Windows task `dz-sleeper-gameday` registered for Sunday
-  12:15 PM ET (first run 2026-11-15). Thursday / Monday / late-window inactives are not covered;
-  a missed run fires at the next start, so its statuses may be post-kickoff (its date shows it).
+- **S7-D7, final:** no extra task. Status snapshots come from the weekly Wednesday 06:00 ET capture
+  (after Monday night), i.e. the status after each week's games. A Sunday 12:15 PM task was
+  built and registered, then removed at the user's request: a pre-kickoff reading is not needed
+  because nflverse's weekly injury reports (`injury-reports --season 2026`, already used for
+  2010-2025) give each week's official game status after the fact. Added to the go-live steps.
 - **Status rows only for days not yet snapshotted**, so a load doesn't re-read every ~5 MB
   directory revision; a player who joins the league later has no rows for earlier days.
 - **Trade pick/FAAB legs** are written only for teams that moved picks or FAAB (a team that only

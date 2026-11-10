@@ -352,26 +352,3 @@ def test_players_points_equal_stats_dot_scoring_in_fixtures() -> None:
                 checked += 1
     assert checked > 1000
 
-
-def test_directory_only_game_day_capture(env: Env) -> None:
-    """S7-D7: the Sunday run archives /state/nfl and the players directory only,
-    even inside the 24 h freshness window."""
-    _capture(env)
-    later = T0 + timedelta(hours=2)
-    with Session(env.engine) as ss:
-        s = capture_season(
-            ss,
-            FixtureSleeperLeagueSource(env.fixtures, fetched_at=later),
-            env.store,
-            start_league_id=L28,
-            season=None,
-            run_id="gameday",
-            now=later,
-            directory_only=True,
-        )
-        ss.commit()
-        assert s.requests == 2
-        fetched = set(
-            ss.scalars(select(SourcePayload.endpoint).where(SourcePayload.last_fetched_at == later))
-        )
-    assert fetched == {"state", "players"}

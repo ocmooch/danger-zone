@@ -3,8 +3,10 @@
 One row per (player, capture date UTC, ``source='sleeper'``) for the players the
 league references that season (S7-D7). A directory revision seen on several
 capture days gives a row for its first and its last day (the index keeps only
-those two sightings). The game-day capture (Sunday morning) makes the kickoff
-statuses available; the Wednesday capture adds a mid-week reading. Text fields
+those two sightings). The directory comes from the weekly capture (Wednesday
+06:00 ET, after Monday night), so each row is the status after that week's
+games. Official per-week game status (Out / Doubtful / Questionable) comes from
+nflverse injury reports (``player_injury_reports``), not from here. Text fields
 such as injury notes and news are not stored, only the news timestamp.
 """
 

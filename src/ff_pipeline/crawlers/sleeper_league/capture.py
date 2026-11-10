@@ -161,7 +161,6 @@ def capture_season(
     players_refresh_hours: int = 24,
     force_players: bool = False,
     dry_run: bool = False,
-    directory_only: bool = False,
 ) -> CaptureSummary:
     """Archive every endpoint for one season of the league chain.
 
@@ -175,11 +174,6 @@ def capture_season(
     state = state_payload.json() if state_payload is not None else None
     if not isinstance(state, dict):
         raise CaptureError("Sleeper /state/nfl returned no usable JSON")
-    if directory_only:
-        arc.fetch(players_request(), required=True)
-        if not dry_run:
-            session.flush()
-        return summary
 
     def fetch_league(league_id: str) -> dict[str, Any] | None:
         payload = arc.fetch(league_request(league_id), required=True)

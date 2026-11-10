@@ -76,11 +76,6 @@ def capture_cmd(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Fetch and report, but write nothing (no files, no rows)."
     ),
-    directory_only: bool = typer.Option(
-        False,
-        "--directory-only",
-        help="Game-day run: archive only /state/nfl and the players directory (S7-D7).",
-    ),
 ) -> None:
     """Archive every Sleeper league endpoint for one season (raw bytes + index rows)."""
     from sqlalchemy.orm import Session
@@ -116,7 +111,6 @@ def capture_cmd(
                     players_refresh_hours=settings.sleeper_players_refresh_hours,
                     force_players=force_players,
                     dry_run=dry_run,
-                    directory_only=directory_only,
                 )
             except (CaptureError, LineageError) as exc:
                 typer.secho(f"sleeper-league capture failed: {exc}", fg="red", err=True)
@@ -124,21 +118,11 @@ def capture_cmd(
             if not dry_run:
                 ss.commit()
             avatars = None
-            if not dry_run and not directory_only and summary.league_id:
+            if not dry_run and summary.league_id:
                 avatars = _capture_avatars(ss, settings, summary.league_id)
                 ss.commit()
     finally:
         engine.dispose()
-    if directory_only:
-        typer.echo(
-            f"{'[dry run] ' if dry_run else ''}sleeper-league: players directory captured "
-            f"(requests {summary.requests}, new revisions {summary.new_revisions})"
-        )
-        if summary.errors:
-            for line in summary.errors:
-                typer.secho(f"  error: {line}", fg="red", err=True)
-            raise typer.Exit(code=1)
-        return
     if avatars is not None:
         typer.echo(
             f"avatars: {avatars.stored} new, {avatars.already} known, {avatars.failed} failed"

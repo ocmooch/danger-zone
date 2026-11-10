@@ -243,7 +243,8 @@ Bracket match objects: `r` (round), `m` (match id), `t1`, `t2` (roster ids), `w`
 | `news_updated` | `player_status_snapshots.extra` (timestamp only; no news text) |
 
 ✅ S7: snapshots are written for league-referenced players only, one row per capture day (the
-Wednesday full capture and the Sunday game-day directory capture, S7-D7); text fields (injury
+weekly Wednesday capture, after the week's games, S7-D7; per-week official game status comes from
+nflverse `player_injury_reports`); text fields (injury
 notes, news) are not stored.
 
 nflverse remains the authority for `players.nfl_team`, `is_active`, `last_season` (existing
