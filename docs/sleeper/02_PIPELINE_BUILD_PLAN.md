@@ -176,7 +176,7 @@ failed waiver rows; sealed-season write attempt raises; full load from archive =
 **Done when:** `sleeper-league load --season 2026` loads weeks 1..current; team W-L-T/PF/PA match
 Sleeper's roster settings; spot-check three box scores against the Sleeper app; `legacy verify` passes.
 
-## S6 — Scoring
+## S6 — Scoring — **DONE** (2026-11-09; plan `docs/plans/S6-scoring.md`)
 
 **Goal:** 2026 has rules, reconstructed points, official points and a reconcile report.
 

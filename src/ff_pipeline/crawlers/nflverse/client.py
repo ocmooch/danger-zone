@@ -23,6 +23,7 @@ from ff_pipeline.crawlers.nflverse.long_td_bonus import (
     LongTdBonusKey,
     derive_long_td_bonus_counts,
 )
+from ff_pipeline.crawlers.nflverse.play_stats import PLAYER_PLAY_STAT_ZEROES, derive_play_counts
 from ff_pipeline.crawlers.nflverse.stat_keys import (
     expected_nflverse_columns,
     project_stats,
@@ -232,7 +233,9 @@ class NflverseClient:
     def player_stats(self, seasons: Sequence[int]) -> list[NflversePlayerStat]:
         df = self._source.load_player_stats(seasons)
         self._check_columns(df, "player_stats")
-        long_td_bonus_counts = self._long_td_bonus_counts(seasons)
+        play_by_play = self._play_by_play_rows(seasons)
+        long_td_bonus_counts = derive_long_td_bonus_counts(play_by_play or ())
+        play_counts = derive_play_counts(play_by_play).player if play_by_play else None
 
         out: list[NflversePlayerStat] = []
         for row in df.iter_rows(named=True):
@@ -248,6 +251,9 @@ class NflverseClient:
                 week=int(row["week"]),
             )
             stats.update(long_td_bonus_counts.get(bonus_key, {}))
+            if play_counts is not None:
+                stats.update(PLAYER_PLAY_STAT_ZEROES)
+                stats.update(play_counts.get(bonus_key, {}))
             out.append(
                 NflversePlayerStat(
                     gsis_id=str(gsis),
@@ -268,12 +274,12 @@ class NflverseClient:
         )
         return out
 
-    def _long_td_bonus_counts(
-        self, seasons: Sequence[int]
-    ) -> dict[LongTdBonusKey, dict[str, float]]:
+    def _play_by_play_rows(self, seasons: Sequence[int]) -> list[dict[str, object]] | None:
+        """Play-by-play rows, or ``None`` when the source has none (the
+        long-TD / S6 play-count keys then stay zero / absent)."""
         load_pbp = getattr(self._source, "load_pbp", None)
         if not callable(load_pbp):
-            return {}
+            return None
         try:
             play_by_play_df = load_pbp(seasons)
         except (FileNotFoundError, NotImplementedError):
@@ -281,12 +287,17 @@ class NflverseClient:
                 "nflverse PBP unavailable; long-TD bonus keys will remain zero",
                 seasons=list(seasons),
             )
-            return {}
-        return derive_long_td_bonus_counts(play_by_play_df.iter_rows(named=True))
+            return None
+        return list(play_by_play_df.iter_rows(named=True))
 
     # ----- team_defense -----
 
-    def team_defense_stats(self, seasons: Sequence[int]) -> list[TeamDefenseStat]:
+    def team_defense_stats(
+        self,
+        seasons: Sequence[int],
+        *,
+        conversions_always_charged: frozenset[int] = frozenset(),
+    ) -> list[TeamDefenseStat]:
         """Roll up team-level frames into per-team DST stat dicts.
 
         Reads ``load_team_stats`` (counting events + offensive yardage) and
@@ -305,6 +316,7 @@ class NflverseClient:
             team_rows=team_df.iter_rows(named=True),
             schedule_rows=schedule_df.iter_rows(named=True),
             play_by_play_rows=play_by_play_df.iter_rows(named=True),
+            conversions_always_charged=conversions_always_charged,
         )
         log.info(
             "Built nflverse team-defense stats",

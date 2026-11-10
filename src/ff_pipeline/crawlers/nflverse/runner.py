@@ -30,6 +30,7 @@ from ff_pipeline.repository.models import (
     PlayerIdentityLink,
     PlayerSeasonPosition,
     PlayerStatsRaw,
+    Season,
     SourceHealth,
     TeamRoster,
 )
@@ -498,7 +499,14 @@ def run_team_defense(
 
     try:
         client = NflverseClient(source=source or LiveNflverseSource())
-        team_stats = client.team_defense_stats(seasons)
+        sleeper_years = frozenset(
+            session.scalars(
+                select(Season.year).where(
+                    Season.year.in_(list(seasons)), Season.platform == "sleeper"
+                )
+            )
+        )
+        team_stats = client.team_defense_stats(seasons, conversions_always_charged=sleeper_years)
         # (season_year, abbrev) -> player_id, built from rostered DEF rows.
         abbrev_to_player = _def_player_index(session, seasons)
 

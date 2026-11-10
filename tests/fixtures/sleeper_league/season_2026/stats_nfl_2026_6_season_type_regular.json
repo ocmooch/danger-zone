@@ -60,6 +60,7 @@
   "season_type": "regular",
   "stats": {
    "fgm": 1.0,
+   "fgm_40_49": 1.0,
    "gp": 1.0
   },
   "team": "LAR",
@@ -459,6 +460,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 2.0,
+   "fgm_20_29": 1.0,
+   "fgm_40_49": 1.0,
    "gp": 1.0,
    "xpm": 2.0
   },
@@ -737,6 +740,7 @@
   "season_type": "regular",
   "stats": {
    "fgm": 1.0,
+   "fgm_30_39": 1.0,
    "gp": 1.0,
    "xpm": 1.0
   },
@@ -967,6 +971,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 2.0,
+   "fgm_30_39": 1.0,
+   "fgm_40_49": 1.0,
    "gp": 1.0,
    "xpm": 1.0
   },
@@ -1015,6 +1021,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 4.0,
+   "fgm_20_29": 1.0,
+   "fgm_30_39": 1.0,
    "fgm_50_59": 2.0,
    "fgm_50p": 2.0,
    "gp": 1.0,
@@ -1099,6 +1107,7 @@
   "season_type": "regular",
   "stats": {
    "fgm": 2.0,
+   "fgm_30_39": 1.0,
    "fgm_50_59": 1.0,
    "fgm_50p": 1.0,
    "gp": 1.0
@@ -1169,6 +1178,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 2.0,
+   "fgm_20_29": 1.0,
+   "fgm_40_49": 1.0,
    "gp": 1.0,
    "xpm": 4.0
   },
@@ -1285,6 +1296,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 3.0,
+   "fgm_30_39": 1.0,
+   "fgm_40_49": 1.0,
    "fgm_50_59": 1.0,
    "fgm_50p": 1.0,
    "gp": 1.0,
@@ -1401,6 +1414,7 @@
   "season_type": "regular",
   "stats": {
    "fgm": 1.0,
+   "fgm_30_39": 1.0,
    "gp": 1.0,
    "xpm": 2.0
   },
@@ -1508,6 +1522,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 3.0,
+   "fgm_20_29": 2.0,
+   "fgm_30_39": 1.0,
    "gp": 1.0,
    "xpm": 3.0
   },
@@ -1524,6 +1540,8 @@
   "season_type": "regular",
   "stats": {
    "fgm": 4.0,
+   "fgm_30_39": 1.0,
+   "fgm_40_49": 2.0,
    "fgm_50_59": 1.0,
    "fgm_50p": 1.0,
    "gp": 1.0,

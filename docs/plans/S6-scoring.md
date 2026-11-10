@@ -4,8 +4,9 @@ Build contract for `02_PIPELINE_BUILD_PLAN.md` §S6. Design sources: `01_PIPELIN
 §9 (two numbers per player-week, rule derivation, verification), `04_SLEEPER_FIELD_MAPPING.md`
 §5 / §5.1 / §10 (key mapping, D-10 preparation, S2 probe evidence), decision D-10 (`00`).
 
-**Status:** PLAN, written 2026-11-09 on `feature/s6-scoring`. Nothing is built yet. **D-10 (the rule
-sign-off) and the decisions at the end need the user's approval before the BUILD session.**
+**Status:** BUILT 2026-11-09 on `feature/s6-scoring`. **D-10 and S6-D1..D4 approved by the user
+2026-11-09** ("approve D-10 and all"). Run on a copy of the S5 copy; live joins the go-live (S6-D1).
+See "Build notes" at the end for what changed from the design.
 
 ## Goal
 
@@ -127,10 +128,10 @@ Live gets the same steps as part of the S5 go-live runbook (S6-D1).
 
 ## Done when
 
-- [ ] D-10 signed off; rules written (copy; live with the go-live).
-- [ ] 2026 scored (weeks 1..current) on the copy.
-- [ ] Reconcile report committed under `docs/sleeper/reports/`; every residual class explained.
-- [ ] Full gate green; RUNBOOK + `02` §S6 updated; PR → `dev`.
+- [x] D-10 signed off; rules written (copy; live with the go-live).
+- [x] 2026 scored (weeks 1..current) on the copy.
+- [x] Reconcile report committed under `docs/sleeper/reports/`; every residual class explained.
+- [x] Full gate green; RUNBOOK + `02` §S6 updated; PR → `dev`.
 
 ## Decisions (recommended defaults — need the user's approval)
 
@@ -141,3 +142,36 @@ Live gets the same steps as part of the S5 go-live runbook (S6-D1).
 | S6-D2 | The 8 new rules' stats | Derive all of them from play-by-play now (40+ plays are frequent, so the reconcile would be noisy otherwise; the rare ones are cheap with the same pattern). | Derive only the 40+ plays; leave blocked kicks / def 2-pt / ST fumble recoveries as a documented residual. |
 | S6-D3 | Store Sleeper's own weekly stats | Yes, as `player_stats_raw` with `source='sleeper'`, non-primary (never scored as the baseline). It lets the reconcile tell "stat source differs" from "rule bug". | Off (classify from totals only). |
 | S6-D4 | Reconcile tolerance | ≤ 0.01 per player-week counts as a match; provisional (in-progress) weeks are reported separately. | Exact equality. |
+
+## Build notes (2026-11-09)
+
+Result on the copy: **1,550 / 1,551** rostered player-weeks of weeks 1-8 (863 / 864 started) and
+**95 / 96** team scores match Sleeper to 0.01; the residual is one lateral fumble (report).
+
+What changed from the design, and why:
+
+- **No `verify.py` adapter.** `verify --sweep` scrapes NFL.com game centers (defunct), so it has
+  no `nfl_com_points` column to swap. The reconcile is a new read-only module,
+  `scoring/platform_reconcile.py` (`sleeper-league reconcile`); team totals reuse the existing
+  offline `reconcile_team_totals` unchanged (it reads `matchups.team_score`).
+- **Every new stat's definition was checked against Sleeper's stats** (weeks 1-8) before coding:
+  40+ completions 69/69, 40+ rushes 3/3, 40+ receptions (receiver's own yards; laterals don't
+  count) 18/18, blocked kicks 16/16, def 2-pt 1/1, DEF ST fumble recoveries 19/19 (the *kicking*
+  team; nflverse's `posteam` is the receiver on kickoffs). Engine parity: our engine over
+  Sleeper's stats = Sleeper's points for 1,749 / 1,749 player-weeks.
+- **`def_st_fum_rec` needs no row.** nflverse's DST `fumble_recovery_opp` equals Sleeper's
+  `fum_rec + def_st_fum_rec` for 242 / 242 team-weeks, so the existing `fumbles_recovered` row
+  already scores them at 2. The mapping writes a row only for the difference of the two rates.
+- **Points allowed differs by platform.** Sleeper charges the PAT / 2-pt / defensive 2-pt after a
+  defensive or return TD (only the TD's 6 is excluded); NFL.com excluded the conversion too. This
+  was all 10 PA mismatches. `run_team_defense` now picks the convention per season
+  (`seasons.platform = 'sleeper'`); NFL.com seasons are unchanged (and sealed).
+- **Rookie identity (`adopt-gsis`).** 26 rostered rookies existed twice: the pre-draft row with
+  the `sleeper_id` and a placeholder id, and the nflverse row with the real gsis id and the stats
+  (Sleeper has no gsis id for rookies). That was 97 of the first 98 divergences. Adoption moves
+  the gsis id and stat rows onto the rostered row (exact name + position, one candidate only) and
+  links the twin. Live has the same pattern; it runs in the go-live sequence.
+- **Long-TD bonus on a lateral** now goes to the scorer on his own yards (Sleeper does this; 2
+  divergences). Sealed seasons are not re-derived.
+- The Sleeper fixture builder now keeps per-distance FG stats; the committed stats fixtures got
+  those keys patched in from the archive (the engine scores FGs by range).

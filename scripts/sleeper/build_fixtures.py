@@ -273,6 +273,13 @@ def build(src: ArchiveSleeperLeagueSource, league_id: str, season: int) -> dict[
         "rush_yd",
         "rec_yd",
         "fgm_50p",
+        # per-distance FG makes: the engine scores FGs by range (S6)
+        "fgm_0_19",
+        "fgm_20_29",
+        "fgm_30_39",
+        "fgm_40_49",
+        "fgm_50_59",
+        "fgm_60p",
         "td",
         "gp",
     }

@@ -334,3 +334,223 @@ def load_cmd(
         typer.secho(f"  owner change NOT written: {line}", fg="yellow")
     for line in r.warnings:
         typer.secho(f"  warning: {line}", fg="yellow")
+
+
+@sleeper_league_app.command("rules")
+def rules_cmd(
+    league_id: str | None = typer.Option(None, "--league-id", help="Default: SLEEPER_LEAGUE_ID."),
+    diff: int | None = typer.Option(
+        None, "--diff", help="Compare with this season's stored rules (e.g. 2025)."
+    ),
+    write: bool = typer.Option(
+        False, "--write", help="Replace the season's scoring_rules with the derived set (D-10)."
+    ),
+) -> None:
+    """Derive scoring rules from the archived league's scoring_settings (S6; offline)."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.crawlers.sleeper_league.archive_view import load_league
+    from ff_pipeline.crawlers.sleeper_league.client import ArchiveSleeperLeagueSource
+    from ff_pipeline.crawlers.sleeper_league.runner import FRANCHISE_LEAGUE_ID
+    from ff_pipeline.legacy.cli import run_preflight
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.repository.models import ScoringRule, Season
+    from ff_pipeline.scoring.sleeper_rules import (
+        RuleRow,
+        UnmappedScoringKeyError,
+        derive_rules,
+        describe,
+        diff_rules,
+        write_season_rules,
+    )
+
+    settings = _settings()
+    lid = _league_id(settings, league_id)
+    if write:
+        run_preflight("sleeper-league rules --write")
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            data = load_league(
+                ArchiveSleeperLeagueSource(ss, RawStore(settings.sleeper_raw_dir)), lid
+            )
+            try:
+                rows = derive_rules(data.league.get("scoring_settings") or {})
+            except UnmappedScoringKeyError as exc:
+                typer.secho(f"sleeper-league rules: {exc}", fg="red", err=True)
+                raise typer.Exit(code=1) from exc
+            typer.echo(f"season {data.season}: {len(rows)} rules derived")
+            if diff is not None:
+                other = [
+                    RuleRow(
+                        r.category,
+                        r.stat_key,
+                        float(r.points_per_unit or 0.0),
+                        float(r.unit_size or 1.0),
+                        r.threshold_min,
+                        r.threshold_max,
+                        r.flat_points,
+                    )
+                    for r in ss.scalars(
+                        select(ScoringRule)
+                        .join(Season, Season.season_id == ScoringRule.season_id)
+                        .where(Season.league_id == FRANCHISE_LEAGUE_ID, Season.year == diff)
+                    )
+                ]
+                d = diff_rules(other, rows)
+                typer.echo(f"vs {diff}: {d.same} identical")
+                for r in d.only_in_a:
+                    typer.echo(f"  - only {diff}:      {describe(r)}")
+                for r in d.only_in_b:
+                    typer.echo(f"  + only {data.season}: {describe(r)}  [{r.raw_text}]")
+            else:
+                for r in rows:
+                    typer.echo(f"  {describe(r)}  [{r.raw_text}]")
+            if not write:
+                return
+            season = ss.scalars(
+                select(Season).where(
+                    Season.league_id == FRANCHISE_LEAGUE_ID, Season.year == data.season
+                )
+            ).first()
+            if season is None or season.platform != "sleeper":
+                typer.secho(
+                    f"no Sleeper season row for {data.season}; run `sleeper-league load` first",
+                    fg="red",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+            write_season_rules(ss, season.season_id, rows)
+            ss.commit()
+            typer.echo(f"wrote {len(rows)} scoring_rules for season {data.season}")
+    finally:
+        engine.dispose()
+
+
+@sleeper_league_app.command("stats")
+def stats_cmd(
+    league_id: str | None = typer.Option(None, "--league-id", help="Default: SLEEPER_LEAGUE_ID."),
+) -> None:
+    """Store Sleeper's own weekly stats as non-primary raw stats (S6-D3; offline)."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.archive.raw_store import RawStore
+    from ff_pipeline.crawlers.sleeper_league.archive_view import load_league
+    from ff_pipeline.crawlers.sleeper_league.client import ArchiveSleeperLeagueSource
+    from ff_pipeline.crawlers.sleeper_league.stats import store_weekly_stats
+    from ff_pipeline.legacy.cli import run_preflight
+    from ff_pipeline.repository.database import create_app_engine
+
+    settings = _settings()
+    lid = _league_id(settings, league_id)
+    run_preflight("sleeper-league stats")
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            source = ArchiveSleeperLeagueSource(ss, RawStore(settings.sleeper_raw_dir))
+            data = load_league(source, lid)
+            weeks = sorted(data.matchups_by_week) or list(range(1, data.weeks + 1))
+            out = store_weekly_stats(ss, source, season=data.season, weeks=weeks)
+            ss.commit()
+    finally:
+        engine.dispose()
+    typer.echo(
+        f"sleeper-league stats: season {data.season} weeks {list(out.weeks)}: "
+        f"{out.rows_added} added, {out.rows_updated} updated "
+        f"({out.unresolved} lines for players not in the DB skipped)"
+    )
+
+
+@sleeper_league_app.command("reconcile")
+def reconcile_cmd(
+    season: int = typer.Option(..., "--season"),
+    tolerance: float = typer.Option(0.01, "--tolerance"),
+    out: str | None = typer.Option(None, "--out", help="Write the markdown report here."),
+) -> None:
+    """Reconstructed (nflverse) vs Sleeper official points, classified (S6; read-only)."""
+    from datetime import date
+    from pathlib import Path
+
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.crawlers.sleeper_league.runner import FRANCHISE_LEAGUE_ID
+    from ff_pipeline.repository.database import create_app_engine
+    from ff_pipeline.scoring.platform_reconcile import reconcile_platform_points, render_markdown
+    from ff_pipeline.scoring.verify import reconcile_team_totals
+
+    settings = _settings()
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            rec = reconcile_platform_points(
+                ss, league_id=FRANCHISE_LEAGUE_ID, season_year=season, tolerance=tolerance
+            )
+            teams = reconcile_team_totals(
+                ss,
+                league_id=FRANCHISE_LEAGUE_ID,
+                season_year=season,
+                weeks=list(rec.finalized_weeks) or None,
+                tolerance=tolerance,
+            )
+    finally:
+        engine.dispose()
+    if rec.note:
+        typer.secho(f"reconcile: {rec.note}", fg="red", err=True)
+        raise typer.Exit(code=1)
+    started = rec.counts()
+    typer.echo(
+        f"{season}: started player-weeks {sum(started.values())} "
+        + ", ".join(f"{k} {v}" for k, v in sorted(started.items()))
+        + f"; team totals {teams.passed}/{teams.total} match"
+    )
+    if out:
+        Path(out).write_text(
+            render_markdown(
+                rec, team_totals=(teams.passed, teams.total), generated=date.today().isoformat()
+            ),
+            encoding="utf-8",
+        )
+        typer.echo(f"report written to {out}")
+
+
+@sleeper_league_app.command("adopt-gsis")
+def adopt_gsis_cmd(
+    season: int = typer.Option(..., "--season"),
+    apply: bool = typer.Option(False, "--apply", help="Write the adoptions (default: list them)."),
+) -> None:
+    """Give league-rostered rookies the real nflverse gsis id of their twin row (S6)."""
+    from sqlalchemy.orm import Session
+
+    from ff_pipeline.legacy.cli import run_preflight
+    from ff_pipeline.normalizer.gsis_adoption import apply_adoptions, plan_adoptions
+    from ff_pipeline.repository.database import create_app_engine
+
+    settings = _settings()
+    if apply:
+        run_preflight("sleeper-league adopt-gsis --apply")
+    engine = create_app_engine(settings.database_url)
+    try:
+        with Session(engine) as ss:
+            plan = plan_adoptions(ss, season=season)
+            for a in plan.adoptions:
+                typer.echo(
+                    f"  adopt {a.gsis_id} → player {a.keep_id} {a.name} ({a.position});"
+                    f" twin {a.twin_id}"
+                )
+            for line in plan.ambiguous:
+                typer.secho(f"  ambiguous, skipped: {line}", fg="yellow")
+            if plan.no_twin:
+                typer.echo(f"  no nflverse twin yet: {', '.join(plan.no_twin)}")
+            if apply and plan.adoptions:
+                apply_adoptions(ss, plan.adoptions)
+                ss.commit()
+    finally:
+        engine.dispose()
+    verb = "adopted" if apply else "would adopt"
+    typer.echo(
+        f"adopt-gsis {season}: {verb} {len(plan.adoptions)}; ambiguous {len(plan.ambiguous)}"
+    )
+    if apply and plan.adoptions:
+        typer.echo("  next: `run --source nflverse --season N`, then `rescore --season N`")

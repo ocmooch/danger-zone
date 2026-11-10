@@ -36,6 +36,8 @@ _TEAM_DEFENSE_STAT_KEYS = frozenset(
         "safeties",
         "defensive_tds",
         "blocked_kicks",
+        "defensive_2pt_returns",
+        "defense_special_teams_fumble_recoveries",
         "points_allowed",
         "total_yards_allowed",
     }
