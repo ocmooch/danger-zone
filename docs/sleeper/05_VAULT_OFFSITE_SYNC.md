@@ -115,6 +115,8 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAv
 Register-ScheduledTask -TaskName "dz-vault-sync" -Action $action -Trigger $trigger -Settings $settings
 ```
 
+Then set the window mode with `scripts/windows/task_windows.sh hidden|visible` (RUNBOOK "Window mode").
+
 `legacy seal` and `legacy amend` also call the sync immediately after producing a seal.
 
 ## 6. Failure handling and monitoring
