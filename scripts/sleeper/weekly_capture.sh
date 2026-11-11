@@ -24,12 +24,31 @@
 # Stops at the first failing step (no silent retries; next Wednesday re-runs everything
 # idempotently). Log: data/logs/sleeper_capture-<UTC date>.log. Exit code != 0 shows as
 # "Last Result" in Task Scheduler.
+#
+# In a console (the task in Visible mode, or a manual run) the log is also shown live, with a
+# "still running" line every 30 s, and the window stays open 30 s at the end with the result.
+# Closing the window mid-run kills the job (RUNBOOK "Window mode": scripts/windows/task_windows.sh).
 set -uo pipefail
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 cd "$REPO" || exit 1
 mkdir -p data/logs
 LOG="data/logs/sleeper_capture-$(date -u +%Y%m%d).log"
+export PYTHONUNBUFFERED=1  # stream each step's output through tee as it happens
+console=""
+hb=""
+if [ -t 1 ]; then
+  console=1
+  echo "dz-sleeper-capture: weekly Sleeper job (danger-zone, scripts/sleeper/weekly_capture.sh)"
+  echo "Running: usually 3-10 min. DON'T CLOSE THIS WINDOW; it closes itself when done."
+  echo "Log: $REPO/$LOG"
+  echo
+  # Console-only heartbeat (not logged) so long silent steps don't look finished.
+  ( t0=$SECONDS; while sleep 30; do
+      printf '   ... still running (%dm%02ds)\n' $(((SECONDS - t0) / 60)) $(((SECONDS - t0) % 60))
+    done ) &
+  hb=$!
+fi
 {
   branch="$(git branch --show-current)"
   echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) weekly Sleeper job (branch $branch, $(git rev-parse --short HEAD))"
@@ -42,22 +61,36 @@ LOG="data/logs/sleeper_capture-$(date -u +%Y%m%d).log"
     echo "== another weekly capture is already running; exiting"
     exit 4
   fi
-  LOG_LEVEL=WARNING uv run ff-pipeline sleeper-league capture 2>&1 | grep -v ' GET '
+  echo "== step 1/4: capture"
+  LOG_LEVEL=WARNING uv run ff-pipeline sleeper-league capture 2>&1 | grep --line-buffered -v ' GET '
   rc=${PIPESTATUS[0]}
   echo "== capture exit $rc"
   if [ "$rc" -eq 0 ]; then
+    echo "== step 2/4: update (load + score; each sub-step prints when it finishes)"
     LOG_LEVEL=WARNING uv run ff-pipeline sleeper-league update --if-enabled 2>&1
     rc=${PIPESTATUS[0]}
     echo "== update exit $rc"
   fi
   if [ "$rc" -eq 0 ]; then
+    echo "== step 3/4: projections"
     LOG_LEVEL=WARNING uv run ff-pipeline backfill-projections --current-season 2>&1
     rc=${PIPESTATUS[0]}
     echo "== projections exit $rc"
   fi
+  echo "== step 4/4: legacy verify"
   uv run ff-pipeline legacy verify 2>&1 | tail -1
   vrc=${PIPESTATUS[0]}
   echo "== verify exit $vrc"
   [ "$rc" -eq 0 ] && rc=$vrc
+  if [ "$rc" -eq 0 ]; then echo "== done: ok"; else echo "== done: FAILED (exit $rc)"; fi
   exit "$rc"
-} >>"$LOG" 2>&1
+} 2>&1 | tee -a "$LOG"
+rc=${PIPESTATUS[0]}
+[ -n "$hb" ] && kill "$hb" 2>/dev/null
+if [ -n "$console" ]; then
+  # The lock is already released here, so this pause never delays the vault sync.
+  echo
+  echo "Finished (exit $rc). This window closes in 30 s."
+  sleep 30
+fi
+exit "$rc"

@@ -12,7 +12,7 @@ from __future__ import annotations
 # typer reads parameter annotations at runtime (via get_type_hints) to
 # resolve option types, so Path must be imported eagerly — not inside
 # TYPE_CHECKING.
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -445,24 +445,36 @@ def _apply_overrides(ss: Session, *, league_id: str | None) -> None:
     )
 
 
-def _resolve_current_week(year: int) -> int:
+def _nfl_week_one_start(year: int) -> date:
+    """Wednesday before the NFL opener, the day Sleeper starts week 1.
+
+    The opener is the Thursday after Labor Day (the first Monday of September),
+    so week 1 starts two days after Labor Day. Matches Sleeper's
+    ``/state/nfl`` ``season_start_date`` (2026-09-09 for 2026).
+    """
+    sept_first = date(year, 9, 1)
+    labor_day = sept_first + timedelta(days=(7 - sept_first.weekday()) % 7)
+    return labor_day + timedelta(days=2)
+
+
+def _resolve_current_week(year: int, today: date | None = None) -> int:
     """Best-effort "what week is it now?" for the target season.
 
-    Phase 1 uses a fixed heuristic: the NFL regular season starts the
-    first Thursday of September, weeks roll on Tuesday. For pre-season
-    runs (calendar year matches target, before September) we default to
-    week 1 so transactions/availability still get scraped. Backfill of
-    historical weeks is M9's responsibility.
-    """
-    from datetime import date
+    Follows Sleeper's week clock: week 1 starts the Wednesday before the
+    opener, and each week rolls over at midnight UTC on Wednesday (Tuesday
+    evening in the US). So the Wednesday-morning job targets the upcoming week.
+    Checked against captured ``/state/nfl``: Mon 2026-11-09 = week 9, Wed
+    2026-11-11 (UTC) = week 10.
 
-    today = date.today()
-    if today.year != year or today.month < 9:
+    Before week 1 (pre-season), and for a season that is over (after
+    February of the following year), it returns week 1 as before, so
+    transactions/availability still get scraped. Clamped to [1, 18].
+    """
+    resolved_today = today or datetime.now(UTC).date()
+    start = _nfl_week_one_start(year)
+    if resolved_today < start or resolved_today >= date(year + 1, 3, 1):
         return 1
-    # Approximate: weeks since Sept 1, clamped to [1, 18].
-    sept_first = date(year, 9, 1)
-    delta_weeks = ((today - sept_first).days // 7) + 1
-    return max(1, min(18, delta_weeks))
+    return min(18, (resolved_today - start).days // 7 + 1)
 
 
 def _default_run_season(today: date | None = None) -> int:

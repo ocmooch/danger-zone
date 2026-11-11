@@ -10,7 +10,7 @@ from unittest import mock
 from typer.testing import CliRunner
 
 from ff_pipeline import __version__
-from ff_pipeline.cli import _default_run_season, app
+from ff_pipeline.cli import _default_run_season, _nfl_week_one_start, _resolve_current_week, app
 
 runner = CliRunner()
 
@@ -327,3 +327,28 @@ def test_backfill_projections_failed_week_exits_1() -> None:
     ):
         result = runner.invoke(app, ["backfill-projections", "--current-season"])
     assert result.exit_code == 1
+
+
+def test_nfl_week_one_starts_the_wednesday_before_the_opener() -> None:
+    # Sleeper's season_start_date for 2026; openers Thu 2023-09-07, 2024-09-05, 2025-09-04.
+    assert _nfl_week_one_start(2026) == date(2026, 9, 9)
+    assert _nfl_week_one_start(2025) == date(2025, 9, 3)
+    assert _nfl_week_one_start(2024) == date(2024, 9, 4)
+    assert _nfl_week_one_start(2023) == date(2023, 9, 6)
+
+
+def test_current_week_matches_captured_sleeper_state() -> None:
+    # Captured /state/nfl: Mon 2026-11-09 -> week 9; Wed 2026-11-11 (UTC) -> week 10.
+    assert _resolve_current_week(2026, date(2026, 11, 9)) == 9
+    assert _resolve_current_week(2026, date(2026, 11, 10)) == 9
+    assert _resolve_current_week(2026, date(2026, 11, 11)) == 10
+
+
+def test_current_week_edges() -> None:
+    assert _resolve_current_week(2026, date(2026, 9, 8)) == 1  # pre-season
+    assert _resolve_current_week(2026, date(2026, 9, 9)) == 1
+    assert _resolve_current_week(2026, date(2026, 9, 16)) == 2
+    assert _resolve_current_week(2026, date(2027, 1, 5)) == 17  # January tail of the season
+    assert _resolve_current_week(2026, date(2027, 2, 20)) == 18  # clamped
+    assert _resolve_current_week(2026, date(2027, 3, 1)) == 1  # season over
+    assert _resolve_current_week(2027, date(2026, 11, 11)) == 1  # future season
