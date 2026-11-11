@@ -348,6 +348,7 @@ uv run ff-pipeline sleeper-league archive --endpoint matchups --week 3   # list 
               -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
   Register-ScheduledTask -TaskName "dz-sleeper-capture" -Action $action -Trigger $trigger -Settings $settings
   ```
+  Then set the window mode (see "Window mode" below): `scripts/windows/task_windows.sh hidden`.
 - **Status snapshots (S7-D7):** the weekly capture's players directory (Wednesday 06:00 ET,
   after Monday night) becomes one `player_status_snapshots` row per league player at the next
   load: the status after that week's games. Each week's official game status (Out / Doubtful /
@@ -462,6 +463,19 @@ logs, backups, nflverse_cache}` point into `~/danger-zone`. The tracked files in
   capture's lock (`data/logs/weekly_capture.lock`), so its snapshot still holds that week's data.
   The wait is logged as `wait:` lines in `data/logs/vault_sync-<date>.log`. Moving these jobs to an
   always-on server with cron is a deferred item (`10_OPEN_QUESTIONS.md` "Sleeper era").
+- **Window mode:** each task either opens a console window or runs with none.
+  `scripts/windows/task_windows.sh status` shows each task's mode, command, last run and last
+  result. `... hidden` makes Task Scheduler start `conhost.exe --headless wsl.exe ...`, so no
+  window opens. `... visible` switches back to plain `wsl.exe ...`. Each task's Description in
+  Task Scheduler names the mode and this toggle, so a hidden task can be traced to these scripts.
+  In a visible window the job prints a "don't close" banner, live progress (the same lines as
+  the log), a "still running" line every 30 s, and the result, then closes 30 s later. **Closing
+  the window kills the job:** Last Result becomes `0xC000013A` (`-1073741510`). When hidden, follow
+  progress with `tail -f ~/danger-zone/data/logs/sleeper_capture-$(date -u +%Y%m%d).log`. Vault
+  failures still raise their Windows alert in either mode.
+- **Recover a killed or failed run:** `schtasks.exe /Run /TN dz-sleeper-capture`, then
+  `schtasks.exe /Run /TN dz-vault-sync` (the vault waits for the capture's lock). Every step is
+  idempotent. Check `scripts/windows/task_windows.sh status` afterwards: last result `0x00000000`.
 - **After each `dev → main` release:** follow the release checklist in `CONTRIBUTING.md`
   ("Releases"). Until the main copy is pulled, both jobs keep running the previous release.
 - **Rebuild it** (e.g. after a WSL reinstall):
