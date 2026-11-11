@@ -76,6 +76,7 @@ ff-pipeline backfill --season 2020 # Single season only
 ff-pipeline backfill-projections  # Backfill Sleeper projections across every fantasy week (playoffs incl.)
 ff-pipeline backfill-projections --start 2018 --end 2025  # Explicit range; skips already-populated weeks
 ff-pipeline backfill-projections --season 2022 --force    # Re-fetch one season even where projections exist
+ff-pipeline backfill-projections --current-season         # Weekly job: upcoming week (re-fetched until played) + any missing week; scheduled weeks only
 
 ff-pipeline reconstruct           # Rebuild real history from NFL.com /history pages (resumable)
 ff-pipeline reconstruct --start 2010 --end 2025  # Explicit range (--end defaults to current year-1)
@@ -140,7 +141,7 @@ in; an always-on server with cron is the deferred long-term home (`10_OPEN_QUEST
 
 | Task | When | What |
 |---|---|---|
-| `dz-sleeper-capture` | Wed 06:00 ET (after Monday night + Tuesday's stat corrections) | `scripts/sleeper/weekly_capture.sh`: capture (every week to date; follows a renewed league) → `sleeper-league update --if-enabled` (load + score; on only once `SLEEPER_AUTO_LOAD=true`) → full `legacy verify`. Log `data/logs/sleeper_capture-<date>.log`. |
+| `dz-sleeper-capture` | Wed 06:00 ET (after Monday night + Tuesday's stat corrections) | `scripts/sleeper/weekly_capture.sh`: capture (every week to date; follows a renewed league) → `sleeper-league update --if-enabled` (load + score; on only once `SLEEPER_AUTO_LOAD=true`) → `backfill-projections --current-season` (upcoming week's projections before kickoff, plus any missing week) → full `legacy verify`. Log `data/logs/sleeper_capture-<date>.log`. |
 | `dz-vault-sync` | Wed 07:00 (an hour after the capture, so the snapshot includes that week's data) | `scripts/vault/vault_sync.sh`: encrypted snapshot (DB + raw Sleeper archive + assets) to every vault destination; 4 rotating copies + every `seal-*` pinned. |
 
 Check either with `schtasks.exe /Query /TN <task> /V /FO LIST` ("Last Result" 0 = ok). A failed

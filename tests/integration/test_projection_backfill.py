@@ -250,3 +250,89 @@ def test_backfill_is_idempotent(session: Session) -> None:
     assert second.skipped == MAX_FANTASY_WEEK
     assert src2.requested == []
     assert count_after_first == count_after_second
+
+
+# ---------------------------------------------------------------------------
+# Weekly mode (`backfill-projections --current-season`)
+# ---------------------------------------------------------------------------
+
+
+def _set_week_scores(session: Session, *, through_week: int) -> None:
+    """Score weeks 1..through_week; leave later weeks 0-0 like Sleeper's upcoming weeks."""
+
+    for m in session.execute(select(Matchup)).scalars():
+        played = m.week <= through_week
+        m.team_score = 100.0 if played else 0.0
+        m.opponent_score = 90.0 if played else 0.0
+    session.commit()
+
+
+def _drop_matchups_after(session: Session, week: int) -> None:
+    for m in session.execute(select(Matchup).where(Matchup.week > week)).scalars():
+        session.delete(m)
+    session.commit()
+
+
+def _weekly_run(session: Session, src: RecordingSleeperSource):  # type: ignore[no-untyped-def]
+    return run_projection_backfill(
+        session,
+        league_id=LEAGUE_ID,
+        start_year=SEASON_YEAR,
+        end_year=SEASON_YEAR,
+        source=src,
+        matchups_only=True,
+        refresh_latest_week=True,
+    )
+
+
+@pytest.mark.integration
+def test_matchups_only_ceiling_ignores_season_shape(session: Session) -> None:
+    _seed_season_with_full_schedule(session)
+    _drop_matchups_after(session, 0)
+
+    # The default falls back to regular + playoff weeks; the weekly mode does not.
+    assert fantasy_week_ceiling(session, league_id=LEAGUE_ID, year=SEASON_YEAR) == MAX_FANTASY_WEEK
+    assert (
+        fantasy_week_ceiling(session, league_id=LEAGUE_ID, year=SEASON_YEAR, matchups_only=True)
+        is None
+    )
+
+    src = RecordingSleeperSource()
+    result = _weekly_run(session, src)
+    assert src.requested == []
+    assert result.fetched == 0
+
+
+@pytest.mark.integration
+def test_weekly_run_fills_gaps_and_refetches_the_upcoming_week(session: Session) -> None:
+    # Mid-season: weeks 1-9 played, week 10 scheduled 0-0, nothing later stored yet.
+    _seed_season_with_full_schedule(session)
+    _drop_matchups_after(session, 10)
+    _set_week_scores(session, through_week=9)
+
+    first = RecordingSleeperSource()
+    _weekly_run(session, first)
+    assert [w for _, w, _ in first.requested] == list(range(1, 11))
+
+    # Next run, same week: played weeks are skipped, the upcoming week is re-fetched.
+    second = RecordingSleeperSource()
+    result = _weekly_run(session, second)
+    assert [w for _, w, _ in second.requested] == [10]
+    assert result.fetched == 1
+    assert result.skipped == 9
+    fetches = session.execute(
+        select(func.count(func.distinct(Projection.fetched_at))).where(Projection.week == 10)
+    ).scalar_one()
+    assert fetches == 2
+
+
+@pytest.mark.integration
+def test_weekly_run_never_refetches_a_finished_season(session: Session) -> None:
+    _seed_season_with_full_schedule(session)
+    _set_week_scores(session, through_week=MAX_FANTASY_WEEK)
+    _weekly_run(session, RecordingSleeperSource())
+
+    src = RecordingSleeperSource()
+    result = _weekly_run(session, src)
+    assert src.requested == []
+    assert result.skipped == MAX_FANTASY_WEEK
