@@ -434,7 +434,11 @@ uv run ff-pipeline sleeper-league reconcile --season 2026 --out docs/sleeper/rep
 `scripts/sleeper/weekly_capture.sh`:
 1. capture;
 2. `sleeper-league update --if-enabled`;
-3. full `legacy verify`.
+3. `backfill-projections --current-season`: Sleeper projections for the upcoming week, plus any
+   earlier week that has none. The upcoming week is re-fetched on every run until it is played
+   (readers use the newest fetch); played weeks are never re-fetched. Only weeks with loaded
+   matchups count, so it does nothing before a season's first matchups load;
+4. full `legacy verify`.
 
 The log is `data/logs/sleeper_capture-<UTC date>.log`. Each step prints `ok` or `FAILED`; the job
 stops at the first failure. Fix the cause, then run the same thing by hand from the main copy
@@ -453,7 +457,8 @@ logs, backups, nflverse_cache}` point into `~/danger-zone`. The tracked files in
 - **Missed runs (PC off or nobody logged in):** both tasks run once, soon after the next login,
   that day or days later. They don't wake the PC. Nothing is lost: each capture re-fetches the
   season to date, and a missed week only means one fewer rotating snapshot. When both are
-  missed they start together. The vault run then waits (2-min grace, up to 30 min) for the
+  missed they start together. A missed week's projections are filled by the next run, but
+  fetched after kickoff (Sleeper still serves them for past weeks). The vault run then waits (2-min grace, up to 30 min) for the
   capture's lock (`data/logs/weekly_capture.lock`), so its snapshot still holds that week's data.
   The wait is logged as `wait:` lines in `data/logs/vault_sync-<date>.log`. Moving these jobs to an
   always-on server with cron is a deferred item (`10_OPEN_QUESTIONS.md` "Sleeper era").

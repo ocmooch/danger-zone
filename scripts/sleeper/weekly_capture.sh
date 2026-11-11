@@ -8,7 +8,10 @@
 #      later stat correction lands next week; follows a renewed league, S9-D4)
 #   2. `sleeper-league update --if-enabled`: load + score, only once the go-live set
 #      SLEEPER_AUTO_LOAD=true (S9-D2); a no-op before that
-#   3. full `legacy verify`
+#   3. `backfill-projections --current-season`: Sleeper projections for the upcoming week
+#      (re-fetched each run until it is played) plus any earlier week still missing; only
+#      weeks with loaded matchups count, so it is a no-op before the go-live
+#   4. full `legacy verify`
 #
 # Runs only on `main` (the stable, released code): Task Scheduler points at the dedicated
 # ~/danger-zone-main worktree, which shares ~/danger-zone's data/ and .env through links
@@ -46,6 +49,11 @@ LOG="data/logs/sleeper_capture-$(date -u +%Y%m%d).log"
     LOG_LEVEL=WARNING uv run ff-pipeline sleeper-league update --if-enabled 2>&1
     rc=${PIPESTATUS[0]}
     echo "== update exit $rc"
+  fi
+  if [ "$rc" -eq 0 ]; then
+    LOG_LEVEL=WARNING uv run ff-pipeline backfill-projections --current-season 2>&1
+    rc=${PIPESTATUS[0]}
+    echo "== projections exit $rc"
   fi
   uv run ff-pipeline legacy verify 2>&1 | tail -1
   vrc=${PIPESTATUS[0]}

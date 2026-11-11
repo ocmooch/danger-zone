@@ -253,3 +253,77 @@ def test_avatars_rejects_inverted_range() -> None:
         result = runner.invoke(app, ["avatars", "--start", "2021", "--end", "2019"])
     assert result.exit_code == 2
     backfill.assert_not_called()
+
+
+@contextlib.contextmanager
+def _patch_projection_backfill(backfill: mock.Mock):
+    """Patch out everything `backfill-projections` touches except the backfill call.
+
+    The command imports these names lazily inside its body, so they are patched
+    at their source modules.
+    """
+    settings = mock.Mock(nfl_league_id="L1", league_start_year=2010)
+    with (
+        mock.patch("ff_pipeline.cli._bootstrap_settings_and_logging"),
+        mock.patch("ff_pipeline.settings.get_settings", return_value=settings),
+        mock.patch("ff_pipeline.repository.database.create_app_engine"),
+        mock.patch("sqlalchemy.orm.Session"),
+        mock.patch("ff_pipeline.projection_backfill.run_projection_backfill", backfill),
+    ):
+        yield
+
+
+def _backfill_result(*, failed: int = 0) -> mock.Mock:
+    return mock.Mock(
+        per_week=(),
+        fetched=1,
+        skipped=0,
+        failed=failed,
+        projections_added=5,
+        projections_updated=0,
+    )
+
+
+def test_backfill_projections_current_season_targets_only_the_run_season() -> None:
+    backfill = mock.Mock(return_value=_backfill_result())
+    with (
+        _patch_projection_backfill(backfill),
+        mock.patch("ff_pipeline.cli._default_run_season", return_value=2026),
+    ):
+        result = runner.invoke(app, ["backfill-projections", "--current-season"])
+    assert result.exit_code == 0, result.stdout
+    assert backfill.call_args.kwargs["start_year"] == 2026
+    assert backfill.call_args.kwargs["end_year"] == 2026
+    assert backfill.call_args.kwargs["skip_populated_weeks"] is True
+    assert backfill.call_args.kwargs["matchups_only"] is True
+    assert backfill.call_args.kwargs["refresh_latest_week"] is True
+
+
+def test_backfill_projections_default_still_walks_from_league_start() -> None:
+    backfill = mock.Mock(return_value=_backfill_result())
+    with _patch_projection_backfill(backfill):
+        result = runner.invoke(app, ["backfill-projections", "--end", "2025"])
+    assert result.exit_code == 0, result.stdout
+    assert backfill.call_args.kwargs["start_year"] == 2010
+    assert backfill.call_args.kwargs["end_year"] == 2025
+    assert backfill.call_args.kwargs["matchups_only"] is False
+    assert backfill.call_args.kwargs["refresh_latest_week"] is False
+
+
+def test_backfill_projections_current_season_rejects_explicit_years() -> None:
+    backfill = mock.Mock()
+    for extra in (["--season", "2025"], ["--start", "2024"], ["--end", "2025"]):
+        with _patch_projection_backfill(backfill):
+            result = runner.invoke(app, ["backfill-projections", "--current-season", *extra])
+        assert result.exit_code == 2, extra
+    backfill.assert_not_called()
+
+
+def test_backfill_projections_failed_week_exits_1() -> None:
+    backfill = mock.Mock(return_value=_backfill_result(failed=1))
+    with (
+        _patch_projection_backfill(backfill),
+        mock.patch("ff_pipeline.cli._default_run_season", return_value=2026),
+    ):
+        result = runner.invoke(app, ["backfill-projections", "--current-season"])
+    assert result.exit_code == 1
