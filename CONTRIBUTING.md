@@ -37,7 +37,12 @@ updated.
    and run `uv run ff-pipeline migrate up` from the main copy.
 7. Smoke-test from the main copy: `uv run python -c "import ff_pipeline; print(ff_pipeline.__version__)"`
    shows the new version, and `uv run ff-pipeline legacy verify` passes.
-8. Delete the release branch, and leave `~/danger-zone` on `dev`.
+8. Sync the dashboard lock: `scripts/release/sync_dashboard_lock.sh --merge` (from `~/danger-zone`,
+   with `~/dz-dashboard` on a clean `dev`). dz-dashboard records ff-pipeline's version in its
+   `uv.lock`, so every bump leaves it stale, and its CI (`uv lock --locked`) fails until this runs.
+   It opens a lock-only PR to the dashboard's `dev`, waits for CI and merges it. It refuses if
+   re-locking would change anything else. `--dry-run` previews.
+9. Delete the release branch, and leave `~/danger-zone` on `dev`.
 
 ## Commits
 
