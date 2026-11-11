@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from ff_pipeline.crawlers.sleeper.client import LiveSleeperSource
 from ff_pipeline.crawlers.sleeper.runner import run_sleeper
@@ -88,15 +88,22 @@ class ProjectionBackfillResult:
         return sum(o.projections_updated for o in self.per_week)
 
 
-def fantasy_week_ceiling(session: Session, *, league_id: str, year: int) -> int | None:
+def fantasy_week_ceiling(
+    session: Session, *, league_id: str, year: int, matchups_only: bool = False
+) -> int | None:
     """Highest fantasy week that has matchups for ``(league_id, year)``.
 
     Prefers the matchup schedule — the authoritative record of which weeks
     actually hosted fantasy games, including playoff and consolation rounds.
     Falls back to the season's recorded shape
-    (``regular_season_weeks + playoff_weeks``) when no matchups are stored yet.
-    Returns ``None`` when neither is known, so the caller can skip the season
-    rather than guess. The result is clamped to the NFL regular-season window.
+    (``regular_season_weeks + playoff_weeks``) when no matchups are stored yet,
+    unless ``matchups_only`` is set. Returns ``None`` when neither is known, so
+    the caller can skip the season rather than guess. The result is clamped to
+    the NFL regular-season window.
+
+    The weekly job passes ``matchups_only``: for a season in progress the
+    fallback would reach weeks not yet played, and a preseason fetch of those
+    weeks would then be skipped as "populated" for the rest of the season.
     """
 
     season = session.execute(
@@ -110,6 +117,9 @@ def fantasy_week_ceiling(session: Session, *, league_id: str, year: int) -> int 
     ).scalar_one_or_none()
     if max_matchup_week is not None:
         return min(int(max_matchup_week), MAX_NFL_REGULAR_WEEK)
+
+    if matchups_only:
+        return None
 
     if season.regular_season_weeks is not None:
         ceiling = season.regular_season_weeks + (season.playoff_weeks or 0)
@@ -135,6 +145,29 @@ def _week_has_projections(session: Session, *, year: int, week: int) -> bool:
     )
 
 
+def _week_is_unplayed(session: Session, *, league_id: str, year: int, week: int) -> bool:
+    """True when the week has matchups and none of them has a score yet.
+
+    Sleeper stores upcoming matchups with 0-0 scores, and a played week can't
+    score 0 everywhere, so "no non-zero score" means the games haven't happened.
+    """
+
+    has_score = or_(
+        func.coalesce(Matchup.team_score, 0) != 0,
+        func.coalesce(Matchup.opponent_score, 0) != 0,
+    )
+    row = session.execute(
+        select(
+            func.count(Matchup.matchup_id).filter(has_score),
+            func.count(Matchup.matchup_id),
+        )
+        .join(Season, Season.season_id == Matchup.season_id)
+        .where(Season.league_id == league_id, Season.year == year, Matchup.week == week)
+    ).one()
+    scored, total = int(row[0]), int(row[1])
+    return total > 0 and scored == 0
+
+
 def run_projection_backfill(
     session: Session,
     *,
@@ -145,6 +178,8 @@ def run_projection_backfill(
     season_type: str = "regular",
     skip_populated_weeks: bool = True,
     first_week: int = 1,
+    matchups_only: bool = False,
+    refresh_latest_week: bool = False,
 ) -> ProjectionBackfillResult:
     """Backfill Sleeper projections for every fantasy week in each season.
 
@@ -156,7 +191,12 @@ def run_projection_backfill(
 
     ``skip_populated_weeks`` (default) skips any week that already has
     projections, making a re-run cheap and idempotent and letting the live
-    backfill touch only the missing playoff cells. Pass an open
+    backfill touch only the missing playoff cells. ``refresh_latest_week``
+    re-fetches the season's last week even when it is populated, as long as
+    that week is still unplayed: in a season in progress it is the upcoming
+    week, whose projections move until kickoff (readers take the newest
+    ``fetched_at``). A finished season is never re-fetched. ``matchups_only`` is
+    passed through to :func:`fantasy_week_ceiling`. Pass an open
     ``source`` to reuse one HTTP session; ``None`` opens a
     :class:`LiveSleeperSource` for the duration of the backfill.
     """
@@ -177,6 +217,8 @@ def run_projection_backfill(
                 season_type=season_type,
                 skip_populated_weeks=skip_populated_weeks,
                 first_week=first_week,
+                matchups_only=matchups_only,
+                refresh_latest_week=refresh_latest_week,
             )
     return _drive(
         session,
@@ -187,6 +229,8 @@ def run_projection_backfill(
         season_type=season_type,
         skip_populated_weeks=skip_populated_weeks,
         first_week=first_week,
+        matchups_only=matchups_only,
+        refresh_latest_week=refresh_latest_week,
     )
 
 
@@ -200,17 +244,30 @@ def _drive(
     season_type: str,
     skip_populated_weeks: bool,
     first_week: int,
+    matchups_only: bool,
+    refresh_latest_week: bool,
 ) -> ProjectionBackfillResult:
     outcomes: list[WeekOutcome] = []
 
     for year in range(start_year, end_year + 1):
-        ceiling = fantasy_week_ceiling(session, league_id=league_id, year=year)
+        ceiling = fantasy_week_ceiling(
+            session, league_id=league_id, year=year, matchups_only=matchups_only
+        )
         if ceiling is None:
             log.info("Projection backfill skipping season with unknown schedule", year=year)
             continue
 
         for week in range(first_week, ceiling + 1):
-            if skip_populated_weeks and _week_has_projections(session, year=year, week=week):
+            refresh = (
+                refresh_latest_week
+                and week == ceiling
+                and _week_is_unplayed(session, league_id=league_id, year=year, week=week)
+            )
+            if (
+                skip_populated_weeks
+                and not refresh
+                and _week_has_projections(session, year=year, week=week)
+            ):
                 outcomes.append(
                     WeekOutcome(
                         year=year,

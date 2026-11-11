@@ -641,12 +641,25 @@ def backfill_projections_cmd(
         "--force",
         help="Re-fetch weeks that already have projections (default: skip populated weeks).",
     ),
+    current_season: bool = typer.Option(
+        False,
+        "--current-season",
+        help=(
+            "Backfill only the season a bare `run` targets (this year from September, "
+            "last year before). Used by the weekly job."
+        ),
+    ),
 ) -> None:
     """Backfill Sleeper projections across every fantasy week, playoffs included.
 
     The original crawl stopped at the fantasy regular-season boundary, leaving
     playoff/consolation weeks (e.g. 2022/2025 W15-17) with no projections. This
     walks the full matchup schedule per season and fills the missing cells.
+
+    The weekly job runs it with ``--current-season``: the capture already holds
+    the upcoming week's matchups, so that week is (re-)fetched before kickoff,
+    and any week a missed run left empty is filled too. In that mode only weeks
+    with matchups count, so nothing is fetched for weeks not yet scheduled.
     """
     _bootstrap_settings_and_logging()
 
@@ -658,8 +671,18 @@ def backfill_projections_cmd(
     from ff_pipeline.repository.database import create_app_engine
     from ff_pipeline.settings import get_settings
 
+    if current_season and (season is not None or start is not None or end is not None):
+        typer.secho(
+            "--current-season cannot be combined with --season, --start or --end.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
     settings = get_settings()
-    if season is not None:
+    if current_season:
+        start_year = end_year = _default_run_season()
+    elif season is not None:
         start_year = season
         end_year = season
     else:
@@ -683,6 +706,8 @@ def backfill_projections_cmd(
                 start_year=start_year,
                 end_year=end_year,
                 skip_populated_weeks=not force,
+                matchups_only=current_season,
+                refresh_latest_week=current_season,
             )
     finally:
         engine.dispose()
